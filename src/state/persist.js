@@ -1,4 +1,5 @@
 // Project persistence: create/open/save/delete, debounced autosave.
+import { upgradeSavedQuickFields } from '../core/quickpresets.js';
 import { getState, setState, subscribe, uid, DEFAULT_SHEET, DEFAULT_SETTINGS, clearHistory, toast, logEvent } from './store.js';
 import { put, get, del, getAll, getByIndex, kvGet, kvSet, deleteBlob } from '../storage/db.js';
 import { releaseAllMedia, restoreThumbs } from './media.js';
@@ -49,6 +50,12 @@ export async function loadSettings() {
     settings.quickPresets = (settings.quickPresets || []).map(on);
     settings.quickOverrides = Object.fromEntries(Object.entries(settings.quickOverrides || {}).map(([k, v]) => [k, on(v)]));
     settings.quickSchema = 5;
+  }
+  if ((settings.quickSchema || 1) < 6) {
+    // v6: engine values tuned to the quality reference reach saved templates too (studio request)
+    settings.quickPresets = (settings.quickPresets || []).map(upgradeSavedQuickFields);
+    settings.quickOverrides = Object.fromEntries(Object.entries(settings.quickOverrides || {}).map(([k, v]) => [k, upgradeSavedQuickFields(v)]));
+    settings.quickSchema = 6;
   }
   setState((st) => ({ ...st, settings }));
   lastSaved.settings = settings;

@@ -74,6 +74,21 @@ export function presetAdjust(p) {
   return a;
 }
 
+/**
+ * One-time upgrade of a saved template (an adjustment of a built-in or the user's own): the engine values
+ * the previous version stored as its defaults move to the new ones (quality-reference tuning); anything the
+ * user set to another value is kept, and fields the old version did not have (clarity, adaptive strength)
+ * get their defaults when the template is normalised.
+ */
+export function upgradeSavedQuickFields(p) {
+  if (!p || typeof p !== 'object') return p;
+  const o = { ...p };
+  if (o.gSharpness === 14) o.gSharpness = 22;
+  if (o.lightFill === 35) o.lightFill = 45;
+  if (o.skinBalance === 30) o.skinBalance = 40;
+  return o;
+}
+
 /** Face brightness (mean luma 0..1) of the studio's quality reference portrait: nothing to brighten at or above it. */
 export const GRADE_REFERENCE_L = 0.66;
 /** Face brightness at (and below) which the table's brightening values apply in full. */

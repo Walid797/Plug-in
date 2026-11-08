@@ -4,7 +4,7 @@ import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { root, outDir } from './helpers.mjs';
 
-const suites = ['smoke', 'print', 'offline', 'multi', 'failures', 'ai', 'runtimes', 'mobile', 'static-host', 'gpu-fallback', 'print-race', 'fill-order', 'quick-preset', 'quick-edit'];
+const suites = ['smoke', 'print', 'offline', 'multi', 'failures', 'ai', 'runtimes', 'mobile', 'static-host', 'gpu-fallback', 'print-race', 'fill-order', 'quick-preset', 'quick-edit', 'quick-upgrade'];
 const only = process.argv.slice(2);
 const lines = [`Hoshmand Photo Studio — E2E report (${new Date().toISOString()})`, ''];
 let failed = 0;

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { printBoostLut, printBoostValue, applyLut, PRINT_BOOST_IDS, PRINT_BOOST_LEVELS, isPrintBoost } from '../../src/core/adjust.js';
 import { autoExposureDelta, AUTO_LIGHT, QUALITY_THRESHOLDS } from '../../src/core/idphoto.js';
-import { gradeStrength, detailStrength, presetAdjustFor, presetAdjust, GRADE_FULL_BELOW_L, DETAIL_FULL_BELOW_SHARPNESS, QUICK_PRESETS, QUICK_DEFAULTS, presetCapacity, quickSheetPatch, quickLayoutInput, findQuickPreset, normalizeQuickPreset, allQuickPresets, quickFields, quickWarnings, copiesPerPerson, quickPaper } from '../../src/core/quickpresets.js';
+import { upgradeSavedQuickFields, gradeStrength, detailStrength, presetAdjustFor, presetAdjust, GRADE_FULL_BELOW_L, DETAIL_FULL_BELOW_SHARPNESS, QUICK_PRESETS, QUICK_DEFAULTS, presetCapacity, quickSheetPatch, quickLayoutInput, findQuickPreset, normalizeQuickPreset, allQuickPresets, quickFields, quickWarnings, copiesPerPerson, quickPaper } from '../../src/core/quickpresets.js';
 import { computeLayout, computeMarks } from '../../src/core/layout.js';
 import { layoutToPdfPages } from '../../src/core/pdf.js';
 import { findPaper, findPhoto, findProfile } from '../../src/core/presets.js';
@@ -369,4 +369,26 @@ test('templates place the photos at the top-left; no crop marks run toward unuse
   const om = computeMarks(one, one.pages[0], patch.marks).under.filter((m) => m.kind === 'crop');
   const ph = one.pages[0].placements[0].photo;
   assert.ok(om.length > 0 && om.every((m) => (m.y1 === m.y2 ? m.x2 <= ph.x + 1e-6 : m.y2 <= ph.y + 1e-6)), 'single photo: marks only on the top and left, none toward the rest of the sheet');
+});
+
+test('every ready-made template carries the quality-reference engine settings; saved templates are upgraded once', () => {
+  const keys = ['grade', 'gradeAdaptive', 'gExposure', 'gBrightness', 'gContrast', 'gSaturation', 'gTemperature', 'gTint', 'gHighlights', 'gShadows', 'gWhites', 'gBlacks', 'gSharpness', 'gClarity', 'gDenoise', 'skinOn', 'skinRedness', 'skinBalance', 'lightOn', 'lightFill', 'lightEven', 'lightProtect', 'cropShoulders', 'autoCrop', 'autoLight', 'whiteBg'];
+  assert.equal(QUICK_PRESETS.length, 4);
+  for (const p of QUICK_PRESETS) for (const k of keys) assert.deepEqual(p[k], QUICK_DEFAULTS[k], `${p.id}.${k}`);
+  assert.equal(QUICK_DEFAULTS.gSharpness, 22); assert.equal(QUICK_DEFAULTS.gClarity, 55); assert.equal(QUICK_DEFAULTS.lightFill, 45); assert.equal(QUICK_DEFAULTS.skinBalance, 40);
+  // framing: the two 3x4 templates use the reference-based rule, the others keep their own
+  assert.equal(findProfile(findQuickPreset('q-3x4-4r').profileId).headHeight.target, 25.5);
+  assert.equal(findProfile(findQuickPreset('q-3x4-a4').profileId).eyeFromBottom.target, 26);
+  assert.equal(findProfile(findQuickPreset('q-35x45-4r').profileId).headHeight.target, 34);
+  // an adjustment saved by the previous version (old defaults stored) is upgraded; user's own values stay
+  const old = { photoId: '3x4', margin: 3, gSharpness: 14, lightFill: 35, skinBalance: 30, gExposure: 7.5 };
+  const up = upgradeSavedQuickFields(old);
+  assert.equal(up.gSharpness, 22); assert.equal(up.lightFill, 45); assert.equal(up.skinBalance, 40); assert.equal(up.margin, 3);
+  const custom = upgradeSavedQuickFields({ gSharpness: 30, lightFill: 60, skinBalance: 10 });
+  assert.deepEqual([custom.gSharpness, custom.lightFill, custom.skinBalance], [30, 60, 10], 'values the user chose are kept');
+  const n = normalizeQuickPreset(up);
+  assert.equal(n.gClarity, 55, 'fields the old version did not have get the new defaults'); assert.equal(n.gradeAdaptive, true);
+  const list = allQuickPresets({ quickOverrides: { 'q-3x4-4r': up } });
+  assert.equal(list[0].gClarity, 55); assert.equal(list[0].gradeAdaptive, true); assert.equal(list[0].margin, 3); assert.equal(list[0].edited, true);
+  assert.equal(upgradeSavedQuickFields(null), null);
 });
