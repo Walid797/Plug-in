@@ -310,3 +310,19 @@ test('marks: cut lines along edges, crop marks stay in margins', () => {
   }
   assert.equal(marks.over.length, 8);
 });
+
+test('column-by-column fill (studio request): 1 top-left, 2 below it, 3 next column…', () => {
+  const base = { paper: P10x15, orientation: 'landscape', margins: m(5), gap: g(2), items: [photo34(4)] };
+  const pos = (r) => r.pages[0].placements.map((p) => [p.photo.x, p.photo.y]);
+  // full-sheet positions are kept (no compaction): unused paper stays in one piece
+  assert.deepEqual(pos(computeLayout({ ...base, fillOrder: 'col-ltr' })), [[12, 9], [12, 51], [44, 9], [44, 51]]);
+  assert.deepEqual(pos(computeLayout({ ...base, fillOrder: 'col-ltr', align: { mode: 'top-left' } })), [[5, 5], [5, 47], [37, 5], [37, 47]]);
+  assert.deepEqual(pos(computeLayout({ ...base, fillOrder: 'col-rtl' })), [[108, 9], [108, 51], [76, 9], [76, 51]]);
+  const full = computeLayout({ ...base, fillOrder: 'col-ltr', items: [photo34(8)] });
+  assert.deepEqual(pos(full).map(([x]) => x), [12, 12, 44, 44, 76, 76, 108, 108]);
+  // pagination keeps the same order on the last page
+  const many = computeLayout({ ...base, orientation: 'landscape', fillOrder: 'col-ltr', items: [photo34(21)] });
+  assert.deepEqual(many.pages[2].placements.map((p) => [p.photo.x, p.photo.y]), [[12, 9], [12, 51], [44, 9], [44, 51], [76, 9]]);
+  // row orders are unchanged
+  assert.equal(computeLayout({ ...base, fillOrder: 'rtl' }).compacted, true);
+});

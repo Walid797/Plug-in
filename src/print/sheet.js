@@ -131,6 +131,15 @@ export function createSheetElement(layout, page, ctx) {
     img.dataset.index = String(pl.index);
     if (ctx.onImageError) img.addEventListener('error', () => ctx.onImageError(pl.itemId), { once: true });
     content.appendChild(img);
+    if (ctx.showOrder) {
+      // preview only: fill-order number (never part of print or PDF output)
+      const badge = document.createElement('span');
+      badge.className = 'order-badge';
+      badge.textContent = toFaDigits(String(pl.index + 1));
+      badge.style.left = `${pl.photo.x + 1}mm`;
+      badge.style.top = `${pl.photo.y + 1}mm`;
+      content.appendChild(badge);
+    }
     if (pl.label && ctx.labelFor) {
       const lab = document.createElement('div');
       lab.className = 'print-label';

@@ -86,7 +86,9 @@ function normalize(input) {
   if (!['portrait', 'landscape', 'auto'].includes(cfg.orientation)) cfg.orientation = 'auto';
   if (!['exact', 'fill'].includes(cfg.mode)) cfg.mode = 'exact';
   if (!['center', 'top-left', 'top-right', 'custom'].includes(cfg.align.mode)) cfg.align.mode = 'center';
-  if (!['rtl', 'ltr'].includes(cfg.fillOrder)) cfg.fillOrder = 'rtl';
+  // rtl/ltr = row by row (from the right / left); col-ltr/col-rtl = column by column,
+  // top to bottom, starting at the left / right column.
+  if (!['rtl', 'ltr', 'col-ltr', 'col-rtl'].includes(cfg.fillOrder)) cfg.fillOrder = 'rtl';
   if (cfg.label.enabled && (!inRange(cfg.label.heightMm, 1, 50) || !inRange(cfg.label.gapMm, 0, 20))) {
     errors.push({ code: 'LABEL_INVALID' });
   }
@@ -242,6 +244,21 @@ function alignOffset(cfg, aw, ah, box, errors) {
   return { x: (aw - box.w) / 2 - box.x, y: (ah - box.h) / 2 - box.y };
 }
 
+export const isColumnOrder = (o) => o === 'col-ltr' || o === 'col-rtl';
+
+/**
+ * Apply a fill order to grid slots.
+ *  rtl: row by row, starting at the right (mirrored positions)
+ *  ltr: row by row, starting at the left
+ *  col-ltr / col-rtl: column by column (top → bottom), first column at the left / right
+ */
+export function orderSlots(slots, fillOrder) {
+  if (fillOrder === 'rtl') return mirror(slots);
+  if (!isColumnOrder(fillOrder)) return slots;
+  const dir = fillOrder === 'col-ltr' ? 1 : -1;
+  return [...slots].sort((a, b) => (Math.abs(a.x - b.x) > EPS ? dir * (a.x - b.x) : a.y - b.y));
+}
+
 /** Mirror slot x coordinates inside their bounding box (right-to-left fill). */
 function mirror(slots) {
   const b = bbox(slots);
@@ -356,7 +373,12 @@ function layoutUniform(cfg, sheet, orientation, items, errors, warnings) {
 
   let slots = chosen.slots;
   let compacted = false;
-  if (cfg.mode === 'exact' && cfg.compact && pageCount === 1 && total < capacity && (chosen.kind === 'grid' || chosen.kind === 'grid-rotated')) {
+  // Column-by-column filling keeps the full-sheet slot positions (no compaction), so a
+  // partial sheet uses whole columns and the unused paper stays in one piece.
+  const columnMajor = isColumnOrder(cfg.fillOrder);
+  if (columnMajor) {
+    // keep positions
+  } else if (cfg.mode === 'exact' && cfg.compact && pageCount === 1 && total < capacity && (chosen.kind === 'grid' || chosen.kind === 'grid-rotated')) {
     const cg = compactGrid(total, chosen.cols, chosen.rows);
     if (cg && cg.cols * cg.rows < capacity) {
       slots = gridSlots(cg.cols, cg.rows, chosen.cell, gx, gy, 0, 0, 0);
@@ -366,7 +388,7 @@ function layoutUniform(cfg, sheet, orientation, items, errors, warnings) {
     slots = slots.slice(0, total);
     compacted = true;
   }
-  if (cfg.fillOrder === 'rtl') slots = mirror(slots);
+  slots = orderSlots(slots, cfg.fillOrder);
   const box = bbox(slots);
   const off = alignOffset(cfg, a.w, a.h, box, errors);
 
@@ -439,7 +461,8 @@ function layoutShelf(cfg, sheet, orientation, items, errors, warnings) {
   let rotatedTotal = 0;
   for (let p = 0; p < rawPages.length; p += 1) {
     let slots = rawPages[p];
-    if (cfg.fillOrder === 'rtl') slots = mirror(slots);
+    // shelves are row-based: column orders map to the matching side
+    if (cfg.fillOrder === 'rtl' || cfg.fillOrder === 'col-rtl') slots = mirror(slots);
     const box = bbox(slots);
     const off = alignOffset(cfg, a.w, a.h, box, errors);
     const placements = slots.map((s) => {

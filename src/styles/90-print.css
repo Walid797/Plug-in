@@ -4,6 +4,8 @@
 .print-photo { position: absolute; display: block; max-width: none; image-rendering: auto; }
 /* preview only: a photo that has not loaded shows as a grey box, never as an invisible gap */
 .print-sheet.is-preview .print-photo { background: repeating-linear-gradient(45deg, #e6e8ec 0 6px, #d9dce2 6px 12px); }
+.order-badge { position: absolute; z-index: 2; min-width: 4.5mm; height: 4.5mm; padding: 0 1mm; border-radius: 2.25mm; background: rgba(31, 63, 191, .9); color: #fff; font: 700 2.8mm/4.5mm var(--font); text-align: center; pointer-events: none; }
+@media print { .order-badge { display: none !important; } }
 .print-label { position: absolute; text-align: center; color: #000; font-family: var(--font); direction: rtl; white-space: nowrap; overflow: hidden; }
 .marks { position: absolute; top: 0; left: 0; overflow: visible; }
 

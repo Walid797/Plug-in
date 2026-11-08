@@ -28,6 +28,7 @@ export function sanitizeTemplates(json) {
         orientation: ['auto', 'portrait', 'landscape'].includes(sh.orientation) ? sh.orientation : 'auto',
         margins: { top: m.top, right: m.right, bottom: m.bottom, left: m.left }, gap: { x: sh.gap.x, y: sh.gap.y },
         mode: sh.mode === 'fill' ? 'fill' : 'exact', allowRotation: !!sh.allowRotation,
+        fillOrder: ['col-ltr', 'col-rtl', 'rtl', 'ltr'].includes(sh.fillOrder) ? sh.fillOrder : 'col-ltr',
         marks: { cutLines: !!sh.marks?.cutLines, cropMarks: !!sh.marks?.cropMarks, borders: !!sh.marks?.borders },
         dpi: [300, 350, 400, 600].includes(sh.dpi) ? sh.dpi : 300,
       },

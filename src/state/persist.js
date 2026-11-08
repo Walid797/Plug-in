@@ -75,6 +75,12 @@ export async function openProject(id) {
   for (const ph of photos) map[ph.id] = ph;
   project.photoIds = project.photoIds.filter((pid) => map[pid]);
   project.sheet = { ...structuredClone(DEFAULT_SHEET), ...project.sheet };
+  if ((project.sheet.schema || 1) < 2) {
+    // v2: default fill order became column by column from the left (studio request);
+    // only the old default is changed, an explicit 'ltr' choice is kept.
+    if (project.sheet.fillOrder === 'rtl') project.sheet.fillOrder = 'col-ltr';
+    project.sheet.schema = 2;
+  }
   setState((s) => ({ ...s, project, photos: map, selectedPhotoId: project.photoIds[0] || null, rev: {} }));
   await restoreThumbs(photos);
   lastSaved = { project, photos: { ...map }, settings: lastSaved.settings };

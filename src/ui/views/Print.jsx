@@ -66,7 +66,7 @@ export function previewUrl(photo, rev) {
 
 /* ------------------------------------------------------------- pieces */
 
-function SheetPreview({ layout, project, photos, zoom }) {
+function SheetPreview({ layout, project, photos, zoom, showOrder }) {
   const hostRef = useRef(null);
   const rev = useStore((s) => s.rev);
   const [urls, setUrls] = useState({});
@@ -123,6 +123,7 @@ function SheetPreview({ layout, project, photos, zoom }) {
         marks: project.sheet.marks,
         // a failed image load rebuilds the preview (bounded) instead of leaving a blank slot
         onImageError: () => setRetry((r) => (r < 3 ? r + 1 : r)),
+        showOrder,
       });
       el.style.transform = `scale(${scale})`;
       el.style.transformOrigin = '0 0';
@@ -142,7 +143,7 @@ function SheetPreview({ layout, project, photos, zoom }) {
       fig.appendChild(cap);
       host.appendChild(fig);
     }
-  }, [layout, urls, box, zoom, project.sheet.marks, project.sheet.printer]);
+  }, [layout, urls, box, zoom, project.sheet.marks, project.sheet.printer, showOrder]);
 
   return <div class="sheets" ref={hostRef} aria-label="پیش‌نمایش برگه‌ها" />;
 }
@@ -243,6 +244,7 @@ export function PrintView() {
   const photos = useStore((s) => s.photos);
   const settings = useStore((s) => s.settings);
   const [zoom, setZoom] = useState('fit');
+  const [showOrder, setShowOrder] = useState(true);
   const autoAdded = useRef(false);
 
   useEffect(() => {
@@ -303,7 +305,7 @@ export function PrintView() {
             <div class="print-errors">{layout.errors.map((er, i) => <Notice key={i} kind="err">{layoutErrorText(er)}</Notice>)}</div>
           ) : null}
           {!project.photoIds.length ? <Empty icon="images" title="عکسی در پروژه نیست" action={<Button variant="primary" icon="upload" onClick={() => setSection('home')}>وارد کردن عکس</Button>}>برای چیدمان چاپ، ابتدا عکس وارد کنید.</Empty> : null}
-          <SheetPreview layout={layout} project={project} photos={photos} zoom={zoom} />
+          <SheetPreview layout={layout} project={project} photos={photos} zoom={zoom} showOrder={showOrder} />
         </section>
         <aside class="panel" aria-label="تنظیمات چاپ">
           <div class="panel-inner">
@@ -338,7 +340,7 @@ export function PrintView() {
                 { value: 'fill', label: 'پر کردن برگه (بیشترین تعداد)' }, { value: 'exact', label: 'تعداد دقیق انتخابی' },
               ]} />
               <p class="hint">{sheet.mode === 'fill' ? 'برگه با بیشترین تعداد ممکن پر می‌شود؛ اگر چند عکس باشد، به‌طور مساوی تقسیم می‌شود.' : 'دقیقاً همان تعداد چاپ می‌شود؛ اگر از ظرفیت یک برگه بیشتر باشد، برگه‌های بعدی ساخته می‌شوند.'}</p>
-              {sheet.mode === 'exact' ? <Switch label="چیدمان فشرده برای تعداد کم" checked={sheet.compact} onChange={(v) => updateSheet({ compact: v })} /> : null}
+              {sheet.mode === 'exact' && !sheet.fillOrder.startsWith('col') ? <Switch label="چیدمان فشرده برای تعداد کم" checked={sheet.compact} onChange={(v) => updateSheet({ compact: v })} /> : null}
             </Group>
             <Margins sheet={sheet} />
             <Group title="چیدمان">
@@ -357,7 +359,13 @@ export function PrintView() {
                   <NumberInput label="فاصلهٔ عمودی" unit="ملی‌متر" value={sheet.align.offsetY} min={0} max={1000} step={0.5} onChange={(v) => updateSheet((sh) => ({ ...sh, align: { ...sh.align, offsetY: v } }))} />
                 </div>
               ) : null}
-              <Segmented label="ترتیب پر شدن" value={sheet.fillOrder} onChange={(v) => updateSheet({ fillOrder: v })} options={[{ value: 'rtl', label: 'از راست به چپ' }, { value: 'ltr', label: 'از چپ به راست' }]} />
+              <Switch label="نمایش شمارهٔ ترتیب روی پیش‌نمایش (چاپ نمی‌شود)" checked={showOrder} onChange={setShowOrder} />
+              <Select label="ترتیب پر شدن" value={sheet.fillOrder} onChange={(v) => updateSheet({ fillOrder: v })} options={[
+                { value: 'col-ltr', label: 'ستون‌به‌ستون از چپ (بالا ← پایین)' },
+                { value: 'col-rtl', label: 'ستون‌به‌ستون از راست (بالا ← پایین)' },
+                { value: 'rtl', label: 'ردیف‌به‌ردیف از راست' },
+                { value: 'ltr', label: 'ردیف‌به‌ردیف از چپ' },
+              ]} hint={sheet.fillOrder.startsWith('col') ? 'هر ستون اول از بالا به پایین پر می‌شود و جای عکس‌ها مثل برگهٔ کامل ثابت است؛ اگر تعداد کمتر از ظرفیت باشد، بقیهٔ کاغذ یک‌جا خالی می‌ماند و می‌توانید آن را ببرید و دوباره استفاده کنید.' : 'عکس‌ها ردیف‌به‌ردیف چیده می‌شوند.'} />
             </Group>
             <Analysis layout={layout} sheet={sheet} />
             <Group title="خطوط برش و برچسب">
