@@ -405,7 +405,7 @@ export function PrintView() {
               {sheet.marks.cutLines ? <Switch label="خط برش فقط دور عکس‌های چاپ‌شده (بقیهٔ کاغذ سفید بماند)" checked={sheet.marks.cutUsedOnly !== false} onChange={(v) => updateSheet((sh) => ({ ...sh, marks: { ...sh.marks, cutUsedOnly: v } }))} hint="وقتی کمتر از ظرفیت برگه چاپ می‌کنید، خط‌ها به بخش خالی کاغذ نمی‌روند و آن بخش برای چاپ بعدی سالم می‌ماند." /> : null}
               {sheet.marks.cutLines || sheet.marks.cropMarks ? (
                 <NumberInput label="فاصلهٔ خط برش از لبهٔ عکس (به سمت سفیدی)" unit="ملی‌متر" value={sheet.marks.cutOffset ?? 2} min={0} max={5} step={0.1} maxFraction={2} onChange={(v) => updateSheet((sh) => ({ ...sh, marks: { ...sh.marks, cutOffset: v } }))}
-                  hint="خط‌ها و نشانه‌های برش کمی بیرون از عکس، در فاصلهٔ سفید می‌افتند تا قیچی از بوردر رد نشود. بین دو عکس حداکثر نصف فاصلهٔ آن‌هاست (با فاصلهٔ ۲ میلی‌متر: ۱ میلی‌متر؛ برای ۲ میلی‌متر کامل بین عکس‌ها، فاصله را ۴ بگذارید)؛ در لبهٔ بیرونی بلوک عکس‌ها مقدار کامل اعمال می‌شود." />
+                  hint="خط‌ها و نشانه‌های برش کمی بیرون از عکس، در فاصلهٔ سفید می‌افتند تا قیچی از بوردر رد نشود. در بالا، پایین، چپ و راست همان فاصله‌ای را دارد که خط وسط عکس‌ها دارد؛ حداکثر نصف فاصلهٔ بین عکس‌هاست (با فاصلهٔ ۲ میلی‌متر: ۱ میلی‌متر؛ برای ۲ میلی‌متر کامل، فاصلهٔ بین عکس‌ها را ۴ بگذارید)." />
               ) : null}
               <Switch label="بوردر (کادر دور هر عکس)" checked={sheet.marks.borders} onChange={(v) => updateSheet((sh) => ({ ...sh, marks: { ...sh.marks, borders: v } }))} hint="کادر داخل لبهٔ هر عکس کشیده می‌شود و اندازهٔ عکس تغییر نمی‌کند. روی پیش‌نمایش، چاپ، PDF و تصویر برگه اعمال می‌شود." />
               {sheet.marks.borders ? (

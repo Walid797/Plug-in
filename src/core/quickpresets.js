@@ -33,7 +33,7 @@ export const QUICK_DEFAULTS = Object.freeze({
   printBoost: 'medium', dpi: 300, cropMarks: true, cutLines: false, borderless: false, hardMargin: 3,
   // frame drawn inside each photo (photo size unchanged): on by default in every template, width in mm
   border: true, borderWidth: 0.1, borderColor: '#000000',
-  // cut lines / crop marks sit this far outside each photo, in the white (between photos: at most half the gap)
+  // cut lines / crop marks sit this far outside each photo, in the white (on all four sides and between photos alike: at most half the gap)
   cutOffset: 2,
   // cut lines only around the printed photos: the unused paper stays completely white
   cutUsedOnly: true,

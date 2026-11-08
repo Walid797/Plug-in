@@ -197,7 +197,7 @@ export function QuickPresetEditorDialog({ presetId, mode = 'edit' }) {
             <Switch label="نشانه‌های برش در حاشیه" checked={d.cropMarks} onChange={(v) => set({ cropMarks: v })} />
             <Switch label="خطوط برش کامل (در فاصله‌ها)" checked={d.cutLines} onChange={(v) => set({ cutLines: v })} />
             {d.cutLines ? <Switch label="خط برش فقط دور عکس‌های چاپ‌شده (بقیهٔ کاغذ سفید بماند)" checked={d.cutUsedOnly} onChange={(v) => set({ cutUsedOnly: v })} /> : null}
-            {d.cropMarks || d.cutLines ? <NumberInput label="فاصلهٔ خط برش از لبهٔ عکس (به سمت سفیدی)" unit="ملی‌متر" value={d.cutOffset} min={0} max={5} step={0.1} maxFraction={2} hint="قیچی در سفیدی می‌افتد نه روی بوردر. بین دو عکس حداکثر نصف فاصلهٔ آن‌هاست (برای ۲ میلی‌متر کامل بین عکس‌ها، فاصله را ۴ بگذارید)؛ در لبهٔ بیرونی کامل اعمال می‌شود." onChange={(v) => set({ cutOffset: v })} /> : null}
+            {d.cropMarks || d.cutLines ? <NumberInput label="فاصلهٔ خط برش از لبهٔ عکس (به سمت سفیدی)" unit="ملی‌متر" value={d.cutOffset} min={0} max={5} step={0.1} maxFraction={2} hint="قیچی در سفیدی می‌افتد نه روی بوردر. بالا، پایین، چپ و راست همان فاصلهٔ خط وسط عکس‌هاست؛ حداکثر نصف فاصلهٔ بین عکس‌ها (برای ۲ میلی‌متر کامل، فاصلهٔ بین عکس‌ها را ۴ بگذارید)." onChange={(v) => set({ cutOffset: v })} /> : null}
             <Switch label="بوردر (کادر دور هر عکس)" checked={d.border} onChange={(v) => set({ border: v })} hint="داخل لبهٔ هر عکس کشیده می‌شود؛ اندازهٔ عکس تغییر نمی‌کند." />
             {d.border ? (
               <>

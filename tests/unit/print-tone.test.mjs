@@ -226,42 +226,45 @@ test('border: configurable width/colour inside every photo frame, in marks, PDF 
   assert.equal((op.match(/ re S Q/g) || []).length, page.placements.length);
 });
 
-test('cut guides: 2 mm outside the block, half the gap between photos, never touching a border', () => {
+test('cut guides: the same distance from the photos on all four sides and between photos', () => {
   const preset = normalizeQuickPreset({ photoId: '3x4', paperId: '4x6in', margin: 5, gap: 2, cutLines: true, cropMarks: true, border: true, borderWidth: 0.1 });
-  assert.equal(preset.cutOffset, 2);
+  assert.equal(preset.cutOffset, 2, 'setting 2 mm; limited to half the 2 mm gap = 1 mm');
   const patch = quickSheetPatch(preset, ['A'], (x) => `${x}1`);
   const layout = computeLayout(quickLayoutInput(preset, patch.items, 'exact'));
   const page = layout.pages[0];
+  const near = (a, b) => Math.abs(a - b) < 1e-6;
   const cut = computeMarks(layout, page, patch.marks).under.filter((m) => m.kind === 'cut');
   const vx = [...new Set(cut.filter((m) => m.x1 === m.x2).map((m) => m.x1))].sort((a, b) => a - b);
+  const hy = [...new Set(cut.filter((m) => m.y1 === m.y2).map((m) => m.y1))].sort((a, b) => a - b);
   const photos = page.placements.map((pl) => pl.photo);
   const cols = [...new Set(photos.map((r) => Math.round(r.x * 1e4) / 1e4))].sort((a, b) => a - b);
-  const near = (a, b) => Math.abs(a - b) < 1e-6;
-  // 8 photos (4 columns): outer guides 2 mm away; between photos ONE guide in the middle of the 2 mm gap (1 mm from each photo)
-  assert.equal(vx.length, cols.length + 1);
-  assert.ok(near(vx[0], cols[0] - 2), `outer-left guide 2 mm outside (${vx[0]})`);
-  assert.ok(near(vx[vx.length - 1], cols[cols.length - 1] + 30 + 2), 'outer-right guide 2 mm outside');
-  for (let i = 0; i < cols.length - 1; i += 1) {
-    assert.ok(near(vx[i + 1], cols[i] + 30 + 1) && near(vx[i + 1], cols[i + 1] - 1), `one guide in the middle of gap ${i}`);
-  }
+  const rows = [...new Set(photos.map((r) => Math.round(r.y * 1e4) / 1e4))].sort((a, b) => a - b);
+  // 4 columns x 2 rows: columns+1 vertical lines and rows+1 horizontal lines, every one 1 mm from its photo edge
+  assert.equal(vx.length, cols.length + 1); assert.equal(hy.length, rows.length + 1);
+  assert.ok(near(vx[0], cols[0] - 1), `left guide 1 mm outside (${vx[0]})`);
+  assert.ok(near(vx[vx.length - 1], cols[cols.length - 1] + 30 + 1), 'right guide 1 mm outside');
+  assert.ok(near(hy[0], rows[0] - 1), 'top guide 1 mm outside');
+  assert.ok(near(hy[hy.length - 1], rows[rows.length - 1] + 40 + 1), 'bottom guide 1 mm outside');
+  for (let i = 0; i < cols.length - 1; i += 1) assert.ok(near(vx[i + 1], cols[i] + 31) && near(vx[i + 1], cols[i + 1] - 1), `middle line of gap ${i} is 1 mm from both photos`);
+  assert.ok(near(hy[1], rows[0] + 41) && near(hy[1], rows[1] - 1));
   for (const x of vx) for (const r of photos) assert.ok(x <= r.x - 0.1 + 1e-9 || x >= r.x + r.w + 0.1 - 1e-9, 'guide outside every photo frame');
-  // a 4 mm gap gives the full 2 mm on both sides of a photo
+  // wider gap (4 mm): 2 mm everywhere, still equal on the outer sides and in the middle
   const wide = normalizeQuickPreset({ photoId: '3x4', paperId: '4x6in', margin: 5, gap: 4, cutLines: true });
   const wl = computeLayout(quickLayoutInput(wide, [{ id: 'a', copies: 8 }], 'exact'));
   const wx = computeMarks(wl, wl.pages[0], { cutLines: true, cutOffset: 2 }).under.filter((m) => m.x1 === m.x2).map((m) => m.x1);
   const wc = [...new Set(wl.pages[0].placements.map((pl) => pl.photo.x))].sort((a, b) => a - b);
-  assert.ok(wx.some((x) => near(x, wc[0] + 30 + 2)) && wx.some((x) => near(x, wc[1] - 2)), '4 mm gap: 2 mm on each side');
-  // offset 0 reproduces the edge positions; a big offset is capped between photos only
+  assert.ok(wx.some((x) => near(x, wc[0] - 2)) && wx.some((x) => near(x, wc[0] + 32)) && wx.some((x) => near(x, wc[wc.length - 1] + 32)), '4 mm gap: 2 mm outside and in the middle');
+  // a smaller setting is used as is; 0 reproduces the edge positions
+  const half = computeMarks(layout, page, { cutLines: true, cutOffset: 0.4 }).under.filter((m) => m.x1 === m.x2).map((m) => m.x1);
+  assert.ok(near(Math.min(...half), cols[0] - 0.4));
   const edge = computeMarks(layout, page, { cutLines: true, cutOffset: 0 }).under.filter((m) => m.x1 === m.x2).map((m) => m.x1);
   assert.ok(edge.includes(cols[0]) && edge.includes(cols[0] + 30));
-  const big = computeMarks(layout, page, { cutLines: true, cutOffset: 4 }).under.filter((m) => m.x1 === m.x2).map((m) => m.x1);
-  assert.ok(near(Math.min(...big), cols[0] - 4) && big.some((x) => near(x, cols[0] + 30 + 1)), 'outer 4 mm, inner capped at 1 mm');
-  // touching photos (gap 0): inner guides stay on the edge
+  // touching photos: no room, guides stay on the edges on every side
   const flat = normalizeQuickPreset({ photoId: '3x4', paperId: '4x6in', margin: 5, gap: 0, cutLines: true });
   const fl = computeLayout(quickLayoutInput(flat, [{ id: 'a', copies: 8 }], 'exact'));
   const fx = computeMarks(fl, fl.pages[0], { cutLines: true, cutOffset: 2 }).under.map((m) => m.x1);
   const fc = [...new Set(fl.pages[0].placements.map((pl) => pl.photo.x))].sort((a, b) => a - b);
-  assert.ok(fx.some((x) => near(x, fc[1])), 'with no gap the inner guide stays on the shared edge');
+  assert.ok(fx.some((x) => near(x, fc[0])) && fx.some((x) => near(x, fc[1])));
   assert.equal(normalizeQuickPreset({ cutOffset: 99 }).cutOffset, 5);
   assert.equal(normalizeQuickPreset({ cutOffset: -1 }).cutOffset, 0);
 });
@@ -280,17 +283,17 @@ test('with fewer photos than the sheet holds, no cut line enters the unused pape
   const cuts = under.filter((m) => m.kind === 'cut');
   assert.ok(cuts.length > 0);
   for (const m of cuts) {
-    for (const x of [m.x1, m.x2]) assert.ok(x <= right + 2 + 1e-6 && x >= left - 2 - 1e-6, `cut line x ${x} stays around the printed photos (right edge ${right})`);
-    for (const y of [m.y1, m.y2]) assert.ok(y <= bottom + 2 + 1e-6 && y >= top - 2 - 1e-6, `cut line y ${y} stays around the printed photos`);
+    for (const x of [m.x1, m.x2]) assert.ok(x <= right + 1 + 1e-6 && x >= left - 1 - 1e-6, `cut line x ${x} stays around the printed photos (right edge ${right})`);
+    for (const y of [m.y1, m.y2]) assert.ok(y <= bottom + 1 + 1e-6 && y >= top - 1 - 1e-6, `cut line y ${y} stays around the printed photos`);
   }
   // crop marks also stay next to the printed block (nothing over the empty right half)
-  for (const m of under.filter((q) => q.kind === 'crop')) for (const x of [m.x1, m.x2]) assert.ok(x <= right + 2 + 1 + 4 + 1e-6, `crop mark x ${x}`);
+  for (const m of under.filter((q) => q.kind === 'crop')) for (const x of [m.x1, m.x2]) assert.ok(x <= right + 1 + 1 + 4 + 1e-6, `crop mark x ${x}`);
   // the old behaviour is still available: lines across the whole sheet
   const full = computeMarks(layout, page, { ...patch.marks, cutUsedOnly: false }).under.filter((m) => m.kind === 'cut');
   assert.ok(full.some((m) => m.x2 === layout.sheet.widthMm) && full.some((m) => m.y2 === layout.sheet.heightMm));
   // legacy projects without the option behave as "used only"
   const legacy = computeMarks(layout, page, { cutLines: true }).under.filter((m) => m.kind === 'cut');
-  assert.ok(legacy.every((m) => m.x2 <= right + 2 + 1e-6));
+  assert.ok(legacy.every((m) => m.x2 <= right + 1 + 1e-6));
   assert.equal(normalizeQuickPreset({}).cutUsedOnly, true);
 });
 

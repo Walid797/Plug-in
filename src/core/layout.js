@@ -635,8 +635,8 @@ function dedupe(list) {
  * visible in gaps and margins. Crop marks live in the margins only.
  * Cut guides (lines and crop marks) sit `cutOffset` mm OUTSIDE each photo edge,
  * in the white gap, so scissors cut in the white and never through a border;
- * between two photos the offset is limited to half their gap (0 when they touch);
- * on the outer side of the block it is the full offset.
+ * the offset is the same on all four sides and between photos, limited to half the
+ * gap (0 when photos touch): the line between two photos is one line in the middle of the gap.
  * Crop marks are drawn only on sides where the printed block reaches the full-sheet
  * grid edge (no marks toward unused paper).
  * Cut lines span only the block of printed photos (cutUsedOnly, default true), so
@@ -654,21 +654,13 @@ export function computeMarks(layout, page, opts = {}) {
   if (!rects.length) return { under, over };
   const want = Number.isFinite(opts.cutOffset) ? Math.max(0, opts.cutOffset) : 2;
   const uniq = (list, lo, hi) => [...new Set(list.map((v) => Math.round(Math.min(hi, Math.max(lo, v)) * 1e4) / 1e4))].sort((a, b) => a - b);
-  // Each guide moves away from its photo into the white. Between two photos it stops at the
-  // middle of their gap (so it never reaches the neighbour); on the outer side of the block,
-  // where nothing follows, the full offset is used.
-  const guides = (lows, highs) => {
-    const out = [];
-    for (const [lo, hi] of lows.map((a, i) => [a, highs[i]])) {
-      const prevHigh = Math.max(-Infinity, ...highs.filter((h) => h <= lo + 1e-6));
-      const nextLow = Math.min(Infinity, ...lows.filter((l) => l >= hi - 1e-6));
-      out.push(lo - Math.min(want, Number.isFinite(prevHigh) ? (lo - prevHigh) / 2 : want));
-      out.push(hi + Math.min(want, Number.isFinite(nextLow) ? (nextLow - hi) / 2 : want));
-    }
-    return out;
-  };
-  const xs = uniq(guides(rects.map((r) => r.x), rects.map((r) => r.x + r.w)), 0, W);
-  const ys = uniq(guides(rects.map((r) => r.y), rects.map((r) => r.y + r.h)), 0, H);
+  // Every guide sits the SAME distance from its photo edge on all four sides: the offset,
+  // limited to half the gap between photos. So the guide between two photos (one line in the
+  // middle of the gap) and the outer guides (top, bottom, left, right) are equally far from the photos.
+  const gapX = layout.gap?.x ?? 0; const gapY = layout.gap?.y ?? 0;
+  const offX = Math.min(want, gapX / 2); const offY = Math.min(want, gapY / 2);
+  const xs = uniq(rects.flatMap((r) => [r.x - offX, r.x + r.w + offX]), 0, W);
+  const ys = uniq(rects.flatMap((r) => [r.y - offY, r.y + r.h + offY]), 0, H);
   const minX = Math.min(...rects.map((r) => r.x)); const maxX = Math.max(...rects.map((r) => r.x + r.w));
   const minY = Math.min(...rects.map((r) => r.y)); const maxY = Math.max(...rects.map((r) => r.y + r.h));
   if (cutLines) {
