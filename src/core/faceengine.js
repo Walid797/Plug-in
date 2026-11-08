@@ -26,6 +26,9 @@ const MAX_BLOTCH_SHIFT = 4;
 const MAX_FILL_LIFT = 24; // luma levels
 /** Largest left/right brightness correction (±22 %): a hard side shadow is evened out, a natural asymmetry is not forced flat. */
 export const MAX_EVEN_GAIN = 0.22;
+/** Shading flattening (a side shadow, a rim light): the shadowed skin may be lifted up to ×2, a lit side dimmed by at most 10 % (dimming near-white skin turns it grey). */
+export const SHADE_UP = 1.0;
+export const SHADE_DOWN = 0.1;
 const PROTECT_FROM = 224;
 const MAX_SPOT_LIFT = 70; // luma levels a single spot may be raised
 const MAX_SPOT_RED = 28; // Cr levels a single red mark may be reduced
@@ -399,7 +402,7 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
     const tol = 1 + 2.5 * relax;
     const dCb = (Cb[j] - mCb) / (7 * tol); const dCr = (Cr[j] - mCr) / (8 * tol);
     const chroma = Math.exp(-0.5 * (dCb * dCb + dCr * dCr));
-    const lum = smooth(35, 75, Y[j]) * (1 - smooth(238, 252, Y[j]));
+    const lum = smooth(22, 60, Y[j]) * (1 - smooth(238, 252, Y[j]));
     base[j] = chroma * lum;
     m[j] = base[j] * we[j];
   }
@@ -437,9 +440,9 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
   const fm = boxFilter(ms, bw, bh, fillR); const fY = boxFilter(wY, bw, bh, fillR);
   const kBal = skin.enabled ? (skin.balance / 100) * 0.6 : 0;
   const kFill = light.enabled ? (light.fill / 100) * 0.8 : 0;
-  const gL = lw > 0 && rw > 0 && light.enabled && light.even ? clamp(aY / (lY / lw), 1 - MAX_EVEN_GAIN, 1 + MAX_EVEN_GAIN) : 1;
-  const gR = lw > 0 && rw > 0 && light.enabled && light.even ? clamp(aY / (rY / rw), 1 - MAX_EVEN_GAIN, 1 + MAX_EVEN_GAIN) : 1;
-  report.evenGain = [gL, gR];
+  const shadeOn = light.enabled && light.even && lw > 0 && rw > 0;
+  let gLsum = 0; let gLw = 0; let gRsum = 0; let gRw = 0; let capped = 0; let shadeW = 0;
+  report.evenGain = [1, 1];
   let holeCand = null; let mSp = null; let msSp = null;
   if (skin.enabled && (skin.spots > 0 || skin.smooth > 0)) {
     mSp = new Float32Array(n);
@@ -468,6 +471,33 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
           const wgt = dd <= 0.85 ? 1 : 1 - smooth(0.85, 1.2, dd);
           if (wgt > protect[y * bw + x]) protect[y * bw + x] = wgt;
         }
+      }
+    }
+  }
+  // large-scale shading (half-face scale): a shadow on one side of the face, a strong side or rim light.
+  // Estimated by repeated flattening (each round measures what is still uneven at half-face scale), which also removes the
+  // bias a plain blur has at the edge of the face where it sees only one side. Shadowed skin is darker and often shifted in
+  // colour, so this uses its own, more tolerant skin weight (eyes, brows, mouth and nostrils are still excluded).
+  const shadeR = Math.max(3, Math.round(ell.rx * 0.4));
+  const shadeGain = new Float32Array(n).fill(1);
+  let kS = null; let shm = null;
+  if (light.enabled && light.even) {
+    const kS0 = new Float32Array(n);
+    for (let j = 0; j < n; j += 1) {
+      if (we[j] <= 0) continue;
+      const dCb = (Cb[j] - mCb) / (7 * 1.8); const dCr = (Cr[j] - mCr) / (8 * 1.8);
+      kS0[j] = Math.exp(-0.5 * (dCb * dCb + dCr * dCr)) * smooth(15, 45, Y[j]) * (1 - smooth(238, 252, Y[j])) * we[j];
+    }
+    kS = boxFilter(kS0, bw, bh, r0);
+    for (let j = 0; j < n; j += 1) kS[j] *= smooth(0.08, 0.45, kS0[j]) * (1 - (protect ? protect[j] : 0));
+    shm = boxFilter(kS, bw, bh, shadeR);
+    const tmp = new Float32Array(n);
+    for (let round = 0; round < 3; round += 1) {
+      for (let j = 0; j < n; j += 1) tmp[j] = Y[j] * shadeGain[j] * kS[j];
+      const low = boxFilter(tmp, bw, bh, shadeR);
+      for (let j = 0; j < n; j += 1) {
+        if (shm[j] <= 1e-3) continue;
+        shadeGain[j] = clamp(shadeGain[j] * (aY / Math.max(10, low[j] / shm[j])), 1 - SHADE_DOWN, 1 + SHADE_UP);
       }
     }
   }
@@ -512,7 +542,7 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
       const j = y * bw + x; const k = ms[j];
       // a blemish pixel is outside the strict skin mask but still gets its spot correction
       const sp = !!spots && (spots.dY[j] !== 0 || spots.dCr[j] !== 0 || spots.dCb[j] !== 0);
-      if (k <= 0.01 && !sp) continue;
+      if (k <= 0.01 && !sp && !(kS && kS[j] > 0.01)) continue;
       const i = ((y0 + y) * w + x0 + x) * 4;
       let R = data[i]; let G = data[i + 1]; let B = data[i + 2];
       // chroma: redness + evenness
@@ -537,9 +567,12 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
         gain *= Math.min(1.6, (y0v + lift) / Math.max(y0v, 8));
         liftSum += lift * k;
       }
-      if (gL !== 1 || gR !== 1) {
-        const t = smooth(-0.35, 0.35, U[j]); // each half gets its own gain, blended across the middle of the face
-        gain *= 1 + ((gL + (gR - gL) * t) - 1) * k;
+      if (shadeOn && kS && shm[j] > 1e-3 && kS[j] > 0.001) {
+        // flatten the large-scale shading: every part of the skin is brought towards the face's mean brightness
+        const gs = shadeGain[j]; const ks = kS[j];
+        gain *= 1 + (gs - 1) * ks;
+        if (U[j] < 0) { gLsum += gs * ks; gLw += ks; } else { gRsum += gs * ks; gRw += ks; }
+        shadeW += ks; if (gs <= 1 - SHADE_DOWN + 1e-3 || gs >= 1 + SHADE_UP - 1e-3) capped += ks;
       }
       if (light.enabled && light.protect) {
         const yy = y0v * gain;
@@ -554,6 +587,8 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
       after += (0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]) * k;
     }
   }
+  report.evenGain = [gLw > 0 ? gLsum / gLw : 1, gRw > 0 ? gRsum / gRw : 1];
+  report.evenClipped = shadeW > 0 ? capped / shadeW : 0;
   report.lift = liftSum / wsum;
   report.blotch = blotchSum / wsum;
   report.protectedFrac = protectedW / wsum;

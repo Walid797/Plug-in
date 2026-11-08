@@ -5,7 +5,6 @@ import { getState, updateEdit, updateSheet, updateSettings, recordHistory, start
 import { getPersonMask, hasMask, getFace, maskForegroundFraction, originalAvailable, getPreview, gatherAssets } from './media.js';
 import { renderPhoto } from '../render/renderPhoto.js';
 import { findQuickPreset, quickSheetPatch, presetCapacity, quickFields, normalizeQuickPreset, QUICK_PRESETS, presetAdjustFor, gradeStrength, detailStrength, presetFaceParams } from '../core/quickpresets.js';
-import { MAX_EVEN_GAIN } from '../core/faceengine.js';
 import { autoExposureDelta, exposureTowardTarget, suggestCrop, backgroundWhiteness, faceProtectZones, QUALITY_THRESHOLDS } from '../core/idphoto.js';
 import { isFrameInside } from '../core/crop.js';
 import { faceEllipse } from '../core/faceengine.js';
@@ -217,7 +216,7 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
             // (its correction was not at the limit) the "one side darker" warning no longer applies
             const eg = r.engine?.evenGain;
             if (preset.lightOn && preset.lightEven && eg && (eg[0] !== 1 || eg[1] !== 1)) {
-              const clipped = Math.abs(eg[0] - 1) >= MAX_EVEN_GAIN - 1e-3 || Math.abs(eg[1] - 1) >= MAX_EVEN_GAIN - 1e-3;
+              const clipped = (r.engine.evenClipped || 0) > 0.08; // more than 8 % of the skin needed more than the limit
               r.sidesEvened = { left: eg[0], right: eg[1], clipped };
               if (!clipped) r.issues = r.issues.filter((x) => x.code !== 'LIGHT_BALANCE');
             }
