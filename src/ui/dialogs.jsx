@@ -1,5 +1,5 @@
 import { useState } from 'preact/hooks';
-import { useStore, closeDialog, getState } from '../state/store.js';
+import { useStore, closeDialog, getState, openRepairBrush } from '../state/store.js';
 import { Button, Icon, Badge, Modal } from './kit.jsx';
 import { QuickPresetEditorDialog, bgColorName } from './QuickPresetEditor.jsx';
 import { formatNumber } from '../core/digits.js';
@@ -149,6 +149,11 @@ function QuickReadyDialog({ presetId, results, cancelled, aiState }) {
                 {r.light ? <Badge kind="gold" icon="sun">نور چهره اصلاح شد ({r.light > 0 ? 'روشن‌تر' : 'تیره‌تر'})</Badge> : r.crop === 'ok' ? <Badge kind="ok" icon="check">نور چهره مناسب</Badge> : null}
               </span>
               {b.detail ? <p class="tiny muted">{b.detail}</p> : null}
+              <p class="tiny muted qr-fix">
+                لکه یا داغی باقی مانده؟{' '}
+                <Button size="sm" variant="ghost" icon="brush" onClick={() => { closeDialog('review'); openRepairBrush(r.id); }}>پاک‌کردن با قلم</Button>
+                {' '}(ترمیم واقعی با پوست خود همین عکس؛ بعد از آن برگه خودکار به‌روز می‌شود.)
+              </p>
               {r.issues.length ? <p class="tiny qr-issues"><Icon name="info" size={14} />برای بررسی: {r.issues.map((q) => qualityText(q).title).join('، ')}</p> : null}
             </li>
           );

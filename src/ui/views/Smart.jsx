@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { useStore, updateEdit, toast, setSection, startTask, orderedPhotos, getState, recordHistory } from '../../state/store.js';
+import { useStore, takeRepairBrushHint, updateEdit, toast, setSection, startTask, orderedPhotos, getState, recordHistory } from '../../state/store.js';
 import { PhotoCanvas } from '../PhotoCanvas.jsx';
 import { Queue, NeedPhotos } from '../Queue.jsx';
 import { Icon, Button, Group, Notice, Badge, Select, Switch, Slider } from '../kit.jsx';
@@ -40,7 +40,7 @@ export function SmartView() {
   const handlers = useCropHandlers(photo || { id: null });
 
   const [shoulderFrac, setShoulderFrac] = useState(null);
-  const [healing, setHealing] = useState(false);
+  const [healing, setHealing] = useState(() => takeRepairBrushHint());
   const [healSize, setHealSize] = useState(4);
   useEffect(() => { setSuggestion(batch?.[photo?.id] || null); }, [photo?.id]);
   useEffect(() => {

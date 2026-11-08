@@ -324,6 +324,15 @@ export function logEvent(kind, detail = '') {
   });
 }
 
+/** One-shot hint: open the repair brush as soon as the Smart view appears (used by the ready-to-print dialog). */
+let healOnOpen = false;
+export function openRepairBrush(photoId) {
+  healOnOpen = true;
+  setState((st) => ({ ...st, selectedPhotoId: photoId, section: 'smart' }));
+  try { window.history.replaceState(null, '', '#smart'); } catch { /* file:// may refuse */ }
+}
+export function takeRepairBrushHint() { const v = healOnOpen; healOnOpen = false; return v; }
+
 export function setSection(section) {
   setState((s) => ({ ...s, section }));
   try { window.history.replaceState(null, '', `#${section}`); } catch { /* file:// may refuse */ }
