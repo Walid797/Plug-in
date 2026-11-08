@@ -33,8 +33,8 @@ export const QUICK_DEFAULTS = Object.freeze({
   printBoost: 'medium', dpi: 300, cropMarks: true, cutLines: false, borderless: false, hardMargin: 3,
   // frame drawn inside each photo (photo size unchanged): on by default in every template, width in mm
   border: true, borderWidth: 0.1, borderColor: '#000000',
-  // cut lines / crop marks sit this far outside each photo, in the white gap (limited to half the gap)
-  cutOffset: 0.5,
+  // cut lines / crop marks sit this far outside each photo, in the white (between photos: at most half the gap)
+  cutOffset: 2,
   // cut lines only around the printed photos: the unused paper stays completely white
   cutUsedOnly: true,
 });
@@ -102,7 +102,7 @@ export function normalizeQuickPreset(raw = {}) {
   p.cropMarks = bool(raw.cropMarks, D.cropMarks);
   p.cutLines = bool(raw.cutLines, D.cutLines);
   p.cutUsedOnly = bool(raw.cutUsedOnly, D.cutUsedOnly);
-  p.cutOffset = Math.round(num(raw.cutOffset, 0, 3, D.cutOffset) * 100) / 100;
+  p.cutOffset = Math.round(num(raw.cutOffset, 0, 5, D.cutOffset) * 100) / 100;
   p.border = bool(raw.border, D.border);
   p.borderWidth = Math.round(num(raw.borderWidth, 0.05, 2, D.borderWidth) * 100) / 100;
   p.borderColor = typeof raw.borderColor === 'string' && /^#[0-9a-f]{6}$/i.test(raw.borderColor) ? raw.borderColor.toLowerCase() : D.borderColor;

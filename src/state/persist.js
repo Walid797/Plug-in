@@ -36,6 +36,13 @@ export async function loadSettings() {
     settings.quickOverrides = Object.fromEntries(Object.entries(settings.quickOverrides || {}).map(([k, v]) => [k, on(v)]));
     settings.quickSchema = 3;
   }
+  if ((settings.quickSchema || 1) < 4) {
+    // v4: cut-line distance 2 mm in every template (studio request)
+    const two = (p) => (p ? { ...p, cutOffset: 2 } : p);
+    settings.quickPresets = (settings.quickPresets || []).map(two);
+    settings.quickOverrides = Object.fromEntries(Object.entries(settings.quickOverrides || {}).map(([k, v]) => [k, two(v)]));
+    settings.quickSchema = 4;
+  }
   setState((st) => ({ ...st, settings }));
   lastSaved.settings = settings;
   return settings;
@@ -100,6 +107,10 @@ export async function openProject(id) {
     const mk = project.sheet.marks || {};
     project.sheet.marks = { ...mk, borderWidth: mk.borderWidth === 0.2 || mk.borderWidth == null ? 0.1 : mk.borderWidth, cutOffset: mk.cutOffset ?? 0.5 };
     project.sheet.schema = 3;
+  }
+  if ((project.sheet.schema || 1) < 4) {
+    project.sheet.marks = { ...project.sheet.marks, cutOffset: 2 };
+    project.sheet.schema = 4;
   }
   setState((s) => ({ ...s, project, photos: map, selectedPhotoId: project.photoIds[0] || null, rev: {} }));
   await restoreThumbs(photos);
