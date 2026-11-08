@@ -34,6 +34,8 @@ export const QUICK_DEFAULTS = Object.freeze({
   border: true, borderWidth: 0.1, borderColor: '#000000',
   // cut lines / crop marks sit this far outside each photo, in the white gap (limited to half the gap)
   cutOffset: 0.5,
+  // cut lines only around the printed photos: the unused paper stays completely white
+  cutUsedOnly: true,
 });
 
 export const QUICK_FIELDS = Object.freeze(Object.keys(QUICK_DEFAULTS));
@@ -97,6 +99,7 @@ export function normalizeQuickPreset(raw = {}) {
   p.dpi = pick(raw.dpi, DPI_PRESETS, D.dpi);
   p.cropMarks = bool(raw.cropMarks, D.cropMarks);
   p.cutLines = bool(raw.cutLines, D.cutLines);
+  p.cutUsedOnly = bool(raw.cutUsedOnly, D.cutUsedOnly);
   p.cutOffset = Math.round(num(raw.cutOffset, 0, 3, D.cutOffset) * 100) / 100;
   p.border = bool(raw.border, D.border);
   p.borderWidth = Math.round(num(raw.borderWidth, 0.05, 2, D.borderWidth) * 100) / 100;
@@ -202,7 +205,7 @@ export function quickSheetPatch(preset, photoIds, makeId, papers = []) {
     align: { mode: 'center', offsetX: 0, offsetY: 0 },
     fillOrder: preset.fillOrder,
     compact: true,
-    marks: { cutLines: preset.cutLines, cropMarks: preset.cropMarks, borders: preset.border, borderWidth: preset.borderWidth, borderColor: preset.borderColor, cutOffset: preset.cutOffset },
+    marks: { cutLines: preset.cutLines, cropMarks: preset.cropMarks, borders: preset.border, borderWidth: preset.borderWidth, borderColor: preset.borderColor, cutOffset: preset.cutOffset, cutUsedOnly: preset.cutUsedOnly },
     dpi: preset.dpi,
     printer: { borderless: preset.borderless, hardMargins: sides(preset.hardMargin) },
     printBoost: preset.printBoost,

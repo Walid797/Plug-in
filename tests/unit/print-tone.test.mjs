@@ -207,7 +207,7 @@ test('border: configurable width/colour inside every photo frame, in marks, PDF 
   assert.equal(normalizeQuickPreset({ borderColor: '#AABBCC' }).borderColor, '#aabbcc');
   const preset = normalizeQuickPreset({ photoId: '3x4', border: true, borderWidth: 0.5, borderColor: '#404040', perPerson: 'sheet' });
   const patch = quickSheetPatch(preset, ['A'], (x) => `${x}1`);
-  assert.deepEqual(patch.marks, { cutLines: false, cropMarks: true, borders: true, borderWidth: 0.5, borderColor: '#404040', cutOffset: 0.5 });
+  assert.deepEqual(patch.marks, { cutLines: false, cropMarks: true, borders: true, borderWidth: 0.5, borderColor: '#404040', cutOffset: 0.5, cutUsedOnly: true });
   const layout = computeLayout(quickLayoutInput(preset, patch.items, 'exact'));
   const page = layout.pages[0];
   const on = computeMarks(layout, page, patch.marks);
@@ -256,4 +256,32 @@ test('cut guides sit in the white gap, outside the border, never beyond half the
   assert.ok(fl.pages[0].placements.every((pl) => fx.includes(Math.round(pl.photo.x * 1e4) / 1e4)), 'with no gap the guides stay on the photo edges');
   assert.equal(normalizeQuickPreset({ cutOffset: 99 }).cutOffset, 3);
   assert.equal(normalizeQuickPreset({ cutOffset: -1 }).cutOffset, 0);
+});
+
+test('with fewer photos than the sheet holds, no cut line enters the unused paper', () => {
+  const p34 = normalizeQuickPreset({ ...findQuickPreset('q-3x4-4r'), cutLines: true, cropMarks: true });
+  const patch = quickSheetPatch(p34, ['A'], (x) => `${x}1`);
+  assert.equal(patch.marks.cutUsedOnly, true);
+  const layout = computeLayout(quickLayoutInput(p34, patch.items, 'exact'));
+  assert.equal(layout.totals.placed, 4);
+  const page = layout.pages[0];
+  const right = Math.max(...page.placements.map((pl) => pl.photo.x + pl.photo.w));
+  const bottom = Math.max(...page.placements.map((pl) => pl.photo.y + pl.photo.h));
+  const top = Math.min(...page.placements.map((pl) => pl.photo.y)); const left = Math.min(...page.placements.map((pl) => pl.photo.x));
+  const under = computeMarks(layout, page, patch.marks).under;
+  const cuts = under.filter((m) => m.kind === 'cut');
+  assert.ok(cuts.length > 0);
+  for (const m of cuts) {
+    for (const x of [m.x1, m.x2]) assert.ok(x <= right + 0.5 + 1e-6 && x >= left - 0.5 - 1e-6, `cut line x ${x} stays around the printed photos (right edge ${right})`);
+    for (const y of [m.y1, m.y2]) assert.ok(y <= bottom + 0.5 + 1e-6 && y >= top - 0.5 - 1e-6, `cut line y ${y} stays around the printed photos`);
+  }
+  // crop marks also stay next to the printed block (nothing over the empty right half)
+  for (const m of under.filter((q) => q.kind === 'crop')) for (const x of [m.x1, m.x2]) assert.ok(x <= right + 0.5 + 1 + 4 + 1e-6, `crop mark x ${x}`);
+  // the old behaviour is still available: lines across the whole sheet
+  const full = computeMarks(layout, page, { ...patch.marks, cutUsedOnly: false }).under.filter((m) => m.kind === 'cut');
+  assert.ok(full.some((m) => m.x2 === layout.sheet.widthMm) && full.some((m) => m.y2 === layout.sheet.heightMm));
+  // legacy projects without the option behave as "used only"
+  const legacy = computeMarks(layout, page, { cutLines: true }).under.filter((m) => m.kind === 'cut');
+  assert.ok(legacy.every((m) => m.x2 <= right + 0.5 + 1e-6));
+  assert.equal(normalizeQuickPreset({}).cutUsedOnly, true);
 });

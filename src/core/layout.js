@@ -636,6 +636,8 @@ function dedupe(list) {
  * Cut guides (lines and crop marks) sit `cutOffset` mm OUTSIDE each photo edge,
  * in the white gap, so scissors cut in the white and never through a border;
  * the offset is limited to half the gap (0 when photos touch).
+ * Cut lines span only the block of printed photos (cutUsedOnly, default true), so
+ * the unused part of the paper stays completely white and can be reused.
  * Borders are drawn INSIDE each photo's frame (the photo keeps its exact size);
  * width in mm (0.05..2) and colour (#rrggbb) are configurable.
  */
@@ -657,8 +659,11 @@ export function computeMarks(layout, page, opts = {}) {
   const minX = Math.min(...rects.map((r) => r.x)); const maxX = Math.max(...rects.map((r) => r.x + r.w));
   const minY = Math.min(...rects.map((r) => r.y)); const maxY = Math.max(...rects.map((r) => r.y + r.h));
   if (cutLines) {
-    for (const x of xs) under.push({ x1: x, y1: 0, x2: x, y2: H, kind: 'cut' });
-    for (const y of ys) under.push({ x1: 0, y1: y, x2: W, y2: y, kind: 'cut' });
+    const usedOnly = opts.cutUsedOnly !== false;
+    const x0 = usedOnly ? xs[0] : 0; const x1 = usedOnly ? xs[xs.length - 1] : W;
+    const y0 = usedOnly ? ys[0] : 0; const y1 = usedOnly ? ys[ys.length - 1] : H;
+    for (const x of xs) under.push({ x1: x, y1: y0, x2: x, y2: y1, kind: 'cut' });
+    for (const y of ys) under.push({ x1: x0, y1: y, x2: x1, y2: y, kind: 'cut' });
   }
   if (cropMarks) {
     for (const x of xs) {

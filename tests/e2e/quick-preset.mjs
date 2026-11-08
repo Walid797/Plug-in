@@ -96,7 +96,13 @@ try {
   assert(/size:\s*152\.4mm 101\.6mm/.test(printed.size), `@page size is 4R landscape (${printed.size})`);
   await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
   await page.waitForTimeout(500);
+  // full cut lines on: they surround only the 4 printed photos, the right half of the paper stays white
+  await page.evaluate(() => window.__hoshmand.setState((s) => ({ ...s, project: { ...s.project, sheet: { ...s.project.sheet, marks: { ...s.project.sheet.marks, cutLines: true } } } })));
+  await page.waitForTimeout(600);
+  const cutX = await page.evaluate(() => [...document.querySelectorAll('.sheets .marks-under line')].filter((l) => l.getAttribute('stroke') === '#999').flatMap((l) => [Number(l.getAttribute('x1')), Number(l.getAttribute('x2'))]));
+  assert(cutX.length > 0 && Math.max(...cutX) <= 76 && Math.min(...cutX) >= 12, `cut lines stay around the printed photos (x ${Math.min(...cutX)}..${Math.max(...cutX)} mm of 152.4)`);
   await page.screenshot({ path: path.join(outDir, 'quick-print-studio.png') });
+  await page.evaluate(() => window.__hoshmand.setState((s) => ({ ...s, project: { ...s.project, sheet: { ...s.project.sheet, marks: { ...s.project.sheet.marks, cutLines: false } } } })));
 
   // Brightness test sheet: the same photo at off / low / medium / high, labelled
   await page.evaluate(() => { window.__printed = 0; });

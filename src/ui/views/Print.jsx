@@ -402,6 +402,7 @@ export function PrintView() {
             <Group title="خطوط برش و برچسب">
               <Switch label="نشانه‌های برش در حاشیه" checked={sheet.marks.cropMarks} onChange={(v) => updateSheet((sh) => ({ ...sh, marks: { ...sh.marks, cropMarks: v } }))} />
               <Switch label="خطوط برش کامل (در فاصله‌ها)" checked={sheet.marks.cutLines} onChange={(v) => updateSheet((sh) => ({ ...sh, marks: { ...sh.marks, cutLines: v } }))} />
+              {sheet.marks.cutLines ? <Switch label="خط برش فقط دور عکس‌های چاپ‌شده (بقیهٔ کاغذ سفید بماند)" checked={sheet.marks.cutUsedOnly !== false} onChange={(v) => updateSheet((sh) => ({ ...sh, marks: { ...sh.marks, cutUsedOnly: v } }))} hint="وقتی کمتر از ظرفیت برگه چاپ می‌کنید، خط‌ها به بخش خالی کاغذ نمی‌روند و آن بخش برای چاپ بعدی سالم می‌ماند." /> : null}
               {sheet.marks.cutLines || sheet.marks.cropMarks ? (
                 <NumberInput label="فاصلهٔ خط برش از لبهٔ عکس (به سمت سفیدی)" unit="ملی‌متر" value={sheet.marks.cutOffset ?? 0.5} min={0} max={3} step={0.1} maxFraction={2} onChange={(v) => updateSheet((sh) => ({ ...sh, marks: { ...sh.marks, cutOffset: v } }))}
                   hint="خط‌ها و نشانه‌های برش کمی بیرون از عکس، در فاصلهٔ سفید می‌افتند تا قیچی از بوردر رد نشود. حداکثر نصف فاصلهٔ بین عکس‌ها (اگر عکس‌ها چسبیده باشند صفر)." />
