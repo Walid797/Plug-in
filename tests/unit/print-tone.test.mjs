@@ -353,13 +353,14 @@ test('templates place the photos at the top-left; no crop marks run toward unuse
   const first = four.pages[0].placements[0].photo;
   assert.ok(Math.abs(first.x - 5) < 1e-6 && Math.abs(first.y - 5) < 1e-6, 'first photo in the top-left corner of the printable area');
   const marks = computeMarks(four, four.pages[0], patch.marks).under.filter((m) => m.kind === 'crop');
-  // 4 photos (2 × 2, turned 90°) of the 2 × 4 sheet: the printed block is compact, so every mark is a short stub right
-  // around the photos; nothing runs down or across into the free lower half of the paper
+  // 4 photos (2 × 2, turned 90°) in the top two rows of the 2 × 4 sheet: marks stay on the top, left and right (the printed
+  // block reaches those edges of the full grid) but NONE runs down into the free lower part of the paper
   const phs = four.pages[0].placements.map((pl) => pl.photo);
-  const bx0 = Math.min(...phs.map((r) => r.x)); const bx1 = Math.max(...phs.map((r) => r.x + r.w));
-  const by0 = Math.min(...phs.map((r) => r.y)); const by1 = Math.max(...phs.map((r) => r.y + r.h));
+  const by1 = Math.max(...phs.map((r) => r.y + r.h));
   assert.ok(marks.length > 0);
-  assert.ok(marks.every((m) => Math.max(m.x1, m.x2) <= bx1 + 6 && Math.max(m.y1, m.y2) <= by1 + 6 && Math.min(m.x1, m.x2) >= bx0 - 6 && Math.min(m.y1, m.y2) >= by0 - 6), 'marks stay within a few mm of the printed photos');
+  assert.ok(marks.filter((m) => m.x1 === m.x2).every((m) => m.y2 <= first.y), 'vertical marks only above the photos, none below (toward the free paper)');
+  assert.ok(marks.every((m) => Math.max(m.y1, m.y2) <= by1 + 1e-6 + 4), 'nothing below the printed rows');
+  assert.ok(marks.some((m) => m.y1 === m.y2 && m.x1 > phs[1].x + phs[1].w), 'right-side marks stay (both columns are printed)');
   // a full sheet keeps marks on all four sides
   const full = computeLayout(quickLayoutInput(p34, [{ id: 'a', copies: 8 }], 'exact'));
   const fm = computeMarks(full, full.pages[0], patch.marks).under.filter((m) => m.kind === 'crop' && m.y1 === m.y2);
@@ -369,7 +370,7 @@ test('templates place the photos at the top-left; no crop marks run toward unuse
   const one = computeLayout(quickLayoutInput(p34, [{ id: 'a', copies: 1 }], 'exact'));
   const om = computeMarks(one, one.pages[0], patch.marks).under.filter((m) => m.kind === 'crop');
   const ph = one.pages[0].placements[0].photo;
-  assert.ok(om.length > 0 && om.every((m) => Math.max(m.x1, m.x2) <= ph.x + ph.w + 6 && Math.max(m.y1, m.y2) <= ph.y + ph.h + 6), 'single photo: short marks right around it, none toward the rest of the sheet');
+  assert.ok(om.length > 0 && om.every((m) => (m.y1 === m.y2 ? m.x2 <= ph.x + 1e-6 : m.y2 <= ph.y + 1e-6)), 'single photo: marks only on the top and left, none toward the rest of the sheet');
 });
 
 test('every ready-made template carries the quality-reference engine settings; saved templates are upgraded once', () => {
@@ -446,4 +447,25 @@ test('3x4 template: 8-photo form (every photo turned 90°, 2 × 4, row by row); 
   // a size where nine cannot fit on one sheet keeps the normal layout instead of a broken one
   const big = findQuickPreset('q-4x6-4r');
   assert.equal(nineModeInput({ margin: 3.7, gap: 2 }, quickLayoutInput(big, [{ id: 'a', copies: 9 }], 'exact')), null);
+});
+
+test('crop marks never point at the free part of a partly filled sheet, also when the photos are compacted', () => {
+  const p = findQuickPreset('q-3x4-4r');
+  const patch = quickSheetPatch(p, ['A'], (x) => `${x}1`);
+  for (const n of [1, 2, 3, 4, 5, 6, 7]) {
+    const l = computeLayout(quickLayoutInput(p, [{ id: 'a', copies: n }], 'exact'));
+    const phs = l.pages[0].placements.map((q) => q.photo);
+    const bottom = Math.max(...phs.map((r) => r.y + r.h));
+    const full = l.fullBlock || l.block;
+    assert.ok(full, `${n} photos: the grid is known`);
+    const marks = computeMarks(l, l.pages[0], patch.marks).under.filter((m) => m.kind === 'crop');
+    const rowsUsed = new Set(phs.map((r) => r.y)).size;
+    if (bottom < full.y + full.h - 1e-6) {
+      assert.ok(marks.every((m) => Math.max(m.y1, m.y2) <= bottom + 1.01), `${n} photos (${rowsUsed} rows of 4): no mark below the printed rows (${Math.max(...marks.map((m) => Math.max(m.y1, m.y2)))} vs ${bottom})`);
+    }
+  }
+  // a full sheet still has marks on every side
+  const l8 = computeLayout(quickLayoutInput(p, [{ id: 'a', copies: 8 }], 'exact'));
+  const m8 = computeMarks(l8, l8.pages[0], patch.marks).under.filter((m) => m.kind === 'crop');
+  assert.ok(m8.some((m) => m.x1 === m.x2 && m.y1 > 100), 'full sheet: bottom marks');
 });

@@ -380,6 +380,7 @@ function layoutUniform(cfg, sheet, orientation, items, errors, warnings) {
   }
 
   let slots = chosen.slots;
+  const fullBox = bbox(chosen.slots); // the whole grid of the sheet, before a partial sheet is compacted
   let compacted = false;
   // Column-by-column filling keeps the full-sheet slot positions (no compaction), so a
   // partial sheet uses whole columns and the unused paper stays in one piece.
@@ -420,6 +421,10 @@ function layoutUniform(cfg, sheet, orientation, items, errors, warnings) {
     grid: { cols: chosen.cols ?? null, rows: chosen.rows ?? null, slotsPerPage: slots.length },
     unusedSlots: unused, effItems,
     block: { x: a.x + off.x + box.x, y: a.y + off.y + box.y, w: box.w, h: box.h },
+    // the full grid (all slots, used or not) where the photos sit at its top-left corner: crop marks use it to know
+    // which sides face free paper (a partly filled sheet); with another alignment the compact block is used
+    fullBlock: compacted && cfg.align.mode === 'top-left' && !isColumnOrder(cfg.fillOrder)
+      ? { x: a.x + off.x + fullBox.x, y: a.y + off.y + fullBox.y, w: fullBox.w, h: fullBox.h } : null,
   };
 }
 
@@ -612,7 +617,7 @@ export function computeLayout(input) {
     ok: true, errors: [], warnings, analysis,
     orientation: res.orientation, sheet: res.sheet, pages: res.pages,
     hardMargins: cfg.printer.borderless ? { top: 0, right: 0, bottom: 0, left: 0 } : { ...cfg.printer.hardMargins },
-    capacity: res.capacity, kind: res.kind, grid: res.grid, block: res.block, compacted: res.compacted,
+    capacity: res.capacity, kind: res.kind, grid: res.grid, block: res.block, fullBlock: res.fullBlock || null, compacted: res.compacted,
     margins: { ...cfg.margins }, gap: { ...cfg.gap }, label: { ...cfg.label },
   };
   printerWarnings(result, cfg, warnings);
@@ -700,7 +705,7 @@ export function computeMarks(layout, page, opts = {}) {
   if (cropMarks) {
     // A side gets crop marks only where the printed block reaches the edge of the full-sheet
     // grid: where free paper follows (a partly filled sheet), no marks run into it.
-    const blk = layout.block;
+    const blk = layout.fullBlock || layout.block;
     const eps = 1e-3;
     const sideTop = !blk || minY <= blk.y + eps; const sideBottom = !blk || maxY >= blk.y + blk.h - eps;
     const sideLeft = !blk || minX <= blk.x + eps; const sideRight = !blk || maxX >= blk.x + blk.w - eps;
