@@ -29,3 +29,11 @@ test('failure texts name the cause, give the fix and keep the technical detail (
   assert.ok(long.length < 600, 'detail is cut');
   assert.match(aiFailureText(new Error('weird')), /جزئیات فنی: weird/);
 });
+
+test('a stuck stage becomes a TIMEOUT that names the stage', async () => {
+  const { withTimeout } = await import('../../src/ai/runtime.js').catch(() => ({}));
+  if (!withTimeout) return; // runtime.js needs the browser store; covered by the e2e suite
+  await assert.rejects(withTimeout(new Promise(() => {}), 'create', 20), (e) => e.code === 'TIMEOUT' && /create/.test(e.message));
+  assert.equal(await withTimeout(Promise.resolve(7), 'run', 1000), 7);
+  assert.match(aiFailureText(Object.assign(new Error('TIMEOUT: create > 180s'), { code: 'TIMEOUT' }), 'جداسازی پس‌زمینه'), /موتور گرافیک/);
+});

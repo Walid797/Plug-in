@@ -7,6 +7,7 @@ const { app, BrowserWindow, Menu, dialog, session, shell } = require('electron')
 const path = require('node:path');
 const fs = require('node:fs');
 const { startAppServer } = require('./appserver.cjs');
+const { needsSoftwareGraphics, useSoftwareGraphics } = require('./graphics.cjs');
 
 const PORT = 47877;
 const ORIGIN = `http://127.0.0.1:${PORT}`;
@@ -20,6 +21,34 @@ let srv = null;
 // not apply here.
 app.commandLine.appendSwitch('enable-unsafe-swiftshader');
 
+function readSettings() {
+  try { return JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'desktop-settings.json'), 'utf8')); } catch { return {}; }
+}
+const stateFile = () => path.join(app.getPath('userData'), 'desktop-state.json');
+function readState() {
+  try { return JSON.parse(fs.readFileSync(stateFile(), 'utf8')); } catch { return {}; }
+}
+function writeState(patch) {
+  try { fs.writeFileSync(stateFile(), JSON.stringify({ ...readState(), ...patch })); } catch { /* read-only profile */ }
+}
+
+// A PC without a graphics card: always use SwiftShader for WebGL (see graphics.cjs). Must be set before "ready".
+// Override in desktop-settings.json: { "graphics": "software" | "hardware" | "auto" }.
+const SOFTWARE_GRAPHICS = useSoftwareGraphics(readSettings(), readState());
+if (SOFTWARE_GRAPHICS) app.commandLine.appendSwitch('use-angle', 'swiftshader');
+
+/** In "auto" mode, if this PC has no real graphics card, remember it and restart once in software mode. */
+async function switchToSoftwareGraphicsIfNeeded() {
+  if (SOFTWARE_GRAPHICS || (readSettings().graphics || 'auto') !== 'auto') return false;
+  let info = null;
+  try { info = await app.getGPUInfo('basic'); } catch { return false; }
+  if (!needsSoftwareGraphics(info)) return false;
+  writeState({ softwareGraphics: true });
+  app.relaunch();
+  app.exit(0);
+  return true;
+}
+
 // Permissions the app may use: the camera (taking a photo inside the app) and persistent storage (so projects and
 // photos are never evicted when the disk is nearly full). Everything else is denied.
 const ALLOWED_PERMISSIONS = new Set(['media', 'persistent-storage']);
@@ -27,9 +56,6 @@ const ALLOWED_PERMISSIONS = new Set(['media', 'persistent-storage']);
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
 
-function readSettings() {
-  try { return JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'desktop-settings.json'), 'utf8')); } catch { return {}; }
-}
 
 /**
  * After an update the service worker of the previous version would keep serving the old app code from its cache
@@ -37,15 +63,12 @@ function readSettings() {
  * Storage for this origin. Projects, photos, settings and installed models (IndexedDB, localStorage) are kept.
  */
 async function dropStaleAppCache() {
-  const file = path.join(app.getPath('userData'), 'desktop-state.json');
-  let state = {};
-  try { state = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* first run */ }
   const version = app.getVersion();
-  if (state.appVersion === version) return;
+  if (readState().appVersion === version) return;
   try {
     await session.defaultSession.clearStorageData({ origin: ORIGIN, storages: ['serviceworkers', 'cachestorage'] });
   } catch { /* nothing cached yet */ }
-  try { fs.writeFileSync(file, JSON.stringify({ ...state, appVersion: version })); } catch { /* read-only profile */ }
+  writeState({ appVersion: version });
 }
 
 function setupUpdates() {
@@ -65,6 +88,7 @@ function setupUpdates() {
 }
 
 async function createWindow() {
+  if (await switchToSoftwareGraphicsIfNeeded()) return;
   try {
     srv = await startAppServer(path.join(__dirname, 'www'), PORT);
   } catch (err) {

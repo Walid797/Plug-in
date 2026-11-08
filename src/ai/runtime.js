@@ -20,6 +20,19 @@ function loadScript(src) {
 
 const abs = (p) => new URL(p, location.href).href;
 
+/**
+ * Time limits per stage (generous: a PC without a graphics card runs WebGL in software). A stage that never settles
+ * (seen on a Windows PC without a graphics card) becomes a TIMEOUT error naming the stage instead of an endless spinner.
+ */
+export const STAGE_LIMIT_MS = { runtime: 60_000, model: 60_000, create: 180_000, run: 180_000 };
+export function withTimeout(promise, stage, ms = STAGE_LIMIT_MS[stage] || 120_000) {
+  let t;
+  const timeout = new Promise((_, reject) => {
+    t = setTimeout(() => reject(Object.assign(new Error(`TIMEOUT: ${stage} > ${Math.round(ms / 1000)}s`), { code: 'TIMEOUT', stage })), ms);
+  });
+  return Promise.race([Promise.resolve(promise), timeout]).finally(() => clearTimeout(t));
+}
+
 async function vision() {
   if (!window.Vision) await loadScript('vendor/mediapipe/vision_bundle.js');
   if (!window.Vision) throw Object.assign(new Error('RUNTIME_LOAD'), { code: 'RUNTIME_LOAD' });
@@ -48,12 +61,12 @@ function delegateOrder() {
 }
 
 async function createMediapipe(id, factory, order) {
-  const V = await vision();
-  const bytes = await loadModelBytes(id);
+  const V = await withTimeout(vision(), 'runtime');
+  const bytes = await withTimeout(loadModelBytes(id), 'model');
   let lastErr = null;
   for (const delegate of order) {
     try {
-      const inst = await factory(V, { modelAssetBuffer: bytes, delegate });
+      const inst = await withTimeout(factory(V, { modelAssetBuffer: bytes, delegate }), 'create');
       return { instance: inst, delegate, backend: delegate === 'GPU' ? 'WebGL (GPU)' : 'WASM (CPU)' };
     } catch (e) { lastErr = e; }
   }
@@ -106,8 +119,9 @@ export async function runWithFallback(id, getter, fn, validate = () => true) {
   const inst = await getter();
   if (delegateOf(id) !== 'GPU') {
     try {
-      return await fn(inst);
+      return await withTimeout(fn(inst), 'run');
     } catch (e) {
+      if (e?.code === 'TIMEOUT') throw e; // a stuck engine is not retried (it would only double the wait)
       // one fresh start: the model is released (its memory is freed) and recreated, then the run is repeated
       console.warn(`inference failed for ${id}; retrying once with a fresh model`, e);
       disposeModel(id);

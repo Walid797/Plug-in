@@ -172,7 +172,7 @@ function Capabilities() {
         <dt>ذخیره‌سازی</dt><dd>{storage.mode === 'memory' ? <Badge kind="err">فقط حافظهٔ موقت</Badge> : <Badge kind="ok">{storage.backend === 'opfs' ? 'OPFS + IndexedDB' : 'IndexedDB'}</Badge>}</dd>
         <dt>فضای مصرف‌شده</dt><dd>{caps.storage.usage != null ? `${formatBytes(caps.storage.usage)} از ${formatBytes(caps.storage.quota)}` : 'نامشخص'}{caps.storage.persisted ? ' · ماندگار' : ''}</dd>
         <dt>WebGPU</dt><dd>{yes(caps.webgpu)} {caps.webgpuAdapter ? <span class="faint tiny ltr">{caps.webgpuAdapter}</span> : null}</dd>
-        <dt>WebGL2</dt><dd>{yes(caps.webgl2)}</dd>
+        <dt>WebGL2</dt><dd>{yes(caps.webgl2)} {caps.webglRenderer ? <span class="faint tiny ltr">{caps.webglRenderer}</span> : null}</dd>
         <dt>WebAssembly SIMD</dt><dd>{yes(caps.wasmSimd)}</dd>
         <dt>WASM چندرشته‌ای</dt><dd>{yes(caps.wasmThreads)} {!caps.wasmThreads && !caps.fileMode ? <span class="faint tiny">(نیازمند سرور با سرآیندهای ایزوله‌سازی)</span> : null}</dd>
         <dt>OffscreenCanvas</dt><dd>{yes(caps.offscreen2d)}</dd>

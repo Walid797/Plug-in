@@ -141,7 +141,8 @@ export function BackgroundView() {
         </section>
         <aside class="panel" aria-label="تنظیمات پس‌زمینه">
           <div class="panel-inner">
-            {!canRun ? <Notice kind="warn" title="حذف خودکار پس‌زمینه در دسترس نیست"><p>{reason}</p><p>این برنامه حذف پس‌زمینه را با روش ساده و غیرهوشمند (مثل حذف رنگ) جعل نمی‌کند.</p><Button size="sm" variant="ghost" icon="settings" onClick={() => setSection('settings')}>نصب مدل</Button></Notice> : null}
+            {!canRun && ai.ok && segState?.status === 'loading' ? <Notice kind="info" title="مدل جداسازی در حال آماده شدن است"><p>بار اول چند ثانیه طول می‌کشد؛ روی کمپیوتر بدون کارت گرافیک ممکن است تا یک دقیقه شود. اگر بیش از ۳ دقیقه طول بکشد، برنامه متوقف می‌کند و علت را می‌گوید.</p></Notice> : null}
+            {!canRun && !(ai.ok && segState?.status === 'loading') ? <Notice kind="warn" title="حذف خودکار پس‌زمینه در دسترس نیست"><p>{reason}</p><p>این برنامه حذف پس‌زمینه را با روش ساده و غیرهوشمند (مثل حذف رنگ) جعل نمی‌کند.</p><Button size="sm" variant="ghost" icon="settings" onClick={() => setSection('settings')}>نصب مدل</Button></Notice> : null}
             {masked ? (
               <Group title="وضعیت">
                 <Switch label="پس‌زمینهٔ جدید فعال باشد" checked={bg.enabled} onChange={(v) => setBg({ enabled: v })} hint="با خاموش کردن، عکس اصلی بدون تغییر نمایش داده می‌شود." />

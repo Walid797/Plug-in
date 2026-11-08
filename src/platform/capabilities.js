@@ -41,7 +41,16 @@ export async function detectCapabilities() {
     maxCanvasPixels: isIOS() ? 16_777_216 : 120_000_000,
   };
   try { caps.wasmSimd = caps.wasm && WebAssembly.validate(WASM_SIMD); } catch { /* no simd */ }
-  try { caps.webgl2 = !!document.createElement('canvas').getContext('webgl2'); } catch { /* none */ }
+  try {
+    const gl = document.createElement('canvas').getContext('webgl2');
+    caps.webgl2 = !!gl;
+    if (gl) {
+      // which graphics engine the AI models really run on (hardware GPU, SwiftShader, Microsoft Basic Render Driver…)
+      const ext = gl.getExtension('WEBGL_debug_renderer_info');
+      caps.webglRenderer = String((ext && gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) || gl.getParameter(gl.RENDERER) || '');
+      gl.getExtension('WEBGL_lose_context')?.loseContext();
+    }
+  } catch { /* none */ }
   try {
     if (caps.offscreenCanvas) caps.offscreen2d = !!new OffscreenCanvas(1, 1).getContext('2d');
   } catch { /* none */ }

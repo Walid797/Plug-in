@@ -25,7 +25,7 @@
     "copyright": "Hoshmand Photo Studio",
     "asar": false,
     "directories": { "output": "dist", "buildResources": "build" },
-    "files": ["main.cjs", "appserver.cjs", "package.json", "www/**/*"],
+    "files": ["main.cjs", "appserver.cjs", "graphics.cjs", "package.json", "www/**/*"],
     "win": {
       "target": [{ "target": "nsis", "arch": ["x64"] }],
       "icon": "build/icon.png"
