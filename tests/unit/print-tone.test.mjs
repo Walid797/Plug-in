@@ -207,7 +207,7 @@ test('border: configurable width/colour inside every photo frame, in marks, PDF 
   assert.equal(normalizeQuickPreset({ borderColor: '#AABBCC' }).borderColor, '#aabbcc');
   const preset = normalizeQuickPreset({ photoId: '3x4', border: true, borderWidth: 0.5, borderColor: '#404040', perPerson: 'sheet' });
   const patch = quickSheetPatch(preset, ['A'], (x) => `${x}1`);
-  assert.deepEqual(patch.marks, { cutLines: false, cropMarks: true, borders: true, borderWidth: 0.5, borderColor: '#404040', cutOffset: 2, cutUsedOnly: true });
+  assert.deepEqual(patch.marks, { cutLines: true, cropMarks: true, borders: true, borderWidth: 0.5, borderColor: '#404040', cutOffset: 2, cutUsedOnly: true });
   const layout = computeLayout(quickLayoutInput(preset, patch.items, 'exact'));
   const page = layout.pages[0];
   const on = computeMarks(layout, page, patch.marks);
@@ -295,6 +295,14 @@ test('with fewer photos than the sheet holds, no cut line enters the unused pape
   const legacy = computeMarks(layout, page, { cutLines: true }).under.filter((m) => m.kind === 'cut');
   assert.ok(legacy.every((m) => m.x2 <= right + 1 + 1e-6));
   assert.equal(normalizeQuickPreset({}).cutUsedOnly, true);
+});
+
+test('full cut lines are on in every template (and can be turned off)', () => {
+  for (const p of QUICK_PRESETS) { assert.equal(p.cutLines, true); assert.equal(p.cutUsedOnly, true); }
+  assert.equal(normalizeQuickPreset({ photoId: '3x4' }).cutLines, true);
+  assert.equal(normalizeQuickPreset({ cutLines: false }).cutLines, false);
+  const patch = quickSheetPatch(findQuickPreset('q-3x4-4r'), ['A'], (x) => `${x}1`);
+  assert.equal(patch.marks.cutLines, true);
 });
 
 test('templates place the photos at the top-left; no crop marks run toward unused paper', () => {

@@ -43,6 +43,13 @@ export async function loadSettings() {
     settings.quickOverrides = Object.fromEntries(Object.entries(settings.quickOverrides || {}).map(([k, v]) => [k, two(v)]));
     settings.quickSchema = 4;
   }
+  if ((settings.quickSchema || 1) < 5) {
+    // v5: full cut lines are on in every template (studio request); saved templates follow once
+    const on = (p) => (p ? { ...p, cutLines: true } : p);
+    settings.quickPresets = (settings.quickPresets || []).map(on);
+    settings.quickOverrides = Object.fromEntries(Object.entries(settings.quickOverrides || {}).map(([k, v]) => [k, on(v)]));
+    settings.quickSchema = 5;
+  }
   setState((st) => ({ ...st, settings }));
   lastSaved.settings = settings;
   return settings;

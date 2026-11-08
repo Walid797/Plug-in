@@ -91,20 +91,19 @@ try {
   }));
   assert(printed.sheets === 1 && printed.imgs === 4, `print DOM ${JSON.stringify(printed)}`);
   // crop marks sit 0.5 mm outside the photos (in the white gap), not on the photo edge
-  const guides = await page.evaluate(() => [...document.querySelectorAll('#print-root .marks-under line')].filter((l) => l.getAttribute('x1') === l.getAttribute('x2')).map((l) => Number(l.getAttribute('x1'))));
+  const guides = await page.evaluate(() => [...document.querySelectorAll('#print-root .marks-under line')].filter((l) => l.getAttribute('stroke') !== '#999' && l.getAttribute('x1') === l.getAttribute('x2')).map((l) => Number(l.getAttribute('x1'))));
   assert(guides.some((x) => Math.abs(x - 4) < 1e-6) && guides.some((x) => Math.abs(x - 36) < 1e-6) && guides.some((x) => Math.abs(x - 68) < 1e-6) && !guides.some((x) => Math.abs(x - 5) < 1e-6), `outer guides 1 mm out, same as the mid-gap line (36), photos at top-left (${guides})`);
-  const horiz = await page.evaluate(() => [...document.querySelectorAll('#print-root .marks-under line')].filter((l) => l.getAttribute('y1') === l.getAttribute('y2')).flatMap((l) => [Number(l.getAttribute('x1')), Number(l.getAttribute('x2'))]));
+  const horiz = await page.evaluate(() => [...document.querySelectorAll('#print-root .marks-under line')].filter((l) => l.getAttribute('stroke') !== '#999' && l.getAttribute('y1') === l.getAttribute('y2')).flatMap((l) => [Number(l.getAttribute('x1')), Number(l.getAttribute('x2'))]));
   assert(horiz.length > 0 && Math.max(...horiz) <= 4, `no horizontal crop marks toward the free paper on the right (max x ${Math.max(...horiz)})`);
   assert(/size:\s*152\.4mm 101\.6mm/.test(printed.size), `@page size is 4R landscape (${printed.size})`);
   await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
   await page.waitForTimeout(500);
-  // full cut lines on: they surround only the 4 printed photos, the right half of the paper stays white
-  await page.evaluate(() => window.__hoshmand.setState((s) => ({ ...s, project: { ...s.project, sheet: { ...s.project.sheet, marks: { ...s.project.sheet.marks, cutLines: true } } } })));
-  await page.waitForTimeout(600);
+  // full cut lines are on in the template: they surround only the 4 printed photos, the right half of the paper stays white
+  assert((await page.evaluate(() => window.__hoshmand.getState().project.sheet.marks.cutLines)) === true, 'full cut lines enabled by the template');
+  await page.waitForTimeout(300);
   const cutX = await page.evaluate(() => [...document.querySelectorAll('.sheets .marks-under line')].filter((l) => l.getAttribute('stroke') === '#999').flatMap((l) => [Number(l.getAttribute('x1')), Number(l.getAttribute('x2'))]));
   assert(cutX.length > 0 && Math.max(...cutX) <= 69 && Math.min(...cutX) >= 3, `cut lines stay around the printed photos (x ${Math.min(...cutX)}..${Math.max(...cutX)} mm of 152.4)`);
   await page.screenshot({ path: path.join(outDir, 'quick-print-studio.png') });
-  await page.evaluate(() => window.__hoshmand.setState((s) => ({ ...s, project: { ...s.project, sheet: { ...s.project.sheet, marks: { ...s.project.sheet.marks, cutLines: false } } } })));
 
   // Brightness test sheet: the same photo at off / low / medium / high, labelled
   await page.evaluate(() => { window.__printed = 0; });
