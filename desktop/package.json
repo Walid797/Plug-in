@@ -1,0 +1,45 @@
+{
+  "name": "hoshmand-photo-studio-desktop",
+  "productName": "Hoshmand Photo Studio",
+  "version": "1.0.0",
+  "description": "Hoshmand Photo Studio — offline desktop app (Windows installer) wrapping the local web app",
+  "author": "Hoshmand Photo Studio",
+  "private": true,
+  "main": "main.cjs",
+  "scripts": {
+    "prepare-www": "node prepare.mjs",
+    "start": "npm run prepare-www && electron .",
+    "dist": "npm run prepare-www && electron-builder --win --x64 --publish never",
+    "dist:publish": "npm run prepare-www && electron-builder --win --x64 --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "6.6.2"
+  },
+  "devDependencies": {
+    "electron": "37.2.0",
+    "electron-builder": "26.0.12"
+  },
+  "build": {
+    "appId": "af.hoshmand.photostudio",
+    "productName": "Hoshmand Photo Studio",
+    "copyright": "Hoshmand Photo Studio",
+    "asar": false,
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["main.cjs", "appserver.cjs", "package.json", "www/**/*"],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Hoshmand Photo Studio",
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "Hoshmand-Photo-Studio-Setup-${version}.${ext}"
+    },
+    "publish": [{ "provider": "github", "owner": "Walid797", "repo": "Plug-in", "releaseType": "release" }]
+  }
+}
