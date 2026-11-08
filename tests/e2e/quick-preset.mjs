@@ -37,7 +37,7 @@ try {
   assert(readyText.includes('تنظیم رنگ قالب اعمال شد'), 'colour grading engine ran');
   assert(/قرمزی بیش‌ازحد پوست کم شد|رنگ پوست طبیعی بود/.test(readyText), `skin engine reported (${readyText.slice(0, 600)})`);
   assert(/نور صورت/.test(readyText), 'lighting engine reported');
-  assert(/جوش و لکه‌های کوچک پاک شد|لکهٔ واضحی برای پاک‌کردن پیدا نشد/.test(readyText), 'spot healing reported');
+  assert(/جوش، خال و لکه‌ها خودکار پاک شد|لکهٔ واضحی برای پاک‌کردن پیدا نشد/.test(readyText), 'spot healing reported');
 
   assert(/هر دو شانه دیده می‌شود|کادر برای دیدن شانه‌ها بازتر شد|شانه‌ها کامل دیده نمی‌شوند/.test(readyText), 'shoulders reported');
 

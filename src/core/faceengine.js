@@ -352,7 +352,9 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
   const x0 = Math.max(0, Math.floor(ell.cx - Math.max(ell.rx, ell.ry) * 1.2));
   const x1 = Math.min(w, Math.ceil(ell.cx + Math.max(ell.rx, ell.ry) * 1.2));
   const y0 = Math.max(0, Math.floor(ell.cy - Math.max(ell.rx, ell.ry) * 1.2));
-  const y1 = Math.min(h, Math.ceil(ell.cy + Math.max(ell.rx, ell.ry) * 1.2));
+  // blemish removal also covers the throat and neck below the chin (the skin-colour gate keeps collar and clothes out)
+  const neckReach = skin.enabled && skin.spots > 0 ? ell.ry * 1.95 : 0;
+  const y1 = Math.min(h, Math.ceil(ell.cy + Math.max(Math.max(ell.rx, ell.ry) * 1.2, neckReach)));
   const bw = x1 - x0; const bh = y1 - y0;
   if (bw < 8 || bh < 8) return { applied: false, reason: 'NO_FACE' };
   const n = bw * bh;
@@ -376,6 +378,10 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
       // (sideways only: widening upwards would reach the hair)
       const dW = Math.hypot(u * 0.77, v);
       weW[j] = dW <= 1.05 ? 1 : dW >= 1.3 ? 0 : 1 - smooth(1.05, 1.3, dW);
+      if (neckReach > 0 && v > 0.8) { // throat and neck: a band below the jaw, as wide as the neck
+        const nw = (1 - smooth(0.78, 0.98, Math.abs(u))) * (1 - smooth(1.75, 1.95, v)) * smooth(0.8, 0.95, v);
+        if (nw > weW[j]) weW[j] = nw;
+      }
       if (d < 0.6 && Y[j] > 50 && Y[j] < 240 && Cb[j] > 77 && Cb[j] < 127 && Cr[j] > 133 && Cr[j] < 173) { seedCb.push(Cb[j]); seedCr.push(Cr[j]); }
     }
   }
@@ -480,7 +486,7 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
         if (seenS[j0] || (spots.dY[j0] === 0 && spots.dCr[j0] === 0 && spots.dCb[j0] === 0)) continue;
         const pix = []; let hit = false; stk.length = 0; stk.push(j0); seenS[j0] = 1;
         while (stk.length) {
-          const j = stk.pop(); pix.push(j); if (hair.mask[j]) hit = true;
+          const j = stk.pop(); pix.push(j); if (hair.near[j]) hit = true;
           const x = j % bw; const y = (j - x) / bw;
           for (let oy = -1; oy <= 1; oy += 1) for (let ox = -1; ox <= 1; ox += 1) {
             const xx = x + ox; const yy = y + oy;
@@ -560,7 +566,7 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
 /**
  * Hair-like dark structures (hairs, stubble strokes, lashes, brows) and a margin around them. Compact dark blobs
  * (a very dark mole) are not hair. Every automatic retouch skips this mask completely: hair is never damaged.
- * @returns {{mask:Uint8Array, dark:Uint8Array, skinMed:number}}
+ * @returns {{mask:Uint8Array, near:Uint8Array, dark:Uint8Array, skinMed:number}}
  */
 export function hairMask(Y, sure, bw, bh, rx) {
   const n = bw * bh;
@@ -590,14 +596,19 @@ export function hairMask(Y, sure, bw, bh, rx) {
     const vxx = sxx / c - mx * mx; const vyy = syy / c - my * my; const vxy = sxy / c - mx * my;
     const tr = vxx + vyy; const dt = Math.sqrt(Math.max(0, ((vxx - vyy) / 2) ** 2 + vxy * vxy));
     const e1 = tr / 2 + dt; const e2 = Math.max(1e-3, tr / 2 - dt);
-    const compact = c >= 6 && 4 * Math.sqrt(e2) >= 3 && Math.sqrt(e1 / e2) < 2.5 && c < Math.PI * (rx * 0.06) ** 2;
+    // a few dark pixels (the core of a mole) are not a hair; a line, a thin stroke or a big dark mass is
+    const compact = c < 6 ? Math.sqrt(e1 / e2) < 2.5 : 4 * Math.sqrt(e2) >= 3 && Math.sqrt(e1 / e2) < 2.5 && c < Math.PI * (rx * 0.06) ** 2;
     if (!compact) for (const j of pix) hair[j] = 1;
   }
-  const rho = Math.max(4, Math.round(rx * 0.03));
+  const rho = 2; // a heal never reaches beyond its own disc, so a thin margin is enough
   const spread = boxFilter(hair, bw, bh, rho);
   const mask = new Uint8Array(n);
   for (let j = 0; j < n; j += 1) mask[j] = spread[j] > 1e-4 ? 1 : 0;
-  return { mask, dark, skinMed };
+  // the pixel-wise (older) pass corrects a blob plus a halo around it: it keeps a wider distance
+  const nearSpread = boxFilter(hair, bw, bh, 6);
+  const near = new Uint8Array(n);
+  for (let j = 0; j < n; j += 1) near[j] = nearSpread[j] > 1e-4 ? 1 : 0;
+  return { mask, near, dark, skinMed };
 }
 
 /**
@@ -740,15 +751,30 @@ export function findBlemishes(Y, Cr, sure, protect, soft, bw, bh, rx, strength =
   const discs = [];
   for (const a of kept.slice(0, 80)) {
     const r = clamp(0.62 * a.thick + 2.4, 2.6, Math.max(3, rx * 0.05)); // small pen: never a big smear
-    // hair guard: hair (or a margin around it) anywhere in or next to the mark means: do not touch it
-    let hairHit = false;
-    for (let y = Math.max(0, Math.floor(a.my - r * 1.6)); y <= Math.min(bh - 1, Math.ceil(a.my + r * 1.6)) && !hairHit; y += 1) {
-      for (let x = Math.max(0, Math.floor(a.mx - r * 1.6)); x <= Math.min(bw - 1, Math.ceil(a.mx + r * 1.6)); x += 1) if (H.mask[y * bw + x]) { hairHit = true; break; }
+    // hair guard (1): a mark buried in hair is left alone; (2) below, every single disc must stay clear of hair
+    let inHair = 0;
+    for (const j of a.pix) if (H.mask[j]) inHair += 1;
+    if (inHair > 0.3 * a.pix.length) { rejected += 1; continue; }
+    // the faint penumbra around a mark (still above a low threshold, within 4 px, never hair) belongs to it: heal it too
+    {
+      const mark = new Map(); for (const j of a.pix) mark.set(j, 0);
+      let frontier = [...a.pix];
+      for (let step = 1; step <= 4 && frontier.length && mark.size < a.pix.length * 3; step += 1) {
+        const nxt = [];
+        for (const j of frontier) {
+          const x = j % bw; const y = (j - x) / bw;
+          for (let oy = -1; oy <= 1; oy += 1) for (let ox = -1; ox <= 1; ox += 1) {
+            const xx = x + ox; const yy = y + oy;
+            if (xx < 0 || yy < 0 || xx >= bw || yy >= bh) continue;
+            const jj = yy * bw + xx;
+            if (mark.has(jj) || H.mask[jj] || sm[jj] < 0.4 || cs[jj] < 0.4 * T) continue;
+            mark.set(jj, step); nxt.push(jj);
+          }
+        }
+        frontier = nxt;
+      }
+      a.pix = [...mark.keys()];
     }
-    if (!hairHit) {
-      for (const j of a.pix) if (H.mask[j]) { hairHit = true; break; }
-    }
-    if (hairHit) { rejected += 1; continue; }
     // discs: centre first, then whatever is still uncovered (a long stain gets several small discs)
     const order = [...a.pix].sort((p, q) => Math.hypot(p % bw - a.mx, ((p - (p % bw)) / bw) - a.my) - Math.hypot(q % bw - a.mx, ((q - (q % bw)) / bw) - a.my));
     const cover = new Set();
@@ -756,6 +782,11 @@ export function findBlemishes(Y, Cr, sure, protect, soft, bw, bh, rx, strength =
     for (const j of order) {
       if (cover.has(j) || placed >= 14) continue;
       const x = j % bw; const y = (j - x) / bw;
+      let nearHair = false;
+      for (let yy = Math.max(0, Math.floor(y - r * 1.25)); yy <= Math.min(bh - 1, Math.ceil(y + r * 1.25)) && !nearHair; yy += 1) {
+        for (let xx = Math.max(0, Math.floor(x - r * 1.25)); xx <= Math.min(bw - 1, Math.ceil(x + r * 1.25)); xx += 1) if (H.mask[yy * bw + xx]) { nearHair = true; break; }
+      }
+      if (nearHair) continue;
       discs.push({ x: x + 0.5, y: y + 0.5, r }); placed += 1;
       for (const k of a.pix) { const kx = k % bw; const ky = (k - kx) / bw; if (Math.hypot(kx - x, ky - y) < r * 0.8) cover.add(k); }
     }
