@@ -2,7 +2,7 @@
 // with a live, to-scale preview of the sheet computed by the real layout engine.
 import { useMemo, useState } from 'preact/hooks';
 import { useStore, closeDialog, confirmDialog, toast } from '../state/store.js';
-import { Button, Icon, Group, NumberInput, Select, Segmented, Switch, Notice, Badge, Modal } from './kit.jsx';
+import { Button, Icon, Group, NumberInput, Select, Segmented, Switch, Notice, Badge, Modal, Slider } from './kit.jsx';
 import { formatNumber, toFaDigits } from '../core/digits.js';
 import { orientationName, layoutErrorText } from '../i18n/fa.js';
 import { PAPER_PRESETS, PHOTO_PRESETS, RULE_PROFILES, BACKGROUND_PRESETS, DPI_PRESETS } from '../core/presets.js';
@@ -127,6 +127,26 @@ export function QuickPresetEditorDialog({ presetId, mode = 'edit' }) {
             <Switch label="اصلاح نور چهرهٔ خیلی تاریک یا خیلی روشن" checked={d.autoLight} onChange={(v) => set({ autoLight: v })} hint="فقط چهره‌ای که بررسی کیفیت آن را تاریک/پرنور می‌داند؛ رنگ طبیعی پوست عوض نمی‌شود." />
           </Group>
 
+          {d.whiteBg ? (
+            <Group title="اصلاح لبه‌ها و سایه">
+              <Switch label="چسباندن لبه به جزئیات عکس (فیلتر هدایت‌شده)" checked={d.edgeAware} onChange={(v) => set({ edgeAware: v })} />
+              <Slider label="جمع/گسترش لبه" min={-100} max={100} value={d.edgeShift} defaultValue={0} format={(v) => formatNumber(v)} onInput={(v) => set({ edgeShift: v })} />
+              <Slider label="نرمی لبه" min={0} max={100} value={d.edgeSoftness} defaultValue={40} format={(v) => formatNumber(v)} onInput={(v) => set({ edgeSoftness: v })} />
+              <Slider label="محو لبه (پیکسل)" min={0} max={12} value={d.edgeFeather} defaultValue={1} format={(v) => formatNumber(v)} onInput={(v) => set({ edgeFeather: v })} />
+              <Switch label="پاک‌سازی رنگ قدیمی در لبهٔ مو" checked={d.decontaminate} onChange={(v) => set({ decontaminate: v })} />
+              <Switch label="سایهٔ نرم پشت شخص" checked={d.shadow} onChange={(v) => set({ shadow: v })} />
+              {d.shadow ? (
+                <>
+                  <Slider label="شدت سایه" min={0} max={80} value={d.shadowOpacity} defaultValue={25} format={(v) => `${formatNumber(v)}٪`} onInput={(v) => set({ shadowOpacity: v })} />
+                  <Slider label="پخش سایه (ملی‌متر)" min={0} max={6} step={0.1} value={d.shadowBlur} defaultValue={1.5} format={(v) => formatNumber(v, { maxFraction: 1 })} onInput={(v) => set({ shadowBlur: v })} />
+                  <Slider label="فاصلهٔ افقی سایه (ملی‌متر)" min={-4} max={4} step={0.1} value={d.shadowX} defaultValue={0} format={(v) => formatNumber(v, { maxFraction: 1 })} onInput={(v) => set({ shadowX: v })} />
+                  <Slider label="فاصلهٔ عمودی سایه (ملی‌متر)" min={-4} max={4} step={0.1} value={d.shadowY} defaultValue={0.8} format={(v) => formatNumber(v, { maxFraction: 1 })} onInput={(v) => set({ shadowY: v })} />
+                </>
+              ) : null}
+              <p class="hint">محو لبه روی ماسک شخص اعمال می‌شود و لبهٔ شخص را بدون حالت «بریده‌شده» با پس‌زمینه ترکیب می‌کند. مقدار ۱ برای همهٔ قالب‌ها پیش‌فرض است؛ عدد بیشتر لبه را تارتر می‌کند. این مقدار روی ماسک پیش‌نمایشِ عکس اعمال می‌شود، نه روی خود پیکسل‌های خروجی.</p>
+            </Group>
+          ) : null}
+
           <Group title="کاغذ و چیدمان">
             <Select label="کاغذ" value={d.paperId} onChange={(v) => set({ paperId: v })} options={[
               { group: 'اندازه‌های آماده', options: [...PAPER_PRESETS, ...papers].map((p) => ({ value: p.id, label: `${p.nameFa} (${formatNumber(p.widthMm)}×${formatNumber(p.heightMm)})` })) },
@@ -153,9 +173,18 @@ export function QuickPresetEditorDialog({ presetId, mode = 'edit' }) {
 
           <Group title="تعداد برای هر نفر">
             <Segmented value={d.perPerson} onChange={(v) => set({ perPerson: v })} options={[
-              { value: 'sheet', label: 'یک برگهٔ کامل' }, { value: 'copies', label: 'تعداد ثابت' }, { value: 'share', label: 'تقسیم مساوی برگه' },
+              { value: 'sheet', label: `یک برگهٔ کامل${cap.capacity ? ` (${formatNumber(cap.capacity)})` : ''}` }, { value: 'copies', label: 'تعداد ثابت' }, { value: 'share', label: 'تقسیم مساوی برگه' },
             ]} />
-            {d.perPerson === 'copies' ? <NumberInput label="تعداد نسخه برای هر نفر" value={d.copies} min={1} max={500} integer onChange={(v) => set({ copies: v })} /> : null}
+            {d.perPerson === 'copies' ? (
+              <>
+                <NumberInput label="تعداد عکس برای هر نفر" value={d.copies} min={1} max={500} integer onChange={(v) => set({ copies: v })} />
+                <div class="chips mini" role="group" aria-label="تعداد عکس">
+                  {[...new Set([1, 2, 3, 4, 6, 8, 9, 10, 12, ...(cap.capacity ? [cap.capacity] : [])])].sort((a, b) => a - b).map((c) => (
+                    <button type="button" key={c} class="chip" aria-pressed={String(d.copies === c)} onClick={() => set({ copies: c })}>{formatNumber(c)}{c === cap.capacity ? ' (پر)' : ''}</button>
+                  ))}
+                </div>
+              </>
+            ) : null}
             <p class="hint">{d.perPerson === 'sheet' ? 'هر نفر یک برگهٔ کامل می‌گیرد (به اندازهٔ ظرفیت برگه).' : d.perPerson === 'copies' ? 'هر نفر دقیقاً همین تعداد؛ جای عکس‌ها ستون‌به‌ستون و بقیهٔ کاغذ یک‌جا خالی می‌ماند.' : 'عکس‌های چند نفر به‌طور مساوی روی برگه پخش می‌شوند.'}</p>
           </Group>
 
@@ -174,6 +203,7 @@ export function QuickPresetEditorDialog({ presetId, mode = 'edit' }) {
           {cap.capacity ? (
             <div class="qp-summary">
               <div class="qp-cap"><span class="num">{formatNumber(cap.capacity)}</span> عکس در هر برگه</div>
+              {d.perPerson !== 'share' ? <p class="small">{d.perPerson === 'copies' && d.copies < cap.capacity ? `${formatNumber(d.copies)} عکس از ${formatNumber(cap.capacity)} جای برگه پر می‌شود؛ بقیهٔ کاغذ یک‌جا سالم می‌ماند.` : null}</p> : null}
               <p class="small">{paper.id === 'custom' ? `کاغذ ${formatNumber(paper.widthMm)}×${formatNumber(paper.heightMm)} ملی‌متر` : paper.nameFa} · {orientationName(cap.orientation)}</p>
               <p class="small">{d.perPerson === 'share' ? 'تقسیم مساوی بین نفرها' : `${formatNumber(each)} عکس برای هر نفر`} · روشن‌سازی {PRINT_BOOST_FA[d.printBoost]} · {d.whiteBg ? `پس‌زمینهٔ ${bgColorName(d.bgColor)}` : 'پس‌زمینه دست نمی‌خورد'}</p>
               <p class="tiny muted">خط‌چین قرمز: مرز ناحیهٔ قابل چاپ چاپگر. شماره‌ها ترتیب پر شدن است.</p>

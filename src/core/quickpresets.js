@@ -26,6 +26,9 @@ export const QUICK_DEFAULTS = Object.freeze({
   orientation: 'auto', margin: 5, gap: 2, fillOrder: 'col-ltr',
   perPerson: 'sheet', copies: 8,
   whiteBg: true, bgColor: '#ffffff', autoCrop: true, autoLight: true,
+  // background edge clean-up (same meaning as the Background section; feather in mask pixels)
+  edgeAware: true, edgeShift: 0, edgeSoftness: 40, edgeFeather: 1, decontaminate: true,
+  shadow: false, shadowOpacity: 25, shadowBlur: 1.5, shadowX: 0, shadowY: 0.8,
   printBoost: 'medium', dpi: 300, cropMarks: true, cutLines: false, borderless: false, hardMargin: 3,
 });
 
@@ -75,6 +78,16 @@ export function normalizeQuickPreset(raw = {}) {
   p.bgColor = typeof raw.bgColor === 'string' && /^#[0-9a-f]{6}$/i.test(raw.bgColor) ? raw.bgColor.toLowerCase() : D.bgColor;
   p.autoCrop = bool(raw.autoCrop, D.autoCrop);
   p.autoLight = bool(raw.autoLight, D.autoLight);
+  p.edgeAware = bool(raw.edgeAware, D.edgeAware);
+  p.edgeShift = Math.round(num(raw.edgeShift, -100, 100, D.edgeShift));
+  p.edgeSoftness = Math.round(num(raw.edgeSoftness, 0, 100, D.edgeSoftness));
+  p.edgeFeather = Math.round(num(raw.edgeFeather, 0, 12, D.edgeFeather));
+  p.decontaminate = bool(raw.decontaminate, D.decontaminate);
+  p.shadow = bool(raw.shadow, D.shadow);
+  p.shadowOpacity = Math.round(num(raw.shadowOpacity, 0, 80, D.shadowOpacity));
+  p.shadowBlur = Math.round(num(raw.shadowBlur, 0, 6, D.shadowBlur) * 10) / 10;
+  p.shadowX = Math.round(num(raw.shadowX, -4, 4, D.shadowX) * 10) / 10;
+  p.shadowY = Math.round(num(raw.shadowY, -4, 4, D.shadowY) * 10) / 10;
   p.printBoost = pick(raw.printBoost, PRINT_BOOST_IDS, D.printBoost);
   p.dpi = pick(raw.dpi, DPI_PRESETS, D.dpi);
   p.cropMarks = bool(raw.cropMarks, D.cropMarks);

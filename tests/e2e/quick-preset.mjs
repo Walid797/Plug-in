@@ -39,7 +39,7 @@ try {
     const h = window.__hoshmand; const s = h.getState(); const ph = Object.values(s.photos)[0];
     const l = h.sheet.computeSheetLayout(s);
     return {
-      size: ph.edit.sizeId, profile: ph.edit.profileId, bg: ph.edit.bg, crop: !!ph.edit.crop, exposure: ph.edit.adjust.exposure,
+      size: ph.edit.sizeId, profile: ph.edit.profileId, bg: ph.edit.bg, refine: ph.edit.bg.refine, crop: !!ph.edit.crop, exposure: ph.edit.adjust.exposure,
       sheet: { paperId: s.project.sheet.paperId, printBoost: s.project.sheet.printBoost, mode: s.project.sheet.mode, items: s.project.sheet.items.map((i) => i.copies), fill: s.project.sheet.fillOrder },
       layout: { ok: l.ok, cap: l.capacity, orient: l.orientation, w: l.sheet.widthMm, h: l.sheet.heightMm, sheets: l.totals.sheets, placed: l.totals.placed },
     };
@@ -47,6 +47,7 @@ try {
   assert(st.size === '3x4' && st.profile === 'generic-3x4', 'size + profile');
   assert(st.bg.enabled && st.bg.mode === 'color' && st.bg.color === '#ffffff', 'white colour background enabled');
   assert(st.crop, 'crop set');
+  assert(st.refine.feather === 1 && st.refine.edgeAware === true && st.refine.shift === 0 && Math.abs(st.refine.softness - 0.4) < 1e-9, `edge feather 1 px by default (${JSON.stringify(st.refine)})`);
   assert(st.sheet.paperId === '4x6in' && st.sheet.printBoost === 'medium' && st.sheet.mode === 'exact' && st.sheet.fill === 'col-ltr', `sheet ${JSON.stringify(st.sheet)}`);
   assert(JSON.stringify(st.sheet.items) === '[8]', 'one full sheet for the person');
   assert(st.layout.ok && st.layout.cap === 8 && st.layout.orient === 'landscape' && st.layout.w === 152.4 && st.layout.h === 101.6, `layout ${JSON.stringify(st.layout)}`);

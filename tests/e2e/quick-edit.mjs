@@ -50,9 +50,18 @@ try {
   await nd.waitFor();
   await nd.getByLabel('نام قالب').fill('۳×۴ آبی — ۴ نسخه');
   await nd.getByRole('button', { name: 'تعداد ثابت' }).click();
-  await setNumber(nd, 'تعداد نسخه برای هر نفر', '۴');
+  await setNumber(nd, 'تعداد عکس برای هر نفر', '۴');
   await nd.locator('button.swatch[aria-label="آبی روشن"]').click();
   await nd.getByRole('switch', { name: /اصلاح نور/ }).setChecked(false, { force: true });
+  // edge group is part of the template: feather starts at 1 px; set 3 and enable a shadow
+  assert((await nd.getByRole('slider', { name: /محو لبه/ }).inputValue()) === '1', 'feather defaults to 1 px in a new template');
+  await nd.getByRole('slider', { name: /محو لبه/ }).fill('3');
+  await nd.getByRole('switch', { name: /سایهٔ نرم/ }).setChecked(true, { force: true });
+  await nd.getByRole('button', { name: '۶', exact: true }).click(); // count chip
+  await page.waitForTimeout(150);
+  const counted = await nd.getByLabel('تعداد عکس برای هر نفر', { exact: true }).inputValue();
+  assert(counted === '۶', `chip sets the count (${counted})`);
+  await nd.getByRole('button', { name: '۴', exact: true }).click();
   await page.waitForTimeout(150);
   const summary = await nd.locator('.qp-summary').innerText();
   assert(summary.includes('۴ عکس برای هر نفر') && summary.includes('آبی روشن'), `summary (${summary})`);
@@ -75,9 +84,10 @@ try {
   assert(rt.includes('برای هر نفر ۴ عکس'), 'four copies per person');
   const st = await page.evaluate(() => {
     const h = window.__hoshmand; const s = h.getState(); const ph = Object.values(s.photos)[0]; const l = h.sheet.computeSheetLayout(s);
-    return { color: ph.edit.bg.color, enabled: ph.edit.bg.enabled, exposure: ph.edit.adjust.exposure, items: s.project.sheet.items.map((i) => i.copies), mode: s.project.sheet.mode, paper: s.project.sheet.paperId, margins: s.project.sheet.margins.top, placed: l.totals.placed, cap: l.capacity, boost: s.project.sheet.printBoost };
+    return { color: ph.edit.bg.color, enabled: ph.edit.bg.enabled, refine: ph.edit.bg.refine, shadow: ph.edit.bg.shadow, exposure: ph.edit.adjust.exposure, items: s.project.sheet.items.map((i) => i.copies), mode: s.project.sheet.mode, paper: s.project.sheet.paperId, margins: s.project.sheet.margins.top, placed: l.totals.placed, cap: l.capacity, boost: s.project.sheet.printBoost };
   });
   assert(st.enabled && st.color === '#cfe3f5', `bg ${st.color}`);
+  assert(st.refine.feather === 3 && st.shadow.enabled === true, `own edge settings applied (${JSON.stringify(st.refine)} ${JSON.stringify(st.shadow)})`);
   assert(JSON.stringify(st.items) === '[4]' && st.mode === 'exact' && st.placed === 4 && st.cap === 8, `sheet ${JSON.stringify(st)}`);
   assert(st.paper === '4x6in' && st.margins === 5 && st.boost === 'medium', 'paper/margins/boost from the preset');
   await ready.getByRole('button', { name: 'اول پیش‌نمایش را ببینم' }).click();

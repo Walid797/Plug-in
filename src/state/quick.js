@@ -23,7 +23,19 @@ export async function quickAiState(s = getState()) {
   return { ai, segId, segOk, faceOk };
 }
 
-async function replaceBackground(photo, aiState, color) {
+/** Edge clean-up and shadow settings of a preset, as a background-edit patch. */
+export function presetBgPatch(preset) {
+  return {
+    refine: { edgeAware: preset.edgeAware, shift: preset.edgeShift / 100, softness: preset.edgeSoftness / 100, feather: preset.edgeFeather },
+    decontaminate: preset.decontaminate,
+    shadow: { enabled: preset.shadow, opacity: preset.shadowOpacity, blurMm: preset.shadowBlur, offsetXmm: preset.shadowX, offsetYmm: preset.shadowY },
+  };
+}
+
+async function replaceBackground(photo, aiState, preset) {
+  const color = preset.bgColor;
+  // edge settings go in first: the plausibility check below measures the FINAL (refined) mask
+  updateEdit(photo.id, (ed) => ({ ...ed, bg: { ...ed.bg, ...presetBgPatch(preset), refine: { ...ed.bg.refine, ...presetBgPatch(preset).refine }, shadow: { ...ed.bg.shadow, ...presetBgPatch(preset).shadow } } }), { history: false });
   const { segmentPhoto } = await import('../ai/segment.js');
   let fresh = getState().photos[photo.id];
   let reused = false;
@@ -42,7 +54,7 @@ async function replaceBackground(photo, aiState, color) {
   }
   updateEdit(photo.id, (ed) => ({
     ...ed,
-    bg: { ...ed.bg, enabled: true, mode: 'color', color, modelId, decontaminate: true, shadow: { ...ed.bg.shadow, enabled: false } },
+    bg: { ...ed.bg, enabled: true, mode: 'color', color, modelId },
     aiEdited: true,
   }), { history: false });
   return reused ? 'reused' : 'ok';
@@ -80,7 +92,7 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
 
       step(0, 'تغییر پس‌زمینه');
       if (preset.whiteBg && aiState.segOk) {
-        try { r.bg = await replaceBackground(photo, aiState, preset.bgColor); } catch (err) { console.error(err); r.bg = 'failed'; r.bgError = err?.code || 'FAILED'; }
+        try { r.bg = await replaceBackground(photo, aiState, preset); } catch (err) { console.error(err); r.bg = 'failed'; r.bgError = err?.code || 'FAILED'; }
       }
       if (task.signal.aborted) { cancelled = true; r.cancelled = true; break; }
 

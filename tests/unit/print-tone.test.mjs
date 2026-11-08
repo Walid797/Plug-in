@@ -162,3 +162,20 @@ test('custom paper and user-saved papers are honoured', () => {
   assert.equal(presetCapacity(tooBig).capacity, 0);
   assert.ok(presetCapacity(tooBig).errors.length > 0);
 });
+
+test('edge clean-up defaults: 1 px feather in every template, fully editable and clamped', () => {
+  for (const p of QUICK_PRESETS) {
+    assert.equal(p.edgeFeather, 1, `${p.id}: edge feather 1 px`);
+    assert.equal(p.edgeAware, true); assert.equal(p.decontaminate, true);
+    assert.equal(p.edgeShift, 0); assert.equal(p.edgeSoftness, 40); assert.equal(p.shadow, false);
+  }
+  // a user preset or an old override without the new fields also gets 1 px
+  assert.equal(normalizeQuickPreset({ photoId: '3x4' }).edgeFeather, 1);
+  const list = allQuickPresets({ quickOverrides: { 'q-3x4-4r': { margin: 3 } } });
+  assert.equal(list[0].edgeFeather, 1, 'old override keeps the 1 px default');
+  const p = normalizeQuickPreset({ edgeFeather: 40, edgeShift: -500, edgeSoftness: 7.6, edgeAware: 'x', shadow: true, shadowOpacity: 999, shadowBlur: 2.26, shadowX: -9, shadowY: 'a' });
+  assert.equal(p.edgeFeather, 12); assert.equal(p.edgeShift, -100); assert.equal(p.edgeSoftness, 8);
+  assert.equal(p.edgeAware, true); assert.equal(p.shadow, true); assert.equal(p.shadowOpacity, 80);
+  assert.equal(p.shadowBlur, 2.3); assert.equal(p.shadowX, -4); assert.equal(p.shadowY, 0.8);
+  assert.equal(normalizeQuickPreset({ edgeFeather: 0 }).edgeFeather, 0, '0 (off) is allowed');
+});
