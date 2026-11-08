@@ -129,6 +129,7 @@ export function createSheetElement(layout, page, ctx) {
       img.style.top = `${pl.photo.y}mm`;
     }
     img.dataset.index = String(pl.index);
+    if (ctx.onImageError) img.addEventListener('error', () => ctx.onImageError(pl.itemId), { once: true });
     content.appendChild(img);
     if (pl.label && ctx.labelFor) {
       const lab = document.createElement('div');
@@ -228,7 +229,12 @@ export async function printSheets({ layout, assets, project, photos, settings, c
     }));
   }
   setPageSize(layout.sheet.widthMm, layout.sheet.heightMm);
-  await Promise.all([...root.querySelectorAll('img')].map((img) => img.decode().catch(() => {})));
+  const imgs = [...root.querySelectorAll('img')];
+  const decoded = await Promise.all(imgs.map((img) => img.decode().then(() => img.naturalWidth > 0, () => false)));
+  if (decoded.some((okDecoded) => !okDecoded)) {
+    root.replaceChildren();
+    throw Object.assign(new Error('IMAGE_DECODE'), { code: 'IMAGE_DECODE' });
+  }
   if (document.fonts?.ready) await document.fonts.ready;
   return new Promise((resolve) => {
     let finished = false;
@@ -263,7 +269,7 @@ export async function runPrint() {
     return true;
   } catch (e) {
     if (e.code === 'CANCELLED') toast('چاپ لغو شد.', 'info');
-    else { console.error(e); toast(e.code === 'NO_ORIGINAL' ? 'عکس اصلی یکی از عکس‌ها در دسترس نیست.' : 'آماده‌سازی چاپ ناموفق بود.', 'error'); }
+    else { console.error(e); toast(e.code === 'NO_ORIGINAL' ? 'عکس اصلی یکی از عکس‌ها در دسترس نیست.' : e.code === 'IMAGE_DECODE' ? 'بعضی عکس‌ها برای چاپ آماده نشدند (حافظهٔ دستگاه). چیزی چاپ نشد؛ دوباره امتحان کنید.' : 'آماده‌سازی چاپ ناموفق بود.', 'error', 9000); }
     return false;
   } finally {
     task.done();

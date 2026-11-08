@@ -12,27 +12,56 @@ import { CSS_PX_PER_MM } from '../../core/units.js';
 import { Icon, IconButton, Button, Group, NumberInput, Select, Segmented, Switch, Notice, Badge, Empty } from '../kit.jsx';
 
 /* ------------------------------------------------ preview photo renders */
-const previewCache = new Map(); // key -> {url}
+const previewCache = new Map(); // key -> url
+const inflight = new Map(); // key -> Promise<url>
+const latestKey = new Map(); // photoId -> newest requested key
+
+/** Drop cached previews (used when an image failed to load) so they are rebuilt. */
+function forgetPreviews(photoIds) {
+  for (const [k, u] of previewCache) {
+    if (photoIds.some((id) => k.startsWith(`["${id}"`))) { previewCache.delete(k); retireLater(u); }
+  }
+}
 
 function editKey(photo, rev) {
   return JSON.stringify([photo.id, photo.origKey, photo.edit, rev]);
 }
 
-async function previewUrl(photo, rev) {
+/** Revoke later, never while an <img> may still be loading the URL. */
+function retireLater(url) {
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+/**
+ * Preview image URL for a photo's current edit. Race-safe: a render that was
+ * superseded while it ran (the photo changed meanwhile) never retires the newer
+ * URL, identical requests share one render, and old URLs are revoked only after
+ * a delay so slow devices never lose images that are still loading.
+ */
+export function previewUrl(photo, rev) {
   const key = editKey(photo, rev);
-  const hit = previewCache.get(key);
-  if (hit) return hit.url;
-  const pv = await getPreview(photo);
-  if (!pv) return null;
-  const assets = await gatherAssets(photo, pv);
-  const outW = 360;
-  const outH = Math.round((outW * photo.edit.heightMm) / photo.edit.widthMm);
-  const c = renderPhoto(photo.edit, assets, outW, outH, { pxPerMm: outW / photo.edit.widthMm, frameWidthPx: outW });
-  const blob = await canvasToBlob(c, 'image/jpeg', 0.9);
-  const url = URL.createObjectURL(blob);
-  for (const [k, v] of previewCache) if (k.startsWith(`["${photo.id}"`) && k !== key) { URL.revokeObjectURL(v.url); previewCache.delete(k); }
-  previewCache.set(key, { url });
-  return url;
+  latestKey.set(photo.id, key);
+  if (previewCache.has(key)) return Promise.resolve(previewCache.get(key));
+  if (inflight.has(key)) return inflight.get(key);
+  const job = (async () => {
+    const pv = await getPreview(photo);
+    if (!pv) return null;
+    const assets = await gatherAssets(photo, pv);
+    const outW = 360;
+    const outH = Math.round((outW * photo.edit.heightMm) / photo.edit.widthMm);
+    const c = renderPhoto(photo.edit, assets, outW, outH, { pxPerMm: outW / photo.edit.widthMm, frameWidthPx: outW });
+    const blob = await canvasToBlob(c, 'image/jpeg', 0.9);
+    const url = URL.createObjectURL(blob);
+    if (latestKey.get(photo.id) !== key) { retireLater(url); return url; } // superseded: leave newer entries alone
+    for (const [k, u] of previewCache) {
+      if (k.startsWith(`["${photo.id}"`) && k !== key) { previewCache.delete(k); retireLater(u); }
+    }
+    previewCache.set(key, url);
+    return url;
+  })();
+  inflight.set(key, job);
+  job.finally(() => inflight.delete(key)).catch(() => {});
+  return job;
 }
 
 /* ------------------------------------------------------------- pieces */
@@ -41,6 +70,7 @@ function SheetPreview({ layout, project, photos, zoom }) {
   const hostRef = useRef(null);
   const rev = useStore((s) => s.rev);
   const [urls, setUrls] = useState({});
+  const [retry, setRetry] = useState(0);
   const [box, setBox] = useState({ w: 600, h: 600 });
 
   useEffect(() => {
@@ -58,6 +88,7 @@ function SheetPreview({ layout, project, photos, zoom }) {
     let alive = true;
     (async () => {
       const out = {};
+      if (retry > 0) forgetPreviews(project.sheet.items.map((it) => it.photoId));
       for (const it of project.sheet.items) {
         const p = photos[it.photoId];
         if (!p) continue;
@@ -66,7 +97,7 @@ function SheetPreview({ layout, project, photos, zoom }) {
       if (alive) setUrls(out);
     })();
     return () => { alive = false; };
-  }, [project.sheet.items, photos, rev]);
+  }, [project.sheet.items, photos, rev, retry]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -90,6 +121,8 @@ function SheetPreview({ layout, project, photos, zoom }) {
         urlFor: (id) => urls[id] || null,
         labelFor: (pl) => labelTextFor(pl, project, photos),
         marks: project.sheet.marks,
+        // a failed image load rebuilds the preview (bounded) instead of leaving a blank slot
+        onImageError: () => setRetry((r) => (r < 3 ? r + 1 : r)),
       });
       el.style.transform = `scale(${scale})`;
       el.style.transformOrigin = '0 0';
