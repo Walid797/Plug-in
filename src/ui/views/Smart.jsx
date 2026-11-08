@@ -119,7 +119,7 @@ export function SmartView() {
     } finally { task.done(); }
   };
 
-  const faceCfg = { skin: { enabled: false, redness: 40, balance: 30, spots: 0, ...(e.face?.skin || {}) }, light: { enabled: false, fill: 35, even: true, protect: true, ...(e.face?.light || {}) } };
+  const faceCfg = { skin: { enabled: false, redness: 40, balance: 30, spots: 0, smooth: 0, ...(e.face?.skin || {}) }, light: { enabled: false, fill: 35, even: true, protect: true, ...(e.face?.light || {}) } };
   const setFaceEngine = (patch, history = true) => {
     const f = getState().photos[photo.id].edit.face;
     const metrics = getFace(photo.id)?.metrics;
@@ -203,6 +203,7 @@ export function SmartView() {
                       <Slider label="کاهش قرمزی" min={0} max={100} value={faceCfg.skin.redness} defaultValue={40} format={(v) => formatNumber(v)} {...engineSlider('skin', 'redness')} />
                       <Slider label="توازن رنگ" min={0} max={100} value={faceCfg.skin.balance} defaultValue={30} format={(v) => formatNumber(v)} {...engineSlider('skin', 'balance')} />
                       <Slider label="پاک‌کردن جوش، لکه و داغ (واقعی)" min={0} max={100} value={faceCfg.skin.spots ?? 0} defaultValue={0} format={(v) => formatNumber(v)} {...engineSlider('skin', 'spots')} />
+                      <Slider label="پوست صاف و تمیز (کاهش منافذ و ناهمواری)" min={0} max={100} value={faceCfg.skin.smooth ?? 0} defaultValue={0} format={(v) => formatNumber(v)} {...engineSlider('skin', 'smooth')} />
                     </>
                   ) : null}
                   <Switch label="نور نرم و یکنواخت (سایه‌ها، چپ/راست، نور سوخته)" checked={!!e.face?.light?.enabled && !!e.face?.ellipse}

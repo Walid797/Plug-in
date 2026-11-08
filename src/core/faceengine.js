@@ -15,7 +15,7 @@ import { boxFilter } from './mask.js';
 import { faceToSource } from './idphoto.js';
 
 export const FACE_ENGINE_DEFAULTS = Object.freeze({
-  skin: Object.freeze({ enabled: true, redness: 40, balance: 40, spots: 0 }),
+  skin: Object.freeze({ enabled: true, redness: 40, balance: 40, spots: 0, smooth: 0 }),
   light: Object.freeze({ enabled: true, fill: 45, even: true, protect: true }),
 });
 
@@ -353,7 +353,7 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
   const x1 = Math.min(w, Math.ceil(ell.cx + Math.max(ell.rx, ell.ry) * 1.2));
   const y0 = Math.max(0, Math.floor(ell.cy - Math.max(ell.rx, ell.ry) * 1.2));
   // blemish removal also covers the throat and neck below the chin (the skin-colour gate keeps collar and clothes out)
-  const neckReach = skin.enabled && skin.spots > 0 ? ell.ry * 1.95 : 0;
+  const neckReach = skin.enabled && (skin.spots > 0 || skin.smooth > 0) ? ell.ry * 1.95 : 0;
   const y1 = Math.min(h, Math.ceil(ell.cy + Math.max(Math.max(ell.rx, ell.ry) * 1.2, neckReach)));
   const bw = x1 - x0; const bh = y1 - y0;
   if (bw < 8 || bh < 8) return { applied: false, reason: 'NO_FACE' };
@@ -440,7 +440,7 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
   const gR = lw > 0 && rw > 0 && light.enabled && light.even ? clamp(aY / (rY / rw), 1 - MAX_EVEN_GAIN, 1 + MAX_EVEN_GAIN) : 1;
   report.evenGain = [gL, gR];
   let holeCand = null; let mSp = null; let msSp = null;
-  if (skin.enabled && skin.spots > 0) {
+  if (skin.enabled && (skin.spots > 0 || skin.smooth > 0)) {
     mSp = new Float32Array(n);
     for (let j = 0; j < n; j += 1) mSp[j] = base[j] * weW[j];
     msSp = boxFilter(mSp, bw, bh, r0);
@@ -470,14 +470,15 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
       }
     }
   }
-  const spots = holeCand ? spotCorrection(Y, Cb, Cr, msSp, bw, bh, ell.rx, skin.spots, holeCand, mSp, protect) : null;
+  const spots = holeCand && skin.spots > 0 ? spotCorrection(Y, Cb, Cr, msSp, bw, bh, ell.rx, skin.spots, holeCand, mSp, protect) : null;
   // complete pass: every mark that clearly stands out from its skin (found on the untouched pixels, healed after)
-  let blemish = null;
+  let blemish = null; let hairInfo = null;
   if (mSp) {
     const sureB = new Float32Array(n);
     for (let j = 0; j < n; j += 1) sureB[j] = smooth(0.6, 0.9, mSp[j]);
     // hair is never touched, by either spot pass: no correction within reach of a hair, stubble stroke or lash
     const hair = hairMask(Y, sureB, bw, bh, ell.rx);
+    hairInfo = hair;
     if (spots) {
       // whole blobs: if any pixel of a corrected blob lies in the hair margin, the entire blob is left as it was
       const seenS = new Uint8Array(n); const stk = [];
@@ -500,8 +501,8 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
       }
       if (total) spots.fixedFrac *= kept / total;
     }
-    blemish = findBlemishes(Y, Cr, sureB, coreHard, coreSoft, bw, bh, ell.rx, clamp(skin.spots / 90, 0.3, 1.3), hair);
-    if (typeof params.debugBlemish === 'function') params.debugBlemish(blemish, { x0, y0, bw, bh });
+    if (skin.spots > 0) blemish = findBlemishes(Y, Cr, sureB, coreHard, coreSoft, bw, bh, ell.rx, clamp(skin.spots / 90, 0.3, 1.3), hair);
+    if (blemish && typeof params.debugBlemish === 'function') params.debugBlemish(blemish, { x0, y0, bw, bh });
   }
   report.spotsFrac = spots ? spots.fixedFrac : 0;
   let after = 0; let liftSum = 0; let blotchSum = 0; let protectedW = 0;
@@ -556,6 +557,12 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
   report.blotch = blotchSum / wsum;
   report.protectedFrac = protectedW / wsum;
   report.lumaAfter = after / wsum;
+  // gentle, edge-preserving skin smoothing (pores, tiny freckles, uneven texture) - never on hair, lips, eyes or brows
+  if (skin.smooth > 0 && mSp && hairInfo) {
+    const wgt = new Float32Array(n);
+    for (let j = 0; j < n; j += 1) wgt[j] = smooth(0.2, 0.6, mSp[j]) * (hairInfo.near[j] ? 0 : 1) * (1 - (protect ? protect[j] : 0));
+    report.smoothed = smoothSkinRegion(data, w, x0, y0, bw, bh, wgt, (skin.smooth / 100) * 0.9, ell.rx);
+  }
   if (blemish?.discs.length) {
     const hr = healDiscs(data, w, h, blemish.discs.map((d) => ({ x: d.x + x0, y: d.y + y0, r: d.r })));
     report.blemishes = hr.healed;
@@ -792,6 +799,41 @@ export function findBlemishes(Y, Cr, sure, protect, soft, bw, bh, rx, strength =
     }
   }
   return { discs, found: kept.length, rejected, T };
+}
+
+/**
+ * Edge-preserving smoothing of the skin: a blurred copy replaces the pixel only where the two are close (pores, grain,
+ * faint freckles); real edges (hair, eyes, brows, lips, clothes) are above the tolerance and stay sharp.
+ * @returns {number} mean blend actually used over the weighted area (0..1)
+ */
+export function smoothSkinRegion(data, w, x0, y0, bw, bh, weight, strength, rx) {
+  const n = bw * bh;
+  const r1 = Math.max(1, Math.round(rx * 0.012)); const r2 = Math.max(2, Math.round(rx * 0.03));
+  const ch = [new Float32Array(n), new Float32Array(n), new Float32Array(n)];
+  const Yl = new Float32Array(n);
+  for (let y = 0; y < bh; y += 1) for (let x = 0; x < bw; x += 1) {
+    const j = y * bw + x; const i = ((y0 + y) * w + x0 + x) * 4;
+    ch[0][j] = data[i]; ch[1][j] = data[i + 1]; ch[2][j] = data[i + 2];
+    Yl[j] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+  }
+  const b1 = ch.map((c) => boxFilter(c, bw, bh, r1)); const b2 = ch.map((c) => boxFilter(c, bw, bh, r2));
+  const Y1 = boxFilter(Yl, bw, bh, r1);
+  const tol = 15;
+  let used = 0; let cnt = 0;
+  for (let j = 0; j < n; j += 1) {
+    const wj = weight[j]; if (wj <= 0.01) continue;
+    const dY = Yl[j] - Y1[j];
+    const keep = Math.exp(-((dY / tol) ** 2)); // a pixel far from its local mean is an edge or a hair: not smoothed
+    const f = strength * wj * keep;
+    if (f <= 0.005) continue;
+    const y = (j / bw) | 0; const x = j - y * bw; const i = ((y0 + y) * w + x0 + x) * 4;
+    for (let c = 0; c < 3; c += 1) {
+      const target = 0.6 * b1[c][j] + 0.4 * b2[c][j];
+      data[i + c] += (target - data[i + c]) * f;
+    }
+    used += f; cnt += 1;
+  }
+  return cnt ? used / cnt : 0;
 }
 
 /**

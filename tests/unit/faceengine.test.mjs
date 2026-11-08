@@ -513,3 +513,18 @@ test('automatic pass never damages hair: a mark with hairs touching or right nex
   for (const [x, y] of near) assert.deepEqual(P(img, x, y), [before[(y * img.w + x) * 4], before[(y * img.w + x) * 4 + 1], before[(y * img.w + x) * 4 + 2]], `untouched at ${x},${y}`);
   assert.ok(dist(P(img, 260, 130), [224, 172, 150]) < 30, 'the isolated mole is healed');
 });
+
+test('skin smoothing: grain is calmed on the skin, edges (hair, eyes) and the white background stay', () => {
+  const img = skinWith(); const orig = img.d.slice();
+  const sd = (a, x0, y0, x1, y1) => { const v = []; for (let y = y0; y < y1; y += 1) for (let x = x0; x < x1; x += 1) v.push(0.299 * a[(y * img.w + x) * 4] + 0.587 * a[(y * img.w + x) * 4 + 1] + 0.114 * a[(y * img.w + x) * 4 + 2]); const m = v.reduce((p, q) => p + q) / v.length; return Math.sqrt(v.reduce((p, q) => p + (q - m) ** 2, 0) / v.length); };
+  const before = sd(orig, 150, 170, 210, 200);
+  const rep = applyFaceEngine(img.d, img.w, img.h, img.ell, { skin: { enabled: true, redness: 0, balance: 0, spots: 0, smooth: 80 }, light: { enabled: false } });
+  const after = sd(img.d, 150, 170, 210, 200);
+  assert.ok(rep.smoothed > 0.1, `smoothing applied (${rep.smoothed})`);
+  assert.ok(after < before * 0.75 && after > 0.1, `grain calmed but not erased (${before.toFixed(2)} -> ${after.toFixed(2)})`);
+  for (const [x, y] of img.hairs) assert.ok(dist(P(img, x, y), [orig[(y * img.w + x) * 4], orig[(y * img.w + x) * 4 + 1], orig[(y * img.w + x) * 4 + 2]]) <= 10, 'hair strokes keep their contrast');
+  for (const [x, y] of [[5, 5], [350, 460], [20, 300]]) assert.deepEqual(P(img, x, y), [255, 255, 255]);
+  const off = skinWith(); const o2 = off.d.slice();
+  applyFaceEngine(off.d, off.w, off.h, off.ell, { skin: { enabled: true, redness: 0, balance: 0, spots: 0, smooth: 0 }, light: { enabled: false } });
+  assert.deepEqual(off.d, o2, 'smooth 0 = no change');
+});

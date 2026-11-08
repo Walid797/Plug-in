@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "builtAt": "2026-11-08T11:14:46.939Z",
+  "builtAt": "2026-11-08T11:16:19.029Z",
   "models": {
     "models/mediapipe/face_landmarker.task": "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff",
     "models/mediapipe/selfie_multiclass_256x256.tflite": "c6748b1253a99067ef71f7e26ca71096cd449baefa8f101900ea23016507e0e0"
