@@ -40,13 +40,14 @@ try {
     const l = h.sheet.computeSheetLayout(s);
     return {
       size: ph.edit.sizeId, profile: ph.edit.profileId, bg: ph.edit.bg, refine: ph.edit.bg.refine, crop: !!ph.edit.crop, exposure: ph.edit.adjust.exposure,
-      sheet: { paperId: s.project.sheet.paperId, printBoost: s.project.sheet.printBoost, mode: s.project.sheet.mode, items: s.project.sheet.items.map((i) => i.copies), fill: s.project.sheet.fillOrder },
+      sheet: { marks: s.project.sheet.marks, paperId: s.project.sheet.paperId, printBoost: s.project.sheet.printBoost, mode: s.project.sheet.mode, items: s.project.sheet.items.map((i) => i.copies), fill: s.project.sheet.fillOrder },
       layout: { ok: l.ok, cap: l.capacity, orient: l.orientation, w: l.sheet.widthMm, h: l.sheet.heightMm, sheets: l.totals.sheets, placed: l.totals.placed },
     };
   });
   assert(st.size === '3x4' && st.profile === 'generic-3x4', 'size + profile');
   assert(st.bg.enabled && st.bg.mode === 'color' && st.bg.color === '#ffffff', 'white colour background enabled');
   assert(st.crop, 'crop set');
+  assert(st.sheet.marks.borders === true && st.sheet.marks.borderWidth === 0.1, `border on in the built-in template (${JSON.stringify(st.sheet.marks)})`);
   assert(st.refine.feather === 1 && st.refine.edgeAware === true && st.refine.shift === 0 && Math.abs(st.refine.softness - 0.4) < 1e-9, `edge feather 1 px by default (${JSON.stringify(st.refine)})`);
   assert(st.sheet.paperId === '4x6in' && st.sheet.printBoost === 'medium' && st.sheet.mode === 'exact' && st.sheet.fill === 'col-ltr', `sheet ${JSON.stringify(st.sheet)}`);
   assert(JSON.stringify(st.sheet.items) === '[4]', '4 photos for the person');

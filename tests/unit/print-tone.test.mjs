@@ -198,7 +198,9 @@ test('edge clean-up defaults: 1 px feather in every template, fully editable and
 });
 
 test('border: configurable width/colour inside every photo frame, in marks, PDF and defaults', () => {
-  for (const p of QUICK_PRESETS) { assert.equal(p.border, false, 'off unless chosen'); assert.equal(p.borderWidth, 0.1, 'thin by default'); assert.equal(p.borderColor, '#000000'); assert.equal(p.cutOffset, 0.5); }
+  for (const p of QUICK_PRESETS) { assert.equal(p.border, true, 'on in every template'); assert.equal(p.borderWidth, 0.1, 'thin by default'); assert.equal(p.borderColor, '#000000'); assert.equal(p.cutOffset, 0.5); }
+  assert.equal(normalizeQuickPreset({ photoId: '3x4' }).border, true, 'new templates too');
+  assert.equal(normalizeQuickPreset({ border: false }).border, false, 'can still be turned off');
   const p = normalizeQuickPreset({ border: true, borderWidth: 9, borderColor: 'red', photoId: '3x4' });
   assert.equal(p.border, true); assert.equal(p.borderWidth, 2); assert.equal(p.borderColor, '#000000');
   assert.equal(normalizeQuickPreset({ borderWidth: 0.001 }).borderWidth, 0.05);

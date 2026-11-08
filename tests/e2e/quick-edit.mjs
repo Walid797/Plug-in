@@ -68,8 +68,8 @@ try {
   assert(counted === '۶', `chip sets the count (${counted})`);
   await nd.getByRole('button', { name: '۴', exact: true }).click();
   // border: off by default, configurable width/colour
-  assert((await nd.getByRole('switch', { name: /بوردر/ }).isChecked()) === false, 'border is off by default');
-  await nd.getByRole('switch', { name: /بوردر/ }).setChecked(true, { force: true });
+  assert((await nd.getByRole('switch', { name: /بوردر/ }).isChecked()) === true, 'border is on by default in a new template');
+  assert((await nd.getByLabel('ضخامت بوردر', { exact: true }).inputValue()) === '۰٫۱', 'default width 0.1 mm');
   await setNumber(nd, 'ضخامت بوردر', '۰٫۵');
   await nd.locator('button.swatch[aria-label="خاکستری تیره"]').click();
   await page.waitForTimeout(150);

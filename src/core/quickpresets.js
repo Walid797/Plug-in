@@ -30,8 +30,8 @@ export const QUICK_DEFAULTS = Object.freeze({
   edgeAware: true, edgeShift: 0, edgeSoftness: 40, edgeFeather: 1, decontaminate: true,
   shadow: false, shadowOpacity: 25, shadowBlur: 1.5, shadowX: 0, shadowY: 0.8,
   printBoost: 'medium', dpi: 300, cropMarks: true, cutLines: false, borderless: false, hardMargin: 3,
-  // frame drawn inside each photo (photo size unchanged): off by default, width in mm
-  border: false, borderWidth: 0.1, borderColor: '#000000',
+  // frame drawn inside each photo (photo size unchanged): on by default in every template, width in mm
+  border: true, borderWidth: 0.1, borderColor: '#000000',
   // cut lines / crop marks sit this far outside each photo, in the white gap (limited to half the gap)
   cutOffset: 0.5,
 });
