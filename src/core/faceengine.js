@@ -445,16 +445,19 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
     }
   }
   // retouch-free zones (eyes, mouth, nostrils) in bbox coordinates, soft edge
-  let protect = null;
+  let protect = null; let coreHard = null; let coreSoft = null;
   if (Array.isArray(params.protect) && params.protect.length) {
     protect = new Float32Array(n);
+    coreHard = new Float32Array(n); coreSoft = new Float32Array(n);
     for (const z of params.protect) {
       const zc = Math.cos(z.rot || 0); const zs = Math.sin(z.rot || 0);
       for (let y = 0; y < bh; y += 1) {
         for (let x = 0; x < bw; x += 1) {
           const dx = x0 + x + 0.5 - z.cx; const dy = y0 + y + 0.5 - z.cy;
           const u = (dx * zc + dy * zs) / z.rx; const v = (-dx * zs + dy * zc) / z.ry;
-          const dd = Math.hypot(u, v); if (dd >= 1.2) continue;
+          const dd = Math.hypot(u, v);
+          if (dd <= 0.8) (z.soft ? coreSoft : coreHard)[y * bw + x] = 1; // un-feathered core (blemish finder)
+          if (dd >= 1.2) continue;
           const wgt = dd <= 0.85 ? 1 : 1 - smooth(0.85, 1.2, dd);
           if (wgt > protect[y * bw + x]) protect[y * bw + x] = wgt;
         }
@@ -463,6 +466,14 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
   }
   const spots = holeCand ? spotCorrection(Y, Cb, Cr, msSp, bw, bh, ell.rx, skin.spots, holeCand, mSp, protect) : null;
   report.spotsFrac = spots ? spots.fixedFrac : 0;
+  // complete pass: every mark that clearly stands out from its skin (found on the untouched pixels, healed after)
+  let blemish = null;
+  if (mSp) {
+    const sureB = new Float32Array(n);
+    for (let j = 0; j < n; j += 1) sureB[j] = smooth(0.6, 0.9, mSp[j]);
+    blemish = findBlemishes(Y, Cr, sureB, coreHard, coreSoft, bw, bh, ell.rx, clamp(skin.spots / 90, 0.3, 1.3));
+    if (typeof params.debugBlemish === 'function') params.debugBlemish(blemish, { x0, y0, bw, bh });
+  }
   let after = 0; let liftSum = 0; let blotchSum = 0; let protectedW = 0;
   for (let y = 0; y < bh; y += 1) {
     for (let x = 0; x < bw; x += 1) {
@@ -515,7 +526,160 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
   report.blotch = blotchSum / wsum;
   report.protectedFrac = protectedW / wsum;
   report.lumaAfter = after / wsum;
+  if (blemish?.discs.length) {
+    const hr = healDiscs(data, w, h, blemish.discs.map((d) => ({ x: d.x + x0, y: d.y + y0, r: d.r })));
+    report.blemishes = hr.healed;
+  } else report.blemishes = 0;
   return report;
+}
+
+/**
+ * Complete automatic blemish finder: anything on the skin that clearly stands out from its own surroundings
+ * (dark spot, mole, pimple, red mark, stain, smudge) becomes a set of discs to heal with real skin texture.
+ * Works in bbox coordinates. Hairs and other thin lines, dense clusters (stubble), and the protected zones
+ * (eyes, brows, mouth, nostrils) are never touched.
+ * @returns {{discs:{x:number,y:number,r:number}[], found:number, rejected:number}}
+ */
+export function findBlemishes(Y, Cr, sure, protect, soft, bw, bh, rx, strength = 1) {
+  const n = bw * bh;
+  const R = Math.max(6, Math.round(rx * 0.08));
+  const wY = new Float32Array(n); const wC = new Float32Array(n);
+  for (let j = 0; j < n; j += 1) { wY[j] = Y[j] * sure[j]; wC[j] = Cr[j] * sure[j]; }
+  const sm = boxFilter(sure, bw, bh, R); const bY = boxFilter(wY, bw, bh, R); const bC = boxFilter(wC, bw, bh, R);
+  const c = new Float32Array(n);
+  for (let j = 0; j < n; j += 1) {
+    if (sm[j] < 0.35) continue;
+    const refY = bY[j] / sm[j]; const refC = bC[j] / sm[j];
+    c[j] = Math.max(0, refY - Y[j]) + 1.5 * Math.max(0, Cr[j] - refC);
+  }
+  const cs = boxFilter(c, bw, bh, 1);
+  // noise of the skin itself decides how strong a mark must be
+  const samp = [];
+  for (let j = 0; j < n; j += 97) if (sure[j] > 0.95 && sm[j] > 0.8) samp.push(cs[j]);
+  samp.sort((a, b) => a - b);
+  const med = samp.length ? samp[samp.length >> 1] : 0;
+  const devs = samp.map((v) => Math.abs(v - med)).sort((a, b) => a - b);
+  const mad = devs.length ? devs[devs.length >> 1] * 1.4826 : 3;
+  const T = Math.max(11, med + 3.4 * mad) / Math.max(0.5, strength);
+  const flag = new Uint8Array(n);
+  let skinOk = 0;
+  for (let j = 0; j < n; j += 1) {
+    if (sm[j] < 0.4) continue;
+    if (cs[j] > T || c[j] > 2.4 * T) flag[j] = 1;
+    skinOk += 1;
+  }
+  if (skinOk < 100) return { discs: [], found: 0, rejected: 0, T };
+  const low = new Uint8Array(n);
+  for (let j = 0; j < n; j += 1) low[j] = sm[j] > 0.4 && cs[j] > 0.45 * T ? 1 : 0;
+  const seen = new Uint8Array(n);
+  const comps = [];
+  const stack = [];
+  const maxArea = Math.PI * (rx * 0.06) ** 2;
+  for (let j0 = 0; j0 < n; j0 += 1) {
+    if (!flag[j0] || seen[j0]) continue;
+    const pix = []; stack.length = 0; stack.push(j0); seen[j0] = 1;
+    while (stack.length) {
+      const j = stack.pop(); pix.push(j);
+      const x = j % bw; const y = (j - x) / bw;
+      for (let oy = -1; oy <= 1; oy += 1) {
+        for (let ox = -1; ox <= 1; ox += 1) {
+          const xx = x + ox; const yy = y + oy;
+          if (xx < 0 || yy < 0 || xx >= bw || yy >= bh) continue;
+          const jj = yy * bw + xx;
+          if (flag[jj] && !seen[jj]) { seen[jj] = 1; stack.push(jj); }
+        }
+      }
+    }
+    if (pix.length < 2 || pix.length > maxArea) continue;
+    comps.push(pix);
+  }
+  const info = [];
+  let rejected = 0;
+  for (const pix of comps) {
+    let sx = 0; let sy = 0; let pk = 0; let pr = 0; let ps = 0;
+    let x0 = bw; let x1 = 0; let y0 = bh; let y1 = 0;
+    for (const j of pix) {
+      const x = j % bw; const y = (j - x) / bw;
+      sx += x; sy += y; if (c[j] > pk) pk = c[j];
+      if (protect && protect[j] > pr) pr = protect[j];
+      if (soft && soft[j] > ps) ps = soft[j];
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+    }
+    const m = pix.length; const mx = sx / m; const my = sy / m;
+    let sxx = 0; let syy = 0; let sxy = 0;
+    for (const j of pix) { const x = j % bw; const y = (j - x) / bw; sxx += (x - mx) ** 2; syy += (y - my) ** 2; sxy += (x - mx) * (y - my); }
+    sxx /= m; syy /= m; sxy /= m;
+    const tr = sxx + syy; const dt = Math.sqrt(Math.max(0, ((sxx - syy) / 2) ** 2 + sxy * sxy));
+    const l1 = tr / 2 + dt; const l2 = Math.max(1e-3, tr / 2 - dt);
+    const major = 4 * Math.sqrt(l1);
+    // thickness from the area and the length (a bounding box overstates a diagonal hair)
+    const thick = m <= 4 ? Math.sqrt(m) + 0.5 : Math.min(4 * Math.sqrt(l2), (4 / Math.PI) * m / Math.max(major, 1));
+    const elong = Math.sqrt(l1 / l2);
+    // surroundings must be skin (not an eye/brow/lip/hair border)
+    const pad = Math.max(3, Math.round(0.6 * Math.max(x1 - x0, y1 - y0)) + 2);
+    let ringSkin = 0; let ringN = 0; let ringC = 0; let inC = 0;
+    let solid = 0;
+    for (const j of pix) { inC += c[j]; if (c[j] > 0.6 * T) solid += 1; }
+    inC /= m;
+    solid /= m; // a stain is solid; crossing hairs are thin lines whose smoothed halo is mostly skin
+    for (let y = Math.max(0, y0 - pad); y <= Math.min(bh - 1, y1 + pad); y += 1) {
+      for (let x = Math.max(0, x0 - pad); x <= Math.min(bw - 1, x1 + pad); x += 1) {
+        const j = y * bw + x; if (flag[j]) continue;
+        ringN += 1; ringSkin += sure[j] > 0.5 ? 1 : 0; ringC += c[j];
+      }
+    }
+    const skinFrac = ringN ? ringSkin / ringN : 0;
+    ringC = ringN ? ringC / ringN : 0;
+    // a mark has a sharp edge: just outside it the skin is back to normal (a shading feature fades out slowly)
+    const sharp = inC / Math.max(4, ringC * 2.2);
+    // flagged pixels around it (stubble, pores): a crowded neighbourhood is texture, not a blemish
+    const cr = Math.max(8, Math.round(rx * 0.14)); let crowd = 0; let crowdN = 0;
+    for (let y = Math.max(0, Math.round(my) - cr); y <= Math.min(bh - 1, Math.round(my) + cr); y += 1) {
+      for (let x = Math.max(0, Math.round(mx) - cr); x <= Math.min(bw - 1, Math.round(mx) + cr); x += 1) {
+        if (x >= x0 - pad && x <= x1 + pad && y >= y0 - pad && y <= y1 + pad) continue; // its own halo does not count
+        crowdN += 1; crowd += low[y * bw + x];
+      }
+    }
+    const crowdFrac = crowd / Math.max(1, crowdN);
+    const strongMole = pk >= 6.5 * T && sharp >= 5 && elong <= 2 && thick >= 4 && thick <= 10 && crowdFrac < 0.4;
+    let ok = true;
+    if (pr > 0.3) ok = false;
+    else if (thick < 2.6 && elong > 2.2) ok = false; // a hair
+    else if (elong > (thick >= 4.5 ? 5.5 : 4.2)) ok = false; // long and thin = hair or crease; thick = a stain
+    else if (skinFrac < (thick >= 4.5 ? 0.5 : 0.6)) ok = false;
+    else if (m > 20 && solid < 0.55) ok = false;
+    else if (sharp < 3 || (elong > 3.5 && sharp < 4.5)) ok = false;
+    else if (pk < 2.7 * T) ok = false; // freckles and pores stay: only marks that clearly stand out
+    else if (strongMole) ok = true; // a dark, sharp, round dot is a mole even among stubble
+    else if (crowdFrac > 0.16 || (crowdFrac > 0.08 && pk < 4 * T)) ok = false;
+    else if (ps > 0.3 && (pk < 4 * T || m < 5 || elong > 2.2)) ok = false; // inside stubble areas only clear, round, strong marks
+    else if (m <= 4 && pk < 2.6 * T) ok = false; // a 2-4 px speck must be strong
+    if (!ok) { rejected += 1; continue; }
+    info.push({ pix, mx, my, thick, major, elong, pk, m, soft: ps > 0.3 });
+  }
+  // dense clusters (stubble, freckle fields): only very strong marks inside them
+  const dens = Math.max(10, rx * 0.16);
+  const kept = [];
+  for (const a of info) {
+    let near = 0;
+    for (const b of info) if (b !== a && Math.abs(b.mx - a.mx) < dens && Math.abs(b.my - a.my) < dens && Math.hypot(b.mx - a.mx, b.my - a.my) < dens) near += 1;
+    if (near > (a.soft ? 5 : 10) && a.pk < 3.2 * T) { rejected += 1; continue; }
+    kept.push(a);
+  }
+  kept.sort((p, q) => q.pk * q.m - p.pk * p.m);
+  const discs = [];
+  for (const a of kept.slice(0, 80)) {
+    const r = Math.max(2.6, 0.5 * a.thick + 2.4 + 0.12 * a.thick);
+    const cover = new Set();
+    let placed = 0;
+    for (const j of a.pix) {
+      if (cover.has(j) || placed >= 14) continue;
+      const x = j % bw; const y = (j - x) / bw;
+      discs.push({ x: x + 0.5, y: y + 0.5, r }); placed += 1;
+      for (const k of a.pix) { const kx = k % bw; const ky = (k - kx) / bw; if (Math.hypot(kx - x, ky - y) < r * 0.8) cover.add(k); }
+    }
+  }
+  return { discs, found: kept.length, rejected, T };
 }
 
 /**

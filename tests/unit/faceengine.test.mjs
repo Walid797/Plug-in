@@ -480,3 +480,23 @@ test('repair brush strokes map to output discs through the crop matrix', () => {
   assert.equal(fixesToDiscs([], 10, 10, M).length, 0);
   assert.ok(fixesToDiscs(Array.from({ length: 50 }, () => ({ size: 0.004, points: [[0.1, 0.1], [0.9, 0.9]] })), 1000, 1000, M).length <= 600, 'capped');
 });
+
+test('complete automatic pass: moles (even in a stubble zone) and a long stain are healed; hairs and protected zones are not, freckles are only faded', () => {
+  const img = skinWith(); const orig = img.d.slice();
+  const disc = (cx, cy, r, rgb) => { for (let y = cy - r; y <= cy + r; y += 1) for (let x = cx - r; x <= cx + r; x += 1) if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r) { const i = (y * img.w + x) * 4; img.d[i] = rgb[0]; img.d[i + 1] = rgb[1]; img.d[i + 2] = rgb[2]; } };
+  disc(235, 160, 4, [112, 70, 52]);                       // a mole inside the (soft) mustache zone
+  for (let y = 240; y < 266; y += 1) for (let x = 78; x < 85; x += 1) { const i = (y * img.w + x) * 4; img.d[i] = 192; img.d[i + 1] = 128; img.d[i + 2] = 106; } // a brownish smudge 7x26 px
+  disc(250, 210, 1, [208, 152, 132]);                     // a faint freckle
+  disc(150, 215, 5, [118, 74, 56]);                       // a dark blob inside a protected (eye-like) zone
+  const o2 = img.d.slice();
+  const protect = [{ cx: 150, cy: 215, rx: 20, ry: 16, rot: 0 }, { cx: 235, cy: 160, rx: 60, ry: 30, rot: 0, soft: true }];
+  const rep = applyFaceEngine(img.d, img.w, img.h, img.ell, { ...SPOT_ONLY, protect });
+  assert.ok(rep.blemishes >= 2, `blemishes healed (${rep.blemishes})`);
+  const skin = [224, 172, 150];
+  assert.ok(dist(P(img, 235, 160), skin) < 30, `mole in the stubble zone healed (${P(img, 235, 160)})`);
+  assert.ok(dist(P(img, 81, 252), skin) < 30, `long stain healed (${P(img, 81, 252)})`);
+  assert.ok(dist(P(img, 150, 215), [118, 74, 56]) < 6, 'a protected zone keeps its mark');
+  assert.ok(dist(P(img, 250, 210), skin) > 6, 'a faint freckle is at most faded, never erased (skin character is kept)');
+  for (const [x, y] of img.hairs) assert.ok(dist(P(img, x, y), [o2[(y * img.w + x) * 4], o2[(y * img.w + x) * 4 + 1], o2[(y * img.w + x) * 4 + 2]]) <= 8, 'hair untouched');
+  for (const [x, y] of [[60, 100], [300, 180], [100, 380]]) assert.deepEqual(P(img, x, y), [orig[(y * img.w + x) * 4], orig[(y * img.w + x) * 4 + 1], orig[(y * img.w + x) * 4 + 2]]);
+});

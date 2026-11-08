@@ -75,7 +75,7 @@ export function faceProtectZones(lm, srcW, srcH) {
   const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
   const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
   const rot = (a, b) => (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
-  const zone = (c, rx, ry, deg) => ({ cx: c.x / srcW, cy: c.y / srcH, rx: rx / srcW, ry: ry / srcW, rot: deg });
+  const zone = (c, rx, ry, deg, soft = false) => ({ cx: c.x / srcW, cy: c.y / srcH, rx: rx / srcW, ry: ry / srcW, rot: deg, ...(soft ? { soft: true } : {}) });
   const out = [];
   for (const [o, i] of [[33, 133], [263, 362]]) { // eyes
     const a = P(o); const b = P(i); const w = d(a, b);
@@ -91,8 +91,8 @@ export function faceProtectZones(lm, srcW, srcH) {
   {
     const nb = mid(P(98), P(327)); const lipTop = P(0); const lipBottom = P(17); const chin = P(152);
     // mustache band (between the nose and the upper lip) and the beard area (below the lower lip down to the chin)
-    out.push(zone(mid(nb, lipTop), mw * 0.85, Math.max(d(nb, lipTop) * 0.8, mw * 0.14), rot(m1, m2)));
-    out.push(zone(mid(lipBottom, chin), mw * 0.95, Math.max(d(lipBottom, chin) * 0.8, mw * 0.2), rot(m1, m2)));
+    out.push(zone(mid(nb, lipTop), mw * 0.85, Math.max(d(nb, lipTop) * 0.8, mw * 0.14), rot(m1, m2), true));
+    out.push(zone(mid(lipBottom, chin), mw * 0.95, Math.max(d(lipBottom, chin) * 0.8, mw * 0.2), rot(m1, m2), true));
   }
   const n1 = P(98); const n2 = P(327); const nw = d(n1, n2); // nostrils / underside of the nose
   out.push(zone({ x: (n1.x + n2.x) / 2, y: (n1.y + n2.y) / 2 - nw * 0.08 }, nw * 0.6, nw * 0.36, rot(n1, n2)));
