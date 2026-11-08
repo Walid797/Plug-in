@@ -5,22 +5,14 @@ import { Queue, NeedPhotos, ACCEPT } from '../Queue.jsx';
 import { Button, Group, Notice, Slider, Switch, Segmented, FilePick, Badge, Select } from '../kit.jsx';
 import { useCropHandlers, ViewSwitch } from './Editor.jsx';
 import { segmentPhoto, chooseSegModel } from '../../ai/segment.js';
-import { hasMask, clearMask, setBackgroundImage, getPersonMask } from '../../state/media.js';
+import { hasMask, clearMask, setBackgroundImage, getPersonMask, maskForegroundFraction } from '../../state/media.js';
 import { BACKGROUND_PRESETS } from '../../core/presets.js';
 import { aiAvailability } from '../../platform/capabilities.js';
 import { formatNumber } from '../../core/digits.js';
 import { findModel } from '../../ai/registry.js';
 import { modelStatusText } from './Settings.jsx';
 
-/** Share of a mask canvas (alpha = person) that is foreground. */
-export function maskForegroundFraction(canvas) {
-  if (!canvas) return null;
-  const cx = canvas.getContext('2d', { willReadFrequently: true });
-  const d = cx.getImageData(0, 0, canvas.width, canvas.height).data;
-  let fg = 0;
-  for (let i = 3; i < d.length; i += 4) if (d[i] >= 128) fg += 1;
-  return fg / (d.length / 4);
-}
+export { maskForegroundFraction };
 
 export function segErrorText(err) {
   switch (err?.code) {

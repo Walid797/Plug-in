@@ -15,6 +15,7 @@ import { formatNumber, formatBytes } from '../../core/digits.js';
 import { formatDateFa } from '../../core/dates.js';
 import { workerStatus } from '../../platform/worker.js';
 import { Button, Group, Notice, Badge, Select, Switch, NumberInput, FilePick, Segmented, Icon } from '../kit.jsx';
+import { EpsonGuide } from '../EpsonGuide.jsx';
 
 export function modelStatusText(m) {
   switch (m?.status) {
@@ -153,6 +154,7 @@ function Calibration() {
           </tbody>
         </table>
       ) : null}
+      <EpsonGuide />
     </section>
   );
 }

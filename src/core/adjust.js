@@ -140,3 +140,56 @@ export function applyAdjustments(data, w, h, params, opts = {}) {
   }
   return data;
 }
+
+/* ------------------------------------------------------- print brightening */
+
+/**
+ * Compensation for prints that come out darker than the screen (typical for
+ * 4-colour dye inkjets on glossy paper: ink spread darkens mid-tones and closes
+ * shadows). A mid-tone gamma lift plus a shadow-opening bump:
+ *   t = s^gamma,  f = t + bump·t·(1−t)²
+ * Both terms keep 0 → 0 and 1 → 1 exactly, so pure white backgrounds stay pure
+ * white (no ink) and black stays black. Applied only to print/PDF/sheet output,
+ * never to the stored edit.
+ * Mid-grey (sRGB 0.5) lift: low ≈ +¼ stop, medium ≈ +½ stop, high ≈ +⅔ stop.
+ */
+export const PRINT_BOOST_LEVELS = Object.freeze({
+  off: Object.freeze({ gamma: 1, bump: 0 }),
+  low: Object.freeze({ gamma: 0.93, bump: 0.15 }),
+  medium: Object.freeze({ gamma: 0.87, bump: 0.28 }),
+  high: Object.freeze({ gamma: 0.8, bump: 0.4 }),
+});
+export const PRINT_BOOST_IDS = Object.freeze(['off', 'low', 'medium', 'high']);
+
+export function isPrintBoost(level) {
+  return Object.prototype.hasOwnProperty.call(PRINT_BOOST_LEVELS, level) && level !== 'off';
+}
+
+/** Tone value (0..1) after print brightening. */
+export function printBoostValue(s, level) {
+  const p = PRINT_BOOST_LEVELS[level] || PRINT_BOOST_LEVELS.off;
+  const t = clamp01(s) ** p.gamma;
+  return clamp01(t + p.bump * t * (1 - t) * (1 - t));
+}
+
+const boostLutCache = new Map();
+/** 256-entry LUT for a level, or null when the level is off/unknown. */
+export function printBoostLut(level) {
+  if (!isPrintBoost(level)) return null;
+  let lut = boostLutCache.get(level);
+  if (!lut) {
+    lut = new Uint8ClampedArray(256);
+    for (let v = 0; v < 256; v += 1) lut[v] = Math.round(printBoostValue(v / 255, level) * 255);
+    boostLutCache.set(level, lut);
+  }
+  return lut;
+}
+
+/** Apply one LUT to the RGB channels of an RGBA buffer, in place (alpha untouched). */
+export function applyLut(data, lut) {
+  if (!lut) return data;
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = lut[data[i]]; data[i + 1] = lut[data[i + 1]]; data[i + 2] = lut[data[i + 2]];
+  }
+  return data;
+}

@@ -9,6 +9,12 @@ import { formatDateTimeFa } from '../../core/dates.js';
 import { Icon, Button, Badge } from '../kit.jsx';
 import { ACCEPT } from '../Queue.jsx';
 import { aiAvailability } from '../../platform/capabilities.js';
+import { QUICK_PRESETS, presetCapacity } from '../../core/quickpresets.js';
+import { findPaper } from '../../core/presets.js';
+import { runQuickPreset } from '../../state/quick.js';
+import { orientationName } from '../../i18n/fa.js';
+
+const QUICK_INFO = QUICK_PRESETS.map((p) => ({ preset: p, photo: findPhoto(p.photoId), paper: findPaper(p.paperId), ...presetCapacity(p) }));
 
 export function HomeView() {
   const project = useStore((s) => s.project);
@@ -21,6 +27,17 @@ export function HomeView() {
   const [over, setOver] = useState(false);
   const fileRef = useRef(null);
   const camRef = useRef(null);
+  const quickRef = useRef(null);
+  const quickId = useRef(null);
+  const selectedId = useStore((s) => s.selectedPhotoId);
+  const busy = useStore((s) => Object.keys(s.tasks).length > 0);
+
+  const pickForQuick = (id) => { quickId.current = id; quickRef.current?.click(); };
+  const onQuickFiles = async (files) => {
+    const id = quickId.current;
+    const added = await importFiles(files);
+    if (added.length && id) await runQuickPreset(id, added);
+  };
 
   const onFiles = async (files) => {
     const added = await importFiles(files);
@@ -71,6 +88,31 @@ export function HomeView() {
             <input ref={camRef} type="file" accept="image/*" capture="user" hidden onChange={(e) => { const f = [...e.currentTarget.files]; e.currentTarget.value = ''; if (f.length) onFiles(f); }} />
             {count ? <p class="small">این پروژه {formatNumber(count)} عکس دارد. <button type="button" class="link-btn" onClick={() => setSection('editor')}>ادامهٔ ویرایش</button></p> : null}
           </div>
+        </section>
+
+        <section class="home-section quick-section" aria-labelledby="quick-title">
+          <h3 id="quick-title"><Icon name="wand-sparkles" size={20} /> چاپ سریع با یک کلیک</h3>
+          <p class="muted small">قالب را بزنید و عکس را انتخاب کنید؛ برنامه خودش اندازه، <b>پس‌زمینهٔ سفید</b>، کادر و اندازهٔ سر، نور چهره و برگهٔ کاغذ عکس را یک بار تنظیم می‌کند و <b>روشن‌سازی چاپ</b> را برای اینکه عکس تیره چاپ نشود اعمال می‌کند. بعد فقط «چاپ» را بزنید. تنظیم شده برای چاپگر جوهرافشان اپسون ۴ رنگ و کاغذ عکس براق.</p>
+          <div class="quick-grid">
+            {QUICK_INFO.map(({ preset, photo, paper, capacity, orientation }) => (
+              <div key={preset.id} class="quick-card">
+                <button type="button" class="quick-main" disabled={busy} onClick={() => pickForQuick(preset.id)} aria-label={`${preset.nameFa}: انتخاب عکس و آماده‌سازی خودکار`}>
+                  <span class="quick-frame" style={{ aspectRatio: `${photo.widthMm} / ${photo.heightMm}` }}><Icon name="user-round" /></span>
+                  <span class="quick-name">{preset.nameFa}</span>
+                  <span class="quick-cap"><b>{formatNumber(capacity)}</b> عکس {preset.perPerson === 'sheet' ? 'برای هر نفر' : 'در هر برگه'}</span>
+                  <span class="quick-paper">{paper.id === '4x6in' ? 'کاغذ عکس ۱۰×۱۵ (۴×۶ انچ)' : paper.nameFa} · {orientationName(orientation)}</span>
+                  <span class="quick-go"><Icon name="images" size={16} />انتخاب عکس</span>
+                </button>
+                {count ? (
+                  <div class="quick-alt">
+                    <button type="button" class="link-btn" disabled={busy || !selectedId} onClick={() => runQuickPreset(preset.id, [selectedId])}>روی عکس انتخاب‌شده</button>
+                    {count > 1 ? <button type="button" class="link-btn" disabled={busy} onClick={() => runQuickPreset(preset.id, getState().project.photoIds)}>همهٔ {formatNumber(count)} عکس</button> : null}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+          <input ref={quickRef} type="file" accept={ACCEPT} multiple hidden data-quick="1" onChange={(e) => { const f = [...e.currentTarget.files]; e.currentTarget.value = ''; if (f.length) onQuickFiles(f); }} />
         </section>
 
         <section class="home-section">

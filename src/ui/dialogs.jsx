@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { useStore, closeDialog } from '../state/store.js';
-import { Button, Icon, IconButton } from './kit.jsx';
+import { useStore, closeDialog, getState } from '../state/store.js';
+import { Button, Icon, IconButton, Badge } from './kit.jsx';
 import { formatNumber } from '../core/digits.js';
-import { orientationName, WORKFLOW, OFFLINE_BADGE } from '../i18n/fa.js';
+import { orientationName, WORKFLOW, OFFLINE_BADGE, qualityText } from '../i18n/fa.js';
+import { EpsonGuide, EpsonQuickLine } from './EpsonGuide.jsx';
+import { computeSheetLayout, resolvePaper, PRINT_BOOST_FA } from '../print/sheet.js';
+import { findQuickPreset } from '../core/quickpresets.js';
+import { findPhoto } from '../core/presets.js';
+import { segErrorText } from './views/Background.jsx';
 
 function Modal({ title, children, footer, wide, onCancel }) {
   const ref = useRef(null);
@@ -73,10 +78,77 @@ function PrePrintDialog({ layout, paper, mode }) {
         <li><Icon name="check" /><span><b>مقیاس (Scale)</b> را ۱۰۰٪ یا «اندازهٔ واقعی / Actual size» بگذارید و <b>«متناسب با صفحه / Fit to page / Shrink»</b> را خاموش کنید.</span></li>
         <li><Icon name="check" /><span><b>حاشیه‌ها (Margins)</b> را «هیچ / None» بگذارید. {isPdf ? '' : 'سربرگ و پانویس (Headers and footers) را خاموش کنید.'}</span></li>
         <li><Icon name="check" /><span><b>سینی کاغذ</b> را درست انتخاب کنید (برای کاغذ عکس معمولاً سینی عکس یا «Photo tray»).</span></li>
-        <li><Icon name="check" /><span><b>نوع کاغذ</b> را «Photo paper / Glossy» و کیفیت را «Best / High» انتخاب کنید.</span></li>
+        <li><Icon name="check" /><span><b>نوع کاغذ</b> را «Photo paper / Glossy» و کیفیت را «Best / High» انتخاب کنید (نه Plain paper؛ وگرنه عکس تیره می‌آید).</span></li>
         <li><Icon name="check" /><span><b>بدون حاشیه (Borderless)</b>: فقط اگر چاپگر پشتیبانی می‌کند و حاشیه‌های برنامه را کمتر از حاشیهٔ چاپگر گذاشته‌اید روشن کنید. بعضی درایورها در حالت بدون حاشیه کمی بزرگ‌نمایی (Expansion) می‌کنند؛ آن را کمترین مقدار بگذارید.</span></li>
       </ul>
+      <EpsonGuide />
       <div class="notice warn"><Icon name="triangle-alert" /><p>تنظیمات مرورگر یا درایور چاپگر می‌تواند اندازهٔ چاپ را تغییر دهد. برای اطمینان، یک بار «برگهٔ کالیبراسیون» را چاپ و با خط‌کش اندازه بگیرید. دقت اندازه تا زمانی که با خط‌کش بررسی نشود تضمین‌شده نیست.</p></div>
+    </Modal>
+  );
+}
+
+function bgStatus(r) {
+  if (r.bg === 'ok') return { kind: 'ok', text: 'پس‌زمینه سفید شد' };
+  if (r.bg === 'reused') return { kind: 'ok', text: 'پس‌زمینه سفید شد (ماسک قبلی)' };
+  if (r.bg === 'failed') return { kind: 'err', text: 'پس‌زمینه سفید نشد', detail: segErrorText({ code: r.bgError }) };
+  return { kind: 'warn', text: 'پس‌زمینه دست نخورد (مدل محلی در دسترس نیست)' };
+}
+
+function cropStatus(r) {
+  if (r.crop === 'ok') return { kind: 'ok', text: r.faces > 1 ? `کادر بر اساس بزرگ‌ترین چهره (${formatNumber(r.faces)} چهره)` : 'کادر و اندازهٔ سر تنظیم شد' };
+  if (r.crop === 'noface') return { kind: 'err', text: 'چهره پیدا نشد؛ کادر پیش‌فرض ماند' };
+  if (r.crop === 'failed') return { kind: 'err', text: 'تحلیل چهره ناموفق بود؛ کادر پیش‌فرض ماند' };
+  if (r.cancelled) return { kind: 'warn', text: 'کادر خودکار انجام نشد (لغو شد)' };
+  return { kind: 'warn', text: 'کادر خودکار انجام نشد (مدل چهره در دسترس نیست)' };
+}
+
+/** Result of a one-click preset: what really happened, then one Print button. */
+function QuickReadyDialog({ presetId, results, cancelled, aiState }) {
+  const preset = findQuickPreset(presetId);
+  const st = getState();
+  const layout = computeSheetLayout(st);
+  const paper = resolvePaper(st.project.sheet, st.settings);
+  const size = findPhoto(preset?.photoId);
+  const boost = st.project.sheet.printBoost || 'off';
+  const ok = results.filter((r) => !r.error);
+  const missing = results.filter((r) => r.error);
+  const canPrint = !!layout?.ok;
+  return (
+    <Modal wide title="آماده برای چاپ" onCancel={() => closeDialog('review')} footer={<>
+      <Button variant="primary" size="lg" icon="printer" data-autofocus disabled={!canPrint} onClick={() => closeDialog('print')}>چاپ</Button>
+      <Button icon="file-down" disabled={!canPrint} onClick={() => closeDialog('pdf')}>PDF با اندازهٔ دقیق</Button>
+      <Button variant="ghost" onClick={() => closeDialog('review')}>اول پیش‌نمایش را ببینم</Button>
+    </>}>
+      {canPrint ? (
+        <div class="notice ok"><Icon name="circle-check" /><div>
+          <strong>{formatNumber(layout.totals.placed)} عکس {size?.nameFa} روی {formatNumber(layout.totals.sheets)} برگهٔ {paper.nameFa}</strong>
+          <p>هر برگه {formatNumber(layout.sheet.widthMm)} × {formatNumber(layout.sheet.heightMm)} ملی‌متر، جهت {orientationName(layout.orientation)}{preset?.perPerson === 'sheet' ? `، برای هر نفر یک برگهٔ کامل (${formatNumber(layout.capacity)} عکس)` : ''}. روشن‌سازی چاپ: <b>{PRINT_BOOST_FA[boost]}</b> (پس‌زمینهٔ سفید، سفید خالص می‌ماند).</p>
+        </div></div>
+      ) : <div class="notice err"><Icon name="circle-x" /><p>چیدمان معتبر نیست؛ استودیوی چاپ را بررسی کنید.</p></div>}
+      {cancelled ? <div class="notice warn"><Icon name="triangle-alert" /><p>کار نیمه‌کاره لغو شد؛ فقط عکس‌های پردازش‌شده روی برگه هستند.</p></div> : null}
+      {!aiState.segOk || !aiState.faceOk ? <div class="notice warn"><Icon name="triangle-alert" /><p>{aiState.reason || 'مدل محلی هوش مصنوعی در دسترس نیست'}؛ مراحل خودکار مربوط انجام نشد. اندازه و چیدمان چاپ درست است.</p></div> : null}
+      <ul class="quick-results">
+        {ok.map((r) => {
+          const b = bgStatus(r); const c = cropStatus(r);
+          return (
+            <li key={r.id}>
+              <b class="qr-name" title={r.name}>{r.name}</b>
+              <span class="qr-chips">
+                <Badge kind="ok" icon="check">اندازهٔ {size?.nameFa}</Badge>
+                <Badge kind={b.kind} icon={b.kind === 'ok' ? 'check' : 'triangle-alert'}>{b.text}</Badge>
+                <Badge kind={c.kind} icon={c.kind === 'ok' ? 'check' : 'triangle-alert'}>{c.text}</Badge>
+                {r.light ? <Badge kind="gold" icon="sun">نور چهره اصلاح شد ({r.light > 0 ? 'روشن‌تر' : 'تیره‌تر'})</Badge> : r.crop === 'ok' ? <Badge kind="ok" icon="check">نور چهره مناسب</Badge> : null}
+              </span>
+              {b.detail ? <p class="tiny muted">{b.detail}</p> : null}
+              {r.issues.length ? <p class="tiny qr-issues"><Icon name="info" size={14} />برای بررسی: {r.issues.map((q) => qualityText(q).title).join('، ')}</p> : null}
+            </li>
+          );
+        })}
+        {missing.map((r) => <li key={r.id}><b class="qr-name">{r.name}</b> <Badge kind="err" icon="circle-x">عکس اصلی در دسترس نیست؛ روی برگه گذاشته نشد</Badge></li>)}
+      </ul>
+      <p class="tiny muted">هر تغییر با «واگرد» قابل برگشت است. انطباق رسمی با شرایط اداره تضمین نمی‌شود؛ مورد «برای بررسی» را در «اصلاح هوشمند» ببینید.</p>
+      <EpsonQuickLine />
+      <EpsonGuide />
     </Modal>
   );
 }
@@ -117,7 +189,7 @@ function PromptDialog({ title, label, value = '', confirmLabel = 'ذخیره' })
   );
 }
 
-const KINDS = { confirm: ConfirmDialog, retain: RetainDialog, preprint: PrePrintDialog, onboarding: OnboardingDialog, prompt: PromptDialog };
+const KINDS = { confirm: ConfirmDialog, retain: RetainDialog, preprint: PrePrintDialog, onboarding: OnboardingDialog, prompt: PromptDialog, quickready: QuickReadyDialog };
 
 export function Dialogs() {
   const dialog = useStore((s) => s.dialog);

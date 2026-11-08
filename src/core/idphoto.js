@@ -225,3 +225,24 @@ export function assessQuality({ metrics, evaluation, profile, stats, faceCount, 
   }
   return out;
 }
+
+/**
+ * Conservative automatic exposure for one-click presets. Corrects only faces
+ * that the quality check itself flags as clearly too dark or too bright (the
+ * same thresholds), so naturally darker or lighter skin is not "normalised".
+ * Works in linear light; the result is an exposure-slider delta (100 = 2 EV).
+ * @param {number|null|undefined} meanL face-region mean sRGB luma (0..1)
+ * @returns {number} integer slider delta (0 = leave as is)
+ */
+export const AUTO_LIGHT = Object.freeze({ darkBelow: QUALITY_THRESHOLDS.darkL, darkTarget: 0.33, maxEv: 0.7, brightAbove: QUALITY_THRESHOLDS.brightL, brightTarget: 0.82, minEv: -0.5 });
+
+const toLinear = (v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+
+export function autoExposureDelta(meanL) {
+  if (!Number.isFinite(meanL) || meanL <= 0.005 || meanL >= 0.995) return 0;
+  const A = AUTO_LIGHT;
+  let ev = 0;
+  if (meanL < A.darkBelow) ev = Math.min(A.maxEv, Math.log2(toLinear(A.darkTarget) / toLinear(meanL)));
+  else if (meanL > A.brightAbove) ev = Math.max(A.minEv, Math.log2(toLinear(A.brightTarget) / toLinear(meanL)));
+  return Math.round((ev / 2) * 100);
+}

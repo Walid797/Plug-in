@@ -286,6 +286,16 @@ export async function setRawMask(photoId, kind, bytes, w, h) {
   bumpRev(photoId);
 }
 
+/** Share of a mask canvas (alpha = person) that is foreground, or null. */
+export function maskForegroundFraction(canvas) {
+  if (!canvas) return null;
+  const cx = canvas.getContext('2d', { willReadFrequently: true });
+  const d = cx.getImageData(0, 0, canvas.width, canvas.height).data;
+  let fg = 0;
+  for (let i = 3; i < d.length; i += 4) if (d[i] >= 128) fg += 1;
+  return fg / (d.length / 4);
+}
+
 export function hasMask(photo, kind = 'person') {
   return !!(kind === 'clothes' ? (clothesMasks.get(photo.id) || photo.clothesKey) : (masks.get(photo.id) || photo.maskKey));
 }

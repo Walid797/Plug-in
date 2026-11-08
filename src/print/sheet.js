@@ -3,6 +3,7 @@
 import { getState, startTask, toast, logEvent } from '../state/store.js';
 import { computeLayout, computeMarks } from '../core/layout.js';
 import { PAPER_PRESETS } from '../core/presets.js';
+import { printBoostLut, applyLut, PRINT_BOOST_IDS } from '../core/adjust.js';
 import { mmToPx, mmToPt } from '../core/units.js';
 import { layoutToPdfPages, buildPdf } from '../core/pdf.js';
 import { parseJpegInfo, setJpegDpi, setPngDpi } from '../core/binary.js';
@@ -172,6 +173,22 @@ export function createSheetElement(layout, page, ctx) {
  * Render each distinct sheet item once at the sheet DPI.
  * @returns {Promise<{byItem: Map<string,{blob,url,bytes,width,height,photo}>, warnings:string[]}>}
  */
+/**
+ * Brighten a rendered photo for print (in place). Pure white stays pure white.
+ * @returns {boolean} whether anything was applied
+ */
+export function applyPrintBoost(canvas, level) {
+  const lut = printBoostLut(level);
+  if (!lut || !canvas?.width || !canvas?.height) return false;
+  const cx = canvas.getContext('2d', { willReadFrequently: true });
+  const img = cx.getImageData(0, 0, canvas.width, canvas.height);
+  applyLut(img.data, lut);
+  cx.putImageData(img, 0, 0);
+  return true;
+}
+
+export const PRINT_BOOST_FA = Object.freeze({ off: 'خاموش', low: 'کم', medium: 'متوسط', high: 'زیاد' });
+
 export async function renderSheetAssets(state, layout, task) {
   const sh = state.project.sheet;
   const dpi = sh.dpi || 300;
@@ -184,6 +201,8 @@ export async function renderSheetAssets(state, layout, task) {
     const item = sh.items.find((it) => it.id === usedItems[i]);
     const photo = state.photos[item.photoId];
     const r = await renderForOutput(photo, { dpi });
+    // per-item override is used only by the brightness test sheet
+    applyPrintBoost(r.canvas, item.boost ?? sh.printBoost ?? 'off');
     if (r.upscaled) warnings.push(`«${photo.name}»: وضوح مؤثر ${formatNumber(r.effectiveDpi, { maxFraction: 0 })} DPI (کمتر از ${formatNumber(dpi)})`);
     const blob = await canvasToBlob(r.canvas, 'image/jpeg', state.settings.jpegQuality);
     const bytes = new Uint8Array(await blob.arrayBuffer());
@@ -225,14 +244,14 @@ function setPageSize(W, H) {
 }
 
 /** Fill #print-root with sheets and open the browser print dialog. */
-export async function printSheets({ layout, assets, project, photos, settings, calibration = null }) {
+export async function printSheets({ layout, assets, project, photos, settings, calibration = null, labelFor = null }) {
   const root = document.getElementById('print-root');
   root.replaceChildren();
   const sh = project.sheet;
   for (const page of layout.pages) {
     root.appendChild(createSheetElement(layout, page, {
       urlFor: (id) => assets.byItem.get(id)?.url || null,
-      labelFor: (pl) => labelTextFor(pl, project, photos),
+      labelFor: labelFor || ((pl) => labelTextFor(pl, project, photos)),
       marks: sh.marks,
       calibration,
     }));
@@ -317,7 +336,8 @@ async function labelImage(text, wMm, hMm) {
   return { width: w, height: h, colorSpace: 'DeviceRGB', filter: 'DCTDecode', data: jb };
 }
 
-export async function buildSheetPdf(state, layout, assets) {
+export async function buildSheetPdf(state, layout, assets, { labelFor = null } = {}) {
+  const textFor = labelFor || ((pl) => labelTextFor(pl, state.project, state.photos));
   const images = {};
   const names = new Map();
   let k = 1;
@@ -333,7 +353,7 @@ export async function buildSheetPdf(state, layout, assets) {
     if (document.fonts?.load) await document.fonts.load('16px Vazirmatn').catch(() => {});
     for (const page of layout.pages) {
       for (const pl of page.placements) {
-        const text = labelTextFor(pl, state.project, state.photos);
+        const text = textFor(pl);
         const key = `${text}|${pl.label.w}|${pl.label.h}`;
         if (!text || labelNames.has(key)) continue;
         const name = `Lb${k++}`;
@@ -346,7 +366,7 @@ export async function buildSheetPdf(state, layout, assets) {
   const pages = layoutToPdfPages(layout, {
     imageName: (id) => names.get(id),
     marks: (page) => computeMarks(layout, page, sh.marks),
-    labelImage: (pl) => labelNames.get(`${labelTextFor(pl, state.project, state.photos)}|${pl.label.w}|${pl.label.h}`) || null,
+    labelImage: (pl) => labelNames.get(`${textFor(pl)}|${pl.label.w}|${pl.label.h}`) || null,
     calibration: cal,
   });
   const doc = { title: `${state.project.name} — هوشمند فوتو استودیو`, pages, images };
@@ -382,6 +402,58 @@ export async function runPdfExport() {
   } finally {
     task.done();
     if (assets) releaseAssets(assets);
+  }
+}
+
+/* ------------------------------------------------- brightness test sheet */
+
+/**
+ * Sheet state for the brightness test: the same photo once per print-boost
+ * level (off, low, medium, high), each labelled, on the current paper.
+ */
+export function boostTestState(state, photoId) {
+  const sh = state.project.sheet;
+  const items = PRINT_BOOST_IDS.map((lv) => ({ id: `boost-${lv}`, photoId, copies: 1, boost: lv }));
+  const sheet = {
+    ...sh, mode: 'exact', items, compact: false, fillOrder: 'col-ltr', allowRotation: false,
+    grid: { cols: null, rows: null, rotated: false },
+    label: { ...sh.label, enabled: true, heightMm: 4, gapMm: 1, content: 'custom', custom: '' },
+  };
+  return { ...state, project: { ...state.project, sheet } };
+}
+
+export const boostTestLabel = (pl) => `روشن‌سازی: ${PRINT_BOOST_FA[pl.itemId.slice(6)] || ''}`;
+
+/** Print (or save as PDF) the brightness test sheet for one photo. */
+export async function runBoostTest(photoId, mode = 'print') {
+  const base = getState();
+  if (!base.project || !base.photos[photoId]) { toast('ابتدا یک عکس روی برگه بگذارید.', 'error'); return false; }
+  const state = boostTestState(base, photoId);
+  const layout = computeLayout(layoutInput(state.project, state.photos, state.settings));
+  if (!layout.ok) { toast('برگهٔ آزمایش روی این کاغذ جا نمی‌شود؛ کاغذ بزرگ‌تر یا حاشیهٔ کمتر انتخاب کنید.', 'error'); return false; }
+  const task = startTask('ساخت برگهٔ آزمایش روشنایی…', { cancellable: true });
+  let assets = null;
+  try {
+    assets = await renderSheetAssets(state, layout, task);
+    if (mode === 'pdf') {
+      const pdf = await buildSheetPdf(state, layout, assets, { labelFor: boostTestLabel });
+      const name = safeFileName(`آزمایش-روشنایی-${formatNumber(layout.sheet.widthMm)}x${formatNumber(layout.sheet.heightMm)}mm`, 'pdf');
+      await saveBlob(new Blob([pdf], { type: 'application/pdf' }), name);
+      toast(`PDF «${name}» ساخته شد. با «Actual size / ۱۰۰٪» چاپ کنید.`, 'success', 8000);
+    } else {
+      task.done();
+      const cal = state.project.sheet.applyCalibrationPrint ? activeCalibration(state.settings) : null;
+      await printSheets({ layout, assets, project: state.project, photos: state.photos, settings: state.settings, calibration: cal, labelFor: boostTestLabel });
+    }
+    logEvent('boost-test', mode);
+    return true;
+  } catch (e) {
+    if (e.code === 'CANCELLED') toast('لغو شد.', 'info');
+    else { console.error(e); toast(e.code === 'NO_ORIGINAL' ? 'عکس اصلی در دسترس نیست.' : 'ساخت برگهٔ آزمایش ناموفق بود.', 'error'); }
+    return false;
+  } finally {
+    task.done();
+    if (assets) setTimeout(() => releaseAssets(assets), mode === 'pdf' ? 0 : 65_000);
   }
 }
 

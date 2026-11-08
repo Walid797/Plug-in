@@ -44,6 +44,9 @@ export const DEFAULT_SHEET = Object.freeze({
   printer: { borderless: false, hardMargins: { top: 3, right: 3, bottom: 3, left: 3 } },
   applyCalibrationPrint: true,
   applyCalibrationPdf: false,
+  // print brightening (see core/adjust.js PRINT_BOOST_LEVELS): off | low | medium | high
+  printBoost: 'medium',
+  quickPresetId: null,
   items: [],
 });
 

@@ -3,7 +3,11 @@ import { useStore, updateSheet, openDialog, updateSettings, uid, setSection, toa
 import { thumbUrl, getPreview, gatherAssets, originalAvailable } from '../../state/media.js';
 import { computeLayout } from '../../core/layout.js';
 import { COPY_PRESETS, DPI_PRESETS } from '../../core/presets.js';
-import { layoutInput, resolvePaper, allPaperPresets, createSheetElement, labelTextFor, runPrint, runPdfExport, runSheetImageExport, activeCalibration } from '../../print/sheet.js';
+import { layoutInput, resolvePaper, allPaperPresets, createSheetElement, labelTextFor, runPrint, runPdfExport, runSheetImageExport, activeCalibration, applyPrintBoost, PRINT_BOOST_FA, runBoostTest } from '../../print/sheet.js';
+import { PRINT_BOOST_IDS } from '../../core/adjust.js';
+import { QUICK_PRESETS, findQuickPreset, presetCapacity } from '../../core/quickpresets.js';
+import { runQuickPreset } from '../../state/quick.js';
+import { EpsonGuide } from '../EpsonGuide.jsx';
 import { renderPhoto } from '../../render/renderPhoto.js';
 import { canvasToBlob } from '../../platform/image.js';
 import { formatNumber } from '../../core/digits.js';
@@ -23,8 +27,8 @@ function forgetPreviews(photoIds) {
   }
 }
 
-function editKey(photo, rev) {
-  return JSON.stringify([photo.id, photo.origKey, photo.edit, rev]);
+function editKey(photo, rev, boost = 'off') {
+  return JSON.stringify([photo.id, photo.origKey, photo.edit, rev, boost]);
 }
 
 /** Revoke later, never while an <img> may still be loading the URL. */
@@ -38,8 +42,8 @@ function retireLater(url) {
  * URL, identical requests share one render, and old URLs are revoked only after
  * a delay so slow devices never lose images that are still loading.
  */
-export function previewUrl(photo, rev) {
-  const key = editKey(photo, rev);
+export function previewUrl(photo, rev, boost = 'off') {
+  const key = editKey(photo, rev, boost);
   latestKey.set(photo.id, key);
   if (previewCache.has(key)) return Promise.resolve(previewCache.get(key));
   if (inflight.has(key)) return inflight.get(key);
@@ -50,6 +54,7 @@ export function previewUrl(photo, rev) {
     const outW = 360;
     const outH = Math.round((outW * photo.edit.heightMm) / photo.edit.widthMm);
     const c = renderPhoto(photo.edit, assets, outW, outH, { pxPerMm: outW / photo.edit.widthMm, frameWidthPx: outW });
+    applyPrintBoost(c, boost); // same curve as print/PDF (only when the preview toggle asks for it)
     const blob = await canvasToBlob(c, 'image/jpeg', 0.9);
     const url = URL.createObjectURL(blob);
     if (latestKey.get(photo.id) !== key) { retireLater(url); return url; } // superseded: leave newer entries alone
@@ -66,7 +71,7 @@ export function previewUrl(photo, rev) {
 
 /* ------------------------------------------------------------- pieces */
 
-function SheetPreview({ layout, project, photos, zoom, showOrder }) {
+function SheetPreview({ layout, project, photos, zoom, showOrder, boost = 'off' }) {
   const hostRef = useRef(null);
   const rev = useStore((s) => s.rev);
   const [urls, setUrls] = useState({});
@@ -92,12 +97,12 @@ function SheetPreview({ layout, project, photos, zoom, showOrder }) {
       for (const it of project.sheet.items) {
         const p = photos[it.photoId];
         if (!p) continue;
-        try { out[it.id] = await previewUrl(p, rev[p.id] || 0); } catch { out[it.id] = null; }
+        try { out[it.id] = await previewUrl(p, rev[p.id] || 0, boost); } catch { out[it.id] = null; }
       }
       if (alive) setUrls(out);
     })();
     return () => { alive = false; };
-  }, [project.sheet.items, photos, rev, retry]);
+  }, [project.sheet.items, photos, rev, retry, boost]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -245,6 +250,9 @@ export function PrintView() {
   const settings = useStore((s) => s.settings);
   const [zoom, setZoom] = useState('fit');
   const [showOrder, setShowOrder] = useState(true);
+  const [previewBoost, setPreviewBoost] = useState(false);
+  const [quickId, setQuickId] = useState(null);
+  const busy = useStore((s) => Object.keys(s.tasks).length > 0);
   const autoAdded = useRef(false);
 
   useEffect(() => {
@@ -262,6 +270,11 @@ export function PrintView() {
   const papers = allPaperPresets(settings);
   const missingOriginals = sheet.items.some((it) => photos[it.photoId] && !originalAvailable(photos[it.photoId]));
   const cal = activeCalibration(settings);
+  const boost = sheet.printBoost || 'off';
+  const qid = quickId || sheet.quickPresetId || QUICK_PRESETS[0].id;
+  const sheetPhotoIds = [...new Set(sheet.items.map((it) => it.photoId).filter((id) => photos[id]))];
+  const quickTargets = sheetPhotoIds.length ? sheetPhotoIds : project.photoIds.filter((id) => photos[id]);
+  const testPhotoId = sheetPhotoIds[0] || project.photoIds.find((id) => photos[id]) || null;
 
   const doPrint = async (mode) => {
     if (!layout?.ok) return;
@@ -298,6 +311,7 @@ export function PrintView() {
                 {layout.capacity ? <span>ظرفیت هر برگه: <b>{formatNumber(layout.capacity)}</b></span> : null}
                 <span>{paper.nameFa} · {orientationName(layout.orientation)} · {formatNumber(layout.sheet.widthMm)}×{formatNumber(layout.sheet.heightMm)} ملی‌متر</span>
                 {cal && sheet.applyCalibrationPrint ? <Badge kind="gold" icon="ruler">کالیبراسیون: {cal.name}</Badge> : null}
+                <Badge kind={boost === 'off' ? '' : 'accent'} icon="sun">روشن‌سازی چاپ: {PRINT_BOOST_FA[boost]}</Badge>
               </>
             ) : <span>چیدمان آماده نیست</span>}
           </div>
@@ -305,12 +319,19 @@ export function PrintView() {
             <div class="print-errors">{layout.errors.map((er, i) => <Notice key={i} kind="err">{layoutErrorText(er)}</Notice>)}</div>
           ) : null}
           {!project.photoIds.length ? <Empty icon="images" title="عکسی در پروژه نیست" action={<Button variant="primary" icon="upload" onClick={() => setSection('home')}>وارد کردن عکس</Button>}>برای چیدمان چاپ، ابتدا عکس وارد کنید.</Empty> : null}
-          <SheetPreview layout={layout} project={project} photos={photos} zoom={zoom} showOrder={showOrder} />
+          <SheetPreview layout={layout} project={project} photos={photos} zoom={zoom} showOrder={showOrder} boost={previewBoost ? boost : 'off'} />
         </section>
         <aside class="panel" aria-label="تنظیمات چاپ">
           <div class="panel-inner">
             {layout?.warnings?.filter((w) => layoutWarningText(w)).map((w, i) => <Notice key={i} kind={w.code === 'UNUSED_SLOTS' || w.code === 'ROTATED_FOR_FIT' ? 'info' : 'warn'}>{layoutWarningText(w)}</Notice>)}
             {missingOriginals ? <Notice kind="err">عکس اصلی بعضی موارد موجود نیست؛ آن‌ها را جایگزین کنید.</Notice> : null}
+            <Group title="قالب آماده (یک کلیک)">
+              <Select label="قالب" value={qid} onChange={setQuickId} options={QUICK_PRESETS.map((p) => ({ value: p.id, label: `${p.nameFa} — ${formatNumber(presetCapacity(p).capacity)} عکس` }))} />
+              <p class="hint">اندازه، پس‌زمینهٔ سفید، کادر و اندازهٔ سر، نور چهره، کاغذ عکس ۱۰×۱۵ (۴×۶ انچ)، حاشیه‌ها و روشن‌سازی چاپ یک‌جا تنظیم می‌شوند. {findQuickPreset(qid)?.perPerson === 'sheet' ? 'هر نفر یک برگهٔ کامل می‌گیرد.' : 'عکس‌ها به‌طور مساوی روی برگه تقسیم می‌شوند.'}</p>
+              <Button variant="gold" icon="wand-sparkles" disabled={busy || !quickTargets.length} onClick={() => runQuickPreset(qid, quickTargets)}>
+                {`اعمال روی ${formatNumber(quickTargets.length)} عکس${sheetPhotoIds.length ? ' این برگه' : ''}`}
+              </Button>
+            </Group>
             <Group title="کاغذ">
               <Select label="اندازهٔ کاغذ" value={sheet.paperId} onChange={(v) => updateSheet({ paperId: v })} options={[
                 { group: 'اندازه‌های آماده', options: papers.map((p) => ({ value: p.id, label: `${p.nameFa} (${formatNumber(p.widthMm)}×${formatNumber(p.heightMm)})` })) },
@@ -382,6 +403,14 @@ export function PrintView() {
               ) : null}
             </Group>
             <Group title="چاپگر و کیفیت">
+              <Select label="روشن‌سازی برای چاپ (ضد تیره شدن)" value={boost} onChange={(v) => updateSheet({ printBoost: v })} options={PRINT_BOOST_IDS.map((id) => ({ value: id, label: `${PRINT_BOOST_FA[id]}${id === 'medium' ? ' (پیشنهادی برای اپسون ۴ رنگ و کاغذ براق)' : ''}` }))}
+                hint="چاپ جوهرافشان روی کاغذ براق معمولاً از صفحهٔ نمایش تیره‌تر است. این گزینه سایه‌ها و رنگ‌های میانی (چهره) را روشن می‌کند؛ سفید خالص (پس‌زمینه) و سیاه دست نمی‌خورند. فقط روی چاپ، PDF و تصویر برگه اعمال می‌شود، نه روی عکس ذخیره‌شده." />
+              <Switch label="نمایش اثر روشن‌سازی در پیش‌نمایش" checked={previewBoost} disabled={boost === 'off'} onChange={setPreviewBoost} hint="خاموش: پیش‌نمایش همان عکس ویرایش‌شده است (هدف این است که چاپ مثل همین دیده شود)." />
+              <div class="btn-row">
+                <Button size="sm" icon="printer" disabled={busy || !testPhotoId} onClick={() => runBoostTest(testPhotoId, 'print')}>برگهٔ آزمایش روشنایی</Button>
+                <Button size="sm" variant="ghost" icon="file-down" disabled={busy || !testPhotoId} onClick={() => runBoostTest(testPhotoId, 'pdf')}>PDF آزمایش</Button>
+              </div>
+              <p class="hint">یک بار چاپ کنید: همان عکس با چهار سطح (خاموش، کم، متوسط، زیاد) و نام هر سطح زیر آن. پس از خشک شدن، سطحی را که به صفحه نزدیک‌تر است انتخاب کنید.</p>
               <Select label="کیفیت (DPI) برای چاپ و PDF" value={String(sheet.dpi)} onChange={(v) => updateSheet({ dpi: Number(v) })} options={DPI_PRESETS.map((d) => ({ value: String(d), label: `${formatNumber(d)} DPI${d === 300 ? ' (پیشنهادی)' : ''}` }))} />
               <Switch label="چاپگر بدون حاشیه (Borderless)" checked={sheet.printer.borderless} onChange={(v) => updateSheet((sh) => ({ ...sh, printer: { ...sh.printer, borderless: v } }))} />
               {!sheet.printer.borderless ? (
@@ -394,6 +423,7 @@ export function PrintView() {
               <Button size="sm" variant="ghost" icon="save" onClick={savePreset}>ذخیرهٔ این چیدمان به‌عنوان قالب</Button>
               <Button size="sm" variant="ghost" icon="ruler" onClick={() => setSection('settings')}>برگهٔ کالیبراسیون</Button>
             </div>
+            <EpsonGuide />
             <Notice kind="warn">پیش‌نمایش و چاپ از یک محاسبهٔ هندسی استفاده می‌کنند، اما مرورگر یا درایور چاپگر ممکن است اندازه را تغییر دهد. در پنجرهٔ چاپ مقیاس را ۱۰۰٪ بگذارید و نتیجه را با خط‌کش بسنجید.</Notice>
           </div>
         </aside>
