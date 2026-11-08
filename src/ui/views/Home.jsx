@@ -1,4 +1,4 @@
-import { useRef, useState } from 'preact/hooks';
+import { useMemo, useRef, useState } from 'preact/hooks';
 import { useStore, setSection, getState, updateEdit, updateSettings } from '../../state/store.js';
 import { importFiles, thumbUrl } from '../../state/media.js';
 import { createProject, openProject } from '../../state/persist.js';
@@ -6,15 +6,31 @@ import { PURPOSES, findPhoto } from '../../core/presets.js';
 import { WORKFLOW, OFFLINE_BADGE, APP_NAME } from '../../i18n/fa.js';
 import { formatNumber } from '../../core/digits.js';
 import { formatDateTimeFa } from '../../core/dates.js';
-import { Icon, Button, Badge } from '../kit.jsx';
+import { Icon, Button, Badge, IconButton } from '../kit.jsx';
 import { ACCEPT } from '../Queue.jsx';
 import { aiAvailability } from '../../platform/capabilities.js';
-import { QUICK_PRESETS, presetCapacity } from '../../core/quickpresets.js';
-import { findPaper } from '../../core/presets.js';
-import { runQuickPreset } from '../../state/quick.js';
+import { allQuickPresets, presetCapacity, quickPaper, copiesPerPerson } from '../../core/quickpresets.js';
+import { runQuickPreset, editQuickPreset } from '../../state/quick.js';
 import { orientationName } from '../../i18n/fa.js';
 
-const QUICK_INFO = QUICK_PRESETS.map((p) => ({ preset: p, photo: findPhoto(p.photoId), paper: findPaper(p.paperId), ...presetCapacity(p) }));
+/** Card data for every one-click preset (capacity from the real layout engine). */
+export function quickCards(settings) {
+  const papers = settings.paperPresets || [];
+  return allQuickPresets(settings).map((p) => {
+    const cap = presetCapacity(p, papers);
+    return { preset: p, paper: quickPaper(p, papers), ...cap, each: copiesPerPerson(p, cap.capacity) };
+  });
+}
+
+function quickCapText(c) {
+  if (!c.capacity) return <span class="quick-cap err">روی این کاغذ جا نمی‌شود</span>;
+  if (c.preset.perPerson === 'share') return <span class="quick-cap"><b>{formatNumber(c.capacity)}</b> عکس در هر برگه</span>;
+  return <span class="quick-cap"><b>{formatNumber(c.each)}</b> عکس برای هر نفر</span>;
+}
+
+function paperText(paper) {
+  return paper.id === '4x6in' ? 'کاغذ عکس ۱۰×۱۵ (۴×۶ انچ)' : paper.id === 'custom' ? `${formatNumber(paper.widthMm)}×${formatNumber(paper.heightMm)} ملی‌متر` : paper.nameFa;
+}
 
 export function HomeView() {
   const project = useStore((s) => s.project);
@@ -31,6 +47,8 @@ export function HomeView() {
   const quickId = useRef(null);
   const selectedId = useStore((s) => s.selectedPhotoId);
   const busy = useStore((s) => Object.keys(s.tasks).length > 0);
+  const quickSettings = useStore((s) => ({ q: s.settings.quickPresets, o: s.settings.quickOverrides, p: s.settings.paperPresets }));
+  const cards = useMemo(() => quickCards({ quickPresets: quickSettings.q, quickOverrides: quickSettings.o, paperPresets: quickSettings.p }), [quickSettings.q, quickSettings.o, quickSettings.p]);
 
   const pickForQuick = (id) => { quickId.current = id; quickRef.current?.click(); };
   const onQuickFiles = async (files) => {
@@ -94,24 +112,34 @@ export function HomeView() {
           <h3 id="quick-title"><Icon name="wand-sparkles" size={20} /> چاپ سریع با یک کلیک</h3>
           <p class="muted small">قالب را بزنید و عکس را انتخاب کنید؛ برنامه خودش اندازه، <b>پس‌زمینهٔ سفید</b>، کادر و اندازهٔ سر، نور چهره و برگهٔ کاغذ عکس را یک بار تنظیم می‌کند و <b>روشن‌سازی چاپ</b> را برای اینکه عکس تیره چاپ نشود اعمال می‌کند. بعد فقط «چاپ» را بزنید. تنظیم شده برای چاپگر جوهرافشان اپسون ۴ رنگ و کاغذ عکس براق.</p>
           <div class="quick-grid">
-            {QUICK_INFO.map(({ preset, photo, paper, capacity, orientation }) => (
-              <div key={preset.id} class="quick-card">
-                <button type="button" class="quick-main" disabled={busy} onClick={() => pickForQuick(preset.id)} aria-label={`${preset.nameFa}: انتخاب عکس و آماده‌سازی خودکار`}>
-                  <span class="quick-frame" style={{ aspectRatio: `${photo.widthMm} / ${photo.heightMm}` }}><Icon name="user-round" /></span>
-                  <span class="quick-name">{preset.nameFa}</span>
-                  <span class="quick-cap"><b>{formatNumber(capacity)}</b> عکس {preset.perPerson === 'sheet' ? 'برای هر نفر' : 'در هر برگه'}</span>
-                  <span class="quick-paper">{paper.id === '4x6in' ? 'کاغذ عکس ۱۰×۱۵ (۴×۶ انچ)' : paper.nameFa} · {orientationName(orientation)}</span>
+            {cards.map((c) => (
+              <div key={c.preset.id} class="quick-card" data-preset={c.preset.id}>
+                <button type="button" class="quick-main" disabled={busy || !c.capacity} onClick={() => pickForQuick(c.preset.id)} aria-label={`${c.preset.nameFa}: انتخاب عکس و آماده‌سازی خودکار`}>
+                  <span class="quick-frame" style={{ aspectRatio: `${c.preset.widthMm} / ${c.preset.heightMm}`, background: c.preset.whiteBg ? c.preset.bgColor : undefined }}><Icon name="user-round" /></span>
+                  <span class="quick-name">{c.preset.nameFa}</span>
+                  {quickCapText(c)}
+                  <span class="quick-paper">{paperText(c.paper)}{c.orientation ? ` · ${orientationName(c.orientation)}` : ''}</span>
+                  {c.preset.edited ? <span class="quick-tag">تنظیم‌شده</span> : !c.preset.builtin ? <span class="quick-tag own">قالب شما</span> : null}
                   <span class="quick-go"><Icon name="images" size={16} />انتخاب عکس</span>
                 </button>
-                {count ? (
+                <IconButton small class="quick-edit" icon="settings" label={`تنظیم دستی قالب «${c.preset.nameFa}»`} onClick={() => editQuickPreset(c.preset.id)} />
+                {count && c.capacity ? (
                   <div class="quick-alt">
-                    <button type="button" class="link-btn" disabled={busy || !selectedId} onClick={() => runQuickPreset(preset.id, [selectedId])}>روی عکس انتخاب‌شده</button>
-                    {count > 1 ? <button type="button" class="link-btn" disabled={busy} onClick={() => runQuickPreset(preset.id, getState().project.photoIds)}>همهٔ {formatNumber(count)} عکس</button> : null}
+                    <button type="button" class="link-btn" disabled={busy || !selectedId} onClick={() => runQuickPreset(c.preset.id, [selectedId])}>روی عکس انتخاب‌شده</button>
+                    {count > 1 ? <button type="button" class="link-btn" disabled={busy} onClick={() => runQuickPreset(c.preset.id, getState().project.photoIds)}>همهٔ {formatNumber(count)} عکس</button> : null}
                   </div>
                 ) : null}
               </div>
             ))}
+            <div class="quick-card">
+              <button type="button" class="quick-main quick-new" onClick={() => editQuickPreset(null, 'new')}>
+                <span class="quick-plus"><Icon name="plus" size={26} /></span>
+                <span class="quick-name">قالب تازه</span>
+                <span class="quick-paper">اندازه، کاغذ، حاشیه، تعداد، رنگ پس‌زمینه و روشنایی را خودتان تنظیم کنید</span>
+              </button>
+            </div>
           </div>
+          <p class="hint"><Icon name="settings" size={14} /> با دکمهٔ چرخ‌دنده روی هر کارت، تنظیمات آن قالب را دستی عوض کنید. همهٔ قالب‌ها در «قالب‌ها» هم فهرست شده‌اند.</p>
           <input ref={quickRef} type="file" accept={ACCEPT} multiple hidden data-quick="1" onChange={(e) => { const f = [...e.currentTarget.files]; e.currentTarget.value = ''; if (f.length) onQuickFiles(f); }} />
         </section>
 

@@ -210,7 +210,7 @@ export function hasUnsavedChanges() {
 
 export async function exportProjectSettingsJson() {
   const s = getState();
-  return JSON.stringify({ format: 'hoshmand-templates', version: 1, paperPresets: s.settings.paperPresets, layoutPresets: s.settings.layoutPresets, customProfiles: s.settings.customProfiles }, null, 2);
+  return JSON.stringify({ format: 'hoshmand-templates', version: 1, paperPresets: s.settings.paperPresets, layoutPresets: s.settings.layoutPresets, customProfiles: s.settings.customProfiles, quickPresets: s.settings.quickPresets || [], quickOverrides: s.settings.quickOverrides || {} }, null, 2);
 }
 
 export { logEvent };

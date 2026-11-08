@@ -496,6 +496,10 @@ dialog.modal.wide { width: min(780px, calc(100vw - 24px)); }
 dialog.modal::backdrop { background: rgba(5, 6, 8, .6); backdrop-filter: blur(3px); }
 .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--line); }
 .modal-body { padding: 18px; display: grid; gap: 12px; overflow: auto; max-height: calc(100dvh - 190px); }
+/* head and footer stay visible; only the body scrolls, whatever the footer height */
+dialog.modal[open] { display: flex; flex-direction: column; overflow: hidden; }
+dialog.modal[open] > .modal-head, dialog.modal[open] > .modal-foot { flex: none; }
+dialog.modal[open] > .modal-body { flex: 1 1 auto; min-height: 0; max-height: none; }
 .modal-foot { display: flex; gap: 8px; justify-content: flex-start; padding: 14px 18px; border-top: 1px solid var(--line); flex-wrap: wrap; }
 .checklist { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
 .checklist li { display: flex; gap: 10px; align-items: flex-start; font-size: .9rem; line-height: 1.75; }
@@ -724,6 +728,31 @@ dialog.modal::backdrop { background: rgba(5, 6, 8, .6); backdrop-filter: blur(3p
 .epson-body { padding: 0 14px 12px; font-size: .86rem; line-height: 1.9; }
 .epson-body h4 { margin: 10px 0 4px; font-size: .9rem; }
 .epson-body ol, .epson-body ul { margin: 0; padding-inline-start: 20px; display: grid; gap: 4px; }
+
+/* one-click preset editor */
+.quick-card { position: relative; }
+.quick-edit { position: absolute; top: 6px; inset-inline-end: 6px; background: var(--surface-1); }
+.quick-tag { font-size: .7rem; padding: 1px 8px; border-radius: 999px; background: var(--gold-soft); color: var(--gold); font-weight: 700; }
+.quick-tag.own { background: var(--accent-soft); color: var(--accent); }
+.quick-cap.err { color: var(--err); font-weight: 700; }
+.quick-new { border-style: dashed; background: var(--surface-1); align-content: center; min-height: 100%; }
+.quick-plus { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; background: var(--gold-soft); color: var(--gold); }
+dialog.modal.qp-modal { width: min(1000px, calc(100vw - 24px)); }
+.qp-body { grid-template-columns: minmax(0, 1fr) minmax(0, 330px); align-items: start; }
+.qp-form { display: grid; gap: 4px; min-width: 0; }
+.qp-preview { position: sticky; top: 0; display: grid; gap: 10px; min-width: 0; }
+.qp-diagram { width: 100%; max-height: 340px; background: var(--surface-2); border-radius: var(--radius); padding: 8px; }
+.qp-diagram.empty { display: grid; place-items: center; min-height: 160px; color: var(--err); }
+.qp-summary p { margin: 2px 0; }
+.qp-cap { font-size: .95rem; }
+.qp-cap .num { font-size: 1.7rem; font-weight: 800; color: var(--accent); }
+@media (max-width: 760px) {
+  .qp-body { grid-template-columns: minmax(0, 1fr); }
+  .qp-preview { position: static; order: -1; }
+  .qp-diagram { max-height: 220px; }
+}
+.table-wrap { overflow-x: auto; max-width: 100%; }
+.quick-table td { vertical-align: middle; }
 
 /* 90-print.css */
 /* Print sheet geometry — shared by preview and print (all sizes in mm). */

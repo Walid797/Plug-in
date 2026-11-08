@@ -6,12 +6,16 @@ import { Button, Group, Badge, Icon, IconButton, NumberInput, FilePick, Notice }
 import { saveBlob, readFileText } from '../../platform/download.js';
 import { safeFileName } from '../../core/filenames.js';
 import { useState } from 'preact/hooks';
+import { allQuickPresets, presetCapacity, quickPaper, quickSizeLabel, copiesPerPerson, normalizeQuickPreset, quickFields, QUICK_PRESETS } from '../../core/quickpresets.js';
+import { editQuickPreset, resetQuickPreset, deleteQuickPreset } from '../../state/quick.js';
+import { PRINT_BOOST_FA } from '../../print/sheet.js';
+import { bgColorName } from '../QuickPresetEditor.jsx';
 
 const isNum = (v, lo, hi) => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
 
 /** Validate imported JSON strictly; unknown fields are dropped. */
 export function sanitizeTemplates(json) {
-  const out = { paperPresets: [], layoutPresets: [], customProfiles: [] };
+  const out = { paperPresets: [], layoutPresets: [], customProfiles: [], quickPresets: [], quickOverrides: {} };
   if (!json || json.format !== 'hoshmand-templates') throw new Error('FORMAT');
   for (const p of (json.paperPresets || []).slice(0, 100)) {
     if (isNum(p.widthMm, 10, 2000) && isNum(p.heightMm, 10, 2000)) out.paperPresets.push({ id: uid('paper'), nameFa: String(p.nameFa || 'کاغذ').slice(0, 60), widthMm: p.widthMm, heightMm: p.heightMm });
@@ -43,7 +47,61 @@ export function sanitizeTemplates(json) {
       verified: false, noteFa: String(r.noteFa || '').slice(0, 200),
     });
   }
+  for (const q of (Array.isArray(json.quickPresets) ? json.quickPresets : []).slice(0, 100)) {
+    if (!q || typeof q !== 'object') continue;
+    out.quickPresets.push({ id: uid('qp'), ...quickFields(normalizeQuickPreset(q)) });
+  }
+  const ov = json.quickOverrides && typeof json.quickOverrides === 'object' ? json.quickOverrides : {};
+  for (const b of QUICK_PRESETS) {
+    if (ov[b.id] && typeof ov[b.id] === 'object') out.quickOverrides[b.id] = quickFields(normalizeQuickPreset(ov[b.id]));
+  }
   return out;
+}
+
+function QuickPresetsCard({ settings }) {
+  const list = allQuickPresets(settings);
+  const papers = settings.paperPresets || [];
+  const remove = async (p) => {
+    if (!(await confirmDialog({ title: 'حذف قالب', body: `«${p.nameFa}» حذف شود؟`, confirmLabel: 'حذف', danger: true }))) return;
+    deleteQuickPreset(p.id);
+  };
+  const reset = async (p) => {
+    if (!(await confirmDialog({ title: 'بازگشت به تنظیمات اصلی', body: `تغییرات شما در «${p.nameFa}» پاک شود؟`, confirmLabel: 'بازگشت به اصلی' }))) return;
+    resetQuickPreset(p.id);
+  };
+  return (
+    <section class="card" id="quick-presets">
+      <div class="group-title"><h3>قالب‌های چاپ سریع (یک کلیک)</h3><span class="actions"><Button size="sm" icon="plus" onClick={() => editQuickPreset(null, 'new')}>قالب تازه</Button></span></div>
+      <p class="muted small">هر قالب یک بار اندازه، پس‌زمینه، کادر، نور، کاغذ، حاشیه، تعداد و روشن‌سازی چاپ را تنظیم می‌کند. قالب‌های آماده را می‌توانید دستی تغییر دهید و هر وقت خواستید به تنظیمات اصلی برگردانید.</p>
+      <div class="table-wrap">
+        <table class="table quick-table">
+          <thead><tr><th>نام</th><th>عکس</th><th>کاغذ / حاشیه / فاصله</th><th>تعداد</th><th>خودکار</th><th>روشن‌سازی</th><th /></tr></thead>
+          <tbody>
+            {list.map((p) => {
+              const c = presetCapacity(p, papers);
+              const paper = quickPaper(p, papers);
+              return (
+                <tr key={p.id} data-preset={p.id}>
+                  <td>{p.nameFa} {p.edited ? <Badge kind="gold">تنظیم‌شده</Badge> : !p.builtin ? <Badge kind="accent">قالب شما</Badge> : null}</td>
+                  <td class="nowrap">{quickSizeLabel(p)}</td>
+                  <td>{paper.nameFa} · {formatNumber(p.margin)} / {formatNumber(p.gap)} ملی‌متر</td>
+                  <td class="nowrap">{c.capacity ? (p.perPerson === 'share' ? `${formatNumber(c.capacity)} در برگه (تقسیم)` : `${formatNumber(copiesPerPerson(p, c.capacity))} برای هر نفر`) : <Badge kind="err">جا نمی‌شود</Badge>}</td>
+                  <td class="small">{[p.whiteBg ? `پس‌زمینهٔ ${bgColorName(p.bgColor)}` : null, p.autoCrop ? 'کادر' : null, p.autoLight ? 'نور' : null].filter(Boolean).join('، ') || '—'}</td>
+                  <td class="nowrap">{PRINT_BOOST_FA[p.printBoost]}</td>
+                  <td class="nowrap">
+                    <Button size="sm" icon="settings" onClick={() => editQuickPreset(p.id)}>تنظیم</Button>
+                    <IconButton small icon="copy" label="کپی به‌عنوان قالب تازه" onClick={() => editQuickPreset(p.id, 'new')} />
+                    {p.edited ? <IconButton small icon="rotate-ccw" label="بازگشت به تنظیمات اصلی" onClick={() => reset(p)} /> : null}
+                    {!p.builtin ? <IconButton small icon="trash-2" label="حذف" onClick={() => remove(p)} /> : null}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
 }
 
 function ProfileEditor({ onDone }) {
@@ -81,7 +139,7 @@ export function TemplatesView() {
     updateSettings((s) => ({ [kind]: s[kind].filter((x) => x.id !== id) }));
   };
   const exportJson = async () => {
-    const data = JSON.stringify({ format: 'hoshmand-templates', version: 1, paperPresets: settings.paperPresets, layoutPresets: settings.layoutPresets, customProfiles: settings.customProfiles }, null, 2);
+    const data = JSON.stringify({ format: 'hoshmand-templates', version: 1, paperPresets: settings.paperPresets, layoutPresets: settings.layoutPresets, customProfiles: settings.customProfiles, quickPresets: settings.quickPresets || [], quickOverrides: settings.quickOverrides || {} }, null, 2);
     await saveBlob(new Blob([data], { type: 'application/json' }), safeFileName('قالب‌های-هوشمند', 'json'));
     toast('فایل قالب‌ها ساخته شد.', 'success');
   };
@@ -89,8 +147,8 @@ export function TemplatesView() {
     try {
       const text = await readFileText(files[0]);
       const t = sanitizeTemplates(JSON.parse(text));
-      updateSettings((s) => ({ paperPresets: [...s.paperPresets, ...t.paperPresets], layoutPresets: [...s.layoutPresets, ...t.layoutPresets], customProfiles: [...s.customProfiles, ...t.customProfiles] }));
-      toast(`${formatNumber(t.paperPresets.length + t.layoutPresets.length + t.customProfiles.length)} قالب وارد شد.`, 'success');
+      updateSettings((s) => ({ paperPresets: [...s.paperPresets, ...t.paperPresets], layoutPresets: [...s.layoutPresets, ...t.layoutPresets], customProfiles: [...s.customProfiles, ...t.customProfiles], quickPresets: [...(s.quickPresets || []), ...t.quickPresets], quickOverrides: { ...(s.quickOverrides || {}), ...t.quickOverrides } }));
+      toast(`${formatNumber(t.paperPresets.length + t.layoutPresets.length + t.customProfiles.length + t.quickPresets.length + Object.keys(t.quickOverrides).length)} قالب وارد شد.`, 'success');
     } catch {
       toast('فایل قالب معتبر نیست.', 'error');
     }
@@ -99,12 +157,14 @@ export function TemplatesView() {
     <div class="view">
       <div class="page">
         <div class="page-head">
-          <div><h2>قالب‌های ذخیره‌شده</h2><p class="muted">کاغذهای سفارشی، چیدمان‌های چاپ و قواعد عکس پرسنلی را ذخیره و دوباره استفاده کنید.</p></div>
+          <div><h2>قالب‌های ذخیره‌شده</h2><p class="muted">قالب‌های چاپ سریع، کاغذهای سفارشی، چیدمان‌های چاپ و قواعد عکس پرسنلی را ذخیره و دوباره استفاده کنید.</p></div>
           <div class="btn-row">
             <Button icon="download" onClick={exportJson}>خروجی قالب‌ها (JSON)</Button>
             <FilePick accept="application/json,.json" icon="import" onFiles={importJson}>وارد کردن قالب‌ها</FilePick>
           </div>
         </div>
+
+        <QuickPresetsCard settings={settings} />
 
         <section class="card">
           <h3>چیدمان‌های چاپ</h3>

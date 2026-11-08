@@ -21,6 +21,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   customProfiles: [],
   paperPresets: [],
   layoutPresets: [],
+  quickPresets: [], // user's own one-click presets (core/quickpresets.js fields)
+  quickOverrides: {}, // adjustments to built-in one-click presets, by id
 });
 
 export const DEFAULT_SHEET = Object.freeze({

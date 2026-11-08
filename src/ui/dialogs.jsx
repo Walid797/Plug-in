@@ -1,35 +1,13 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useState } from 'preact/hooks';
 import { useStore, closeDialog, getState } from '../state/store.js';
-import { Button, Icon, IconButton, Badge } from './kit.jsx';
+import { Button, Icon, Badge, Modal } from './kit.jsx';
+import { QuickPresetEditorDialog, bgColorName } from './QuickPresetEditor.jsx';
 import { formatNumber } from '../core/digits.js';
 import { orientationName, WORKFLOW, OFFLINE_BADGE, qualityText } from '../i18n/fa.js';
 import { EpsonGuide, EpsonQuickLine } from './EpsonGuide.jsx';
 import { computeSheetLayout, resolvePaper, PRINT_BOOST_FA } from '../print/sheet.js';
-import { findQuickPreset } from '../core/quickpresets.js';
-import { findPhoto } from '../core/presets.js';
+import { findQuickPreset, quickSizeLabel } from '../core/quickpresets.js';
 import { segErrorText } from './views/Background.jsx';
-
-function Modal({ title, children, footer, wide, onCancel }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    const d = ref.current;
-    if (d && !d.open) {
-      try { d.showModal(); } catch { d.setAttribute('open', ''); }
-    }
-    const first = d?.querySelector('[data-autofocus]') || d?.querySelector('button, input, select');
-    first?.focus();
-  }, []);
-  return (
-    <dialog ref={ref} class={`modal ${wide ? 'wide' : ''}`} aria-labelledby="dlg-title" onCancel={(e) => { e.preventDefault(); onCancel(); }}>
-      <div class="modal-head">
-        <h2 id="dlg-title">{title}</h2>
-        <IconButton icon="x" label="بستن" onClick={onCancel} />
-      </div>
-      <div class="modal-body">{children}</div>
-      {footer ? <div class="modal-foot">{footer}</div> : null}
-    </dialog>
-  );
-}
 
 function ConfirmDialog({ title, body, confirmLabel = 'تأیید', danger, cancelLabel = 'انصراف' }) {
   return (
@@ -87,10 +65,12 @@ function PrePrintDialog({ layout, paper, mode }) {
   );
 }
 
-function bgStatus(r) {
-  if (r.bg === 'ok') return { kind: 'ok', text: 'پس‌زمینه سفید شد' };
-  if (r.bg === 'reused') return { kind: 'ok', text: 'پس‌زمینه سفید شد (ماسک قبلی)' };
-  if (r.bg === 'failed') return { kind: 'err', text: 'پس‌زمینه سفید نشد', detail: segErrorText({ code: r.bgError }) };
+function bgStatus(r, color) {
+  const name = bgColorName(color);
+  if (r.bg === 'ok') return { kind: 'ok', text: `پس‌زمینه ${name} شد` };
+  if (r.bg === 'reused') return { kind: 'ok', text: `پس‌زمینه ${name} شد (ماسک قبلی)` };
+  if (r.bg === 'failed') return { kind: 'err', text: `پس‌زمینه ${name} نشد`, detail: segErrorText({ code: r.bgError }) };
+  if (r.bg === 'off') return { kind: '', text: 'پس‌زمینه طبق قالب دست نخورد' };
   return { kind: 'warn', text: 'پس‌زمینه دست نخورد (مدل محلی در دسترس نیست)' };
 }
 
@@ -99,16 +79,17 @@ function cropStatus(r) {
   if (r.crop === 'noface') return { kind: 'err', text: 'چهره پیدا نشد؛ کادر پیش‌فرض ماند' };
   if (r.crop === 'failed') return { kind: 'err', text: 'تحلیل چهره ناموفق بود؛ کادر پیش‌فرض ماند' };
   if (r.cancelled) return { kind: 'warn', text: 'کادر خودکار انجام نشد (لغو شد)' };
+  if (r.crop === 'off') return { kind: '', text: 'کادر طبق قالب دستی می‌ماند' };
   return { kind: 'warn', text: 'کادر خودکار انجام نشد (مدل چهره در دسترس نیست)' };
 }
 
 /** Result of a one-click preset: what really happened, then one Print button. */
 function QuickReadyDialog({ presetId, results, cancelled, aiState }) {
-  const preset = findQuickPreset(presetId);
   const st = getState();
+  const preset = findQuickPreset(presetId, st.settings);
   const layout = computeSheetLayout(st);
   const paper = resolvePaper(st.project.sheet, st.settings);
-  const size = findPhoto(preset?.photoId);
+  const sizeName = preset ? quickSizeLabel(preset) : '';
   const boost = st.project.sheet.printBoost || 'off';
   const ok = results.filter((r) => !r.error);
   const missing = results.filter((r) => r.error);
@@ -121,22 +102,22 @@ function QuickReadyDialog({ presetId, results, cancelled, aiState }) {
     </>}>
       {canPrint ? (
         <div class="notice ok"><Icon name="circle-check" /><div>
-          <strong>{formatNumber(layout.totals.placed)} عکس {size?.nameFa} روی {formatNumber(layout.totals.sheets)} برگهٔ {paper.nameFa}</strong>
-          <p>هر برگه {formatNumber(layout.sheet.widthMm)} × {formatNumber(layout.sheet.heightMm)} ملی‌متر، جهت {orientationName(layout.orientation)}{preset?.perPerson === 'sheet' ? `، برای هر نفر یک برگهٔ کامل (${formatNumber(layout.capacity)} عکس)` : ''}. روشن‌سازی چاپ: <b>{PRINT_BOOST_FA[boost]}</b> (پس‌زمینهٔ سفید، سفید خالص می‌ماند).</p>
+          <strong>{formatNumber(layout.totals.placed)} عکس {sizeName} روی {formatNumber(layout.totals.sheets)} برگهٔ {paper.nameFa}</strong>
+          <p>هر برگه {formatNumber(layout.sheet.widthMm)} × {formatNumber(layout.sheet.heightMm)} ملی‌متر، جهت {orientationName(layout.orientation)}{preset?.perPerson === 'sheet' ? `، برای هر نفر یک برگهٔ کامل (${formatNumber(layout.capacity)} عکس)` : preset?.perPerson === 'copies' ? `، برای هر نفر ${formatNumber(preset.copies)} عکس` : ''}. روشن‌سازی چاپ: <b>{PRINT_BOOST_FA[boost]}</b> (سفید خالص، سفید می‌ماند).</p>
         </div></div>
       ) : <div class="notice err"><Icon name="circle-x" /><p>چیدمان معتبر نیست؛ استودیوی چاپ را بررسی کنید.</p></div>}
       {cancelled ? <div class="notice warn"><Icon name="triangle-alert" /><p>کار نیمه‌کاره لغو شد؛ فقط عکس‌های پردازش‌شده روی برگه هستند.</p></div> : null}
       {!aiState.segOk || !aiState.faceOk ? <div class="notice warn"><Icon name="triangle-alert" /><p>{aiState.reason || 'مدل محلی هوش مصنوعی در دسترس نیست'}؛ مراحل خودکار مربوط انجام نشد. اندازه و چیدمان چاپ درست است.</p></div> : null}
       <ul class="quick-results">
         {ok.map((r) => {
-          const b = bgStatus(r); const c = cropStatus(r);
+          const b = bgStatus(r, preset?.bgColor); const c = cropStatus(r);
           return (
             <li key={r.id}>
               <b class="qr-name" title={r.name}>{r.name}</b>
               <span class="qr-chips">
-                <Badge kind="ok" icon="check">اندازهٔ {size?.nameFa}</Badge>
-                <Badge kind={b.kind} icon={b.kind === 'ok' ? 'check' : 'triangle-alert'}>{b.text}</Badge>
-                <Badge kind={c.kind} icon={c.kind === 'ok' ? 'check' : 'triangle-alert'}>{c.text}</Badge>
+                <Badge kind="ok" icon="check">اندازهٔ {sizeName}</Badge>
+                <Badge kind={b.kind} icon={b.kind === 'ok' ? 'check' : b.kind ? 'triangle-alert' : 'info'}>{b.text}</Badge>
+                <Badge kind={c.kind} icon={c.kind === 'ok' ? 'check' : c.kind ? 'triangle-alert' : 'info'}>{c.text}</Badge>
                 {r.light ? <Badge kind="gold" icon="sun">نور چهره اصلاح شد ({r.light > 0 ? 'روشن‌تر' : 'تیره‌تر'})</Badge> : r.crop === 'ok' ? <Badge kind="ok" icon="check">نور چهره مناسب</Badge> : null}
               </span>
               {b.detail ? <p class="tiny muted">{b.detail}</p> : null}
@@ -189,7 +170,7 @@ function PromptDialog({ title, label, value = '', confirmLabel = 'ذخیره' })
   );
 }
 
-const KINDS = { confirm: ConfirmDialog, retain: RetainDialog, preprint: PrePrintDialog, onboarding: OnboardingDialog, prompt: PromptDialog, quickready: QuickReadyDialog };
+const KINDS = { confirm: ConfirmDialog, retain: RetainDialog, preprint: PrePrintDialog, onboarding: OnboardingDialog, prompt: PromptDialog, quickready: QuickReadyDialog, quickedit: QuickPresetEditorDialog };
 
 export function Dialogs() {
   const dialog = useStore((s) => s.dialog);

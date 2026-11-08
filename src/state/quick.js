@@ -1,10 +1,9 @@
 // One-click print presets: size + rule profile → white background (local AI,
 // validated) → face-based crop → conservative light fix → print sheet. Every
 // step reports what really happened; nothing is marked done unless it worked.
-import { getState, updateEdit, updateSheet, recordHistory, startTask, uid, setSection, openDialog, toast, logEvent } from './store.js';
+import { getState, updateEdit, updateSheet, updateSettings, recordHistory, startTask, uid, setSection, openDialog, toast, logEvent } from './store.js';
 import { getPersonMask, hasMask, getFace, maskForegroundFraction, originalAvailable } from './media.js';
-import { findPhoto } from '../core/presets.js';
-import { findQuickPreset, quickSheetPatch, presetCapacity } from '../core/quickpresets.js';
+import { findQuickPreset, quickSheetPatch, presetCapacity, quickFields, normalizeQuickPreset, QUICK_PRESETS } from '../core/quickpresets.js';
 import { autoExposureDelta } from '../core/idphoto.js';
 import { aiAvailability } from '../platform/capabilities.js';
 import { formatNumber } from '../core/digits.js';
@@ -24,7 +23,7 @@ export async function quickAiState(s = getState()) {
   return { ai, segId, segOk, faceOk };
 }
 
-async function whiteBackground(photo, aiState) {
+async function replaceBackground(photo, aiState, color) {
   const { segmentPhoto } = await import('../ai/segment.js');
   let fresh = getState().photos[photo.id];
   let reused = false;
@@ -43,7 +42,7 @@ async function whiteBackground(photo, aiState) {
   }
   updateEdit(photo.id, (ed) => ({
     ...ed,
-    bg: { ...ed.bg, enabled: true, mode: 'color', color: '#ffffff', modelId, decontaminate: true, shadow: { ...ed.bg.shadow, enabled: false } },
+    bg: { ...ed.bg, enabled: true, mode: 'color', color, modelId, decontaminate: true, shadow: { ...ed.bg.shadow, enabled: false } },
     aiEdited: true,
   }), { history: false });
   return reused ? 'reused' : 'ok';
@@ -54,11 +53,11 @@ async function whiteBackground(photo, aiState) {
  * @returns {Promise<{results:object[], cancelled:boolean}|null>}
  */
 export async function runQuickPreset(presetId, photoIds, { openReady = true } = {}) {
-  const preset = findQuickPreset(presetId);
-  const size = preset ? findPhoto(preset.photoId) : null;
   const s0 = getState();
+  const preset = findQuickPreset(presetId, s0.settings);
+  const papers = s0.settings.paperPresets || [];
   const ids = (photoIds || []).filter((id) => s0.photos[id]);
-  if (!preset || !size || !s0.project) return null;
+  if (!preset || !s0.project) return null;
   if (!ids.length) { toast('عکسی برای این قالب انتخاب نشده است.', 'warn'); return null; }
   if (running) { toast('یک قالب در حال اجراست؛ لطفاً صبر کنید.', 'warn'); return null; }
   running = true;
@@ -72,28 +71,30 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
       if (task.signal.aborted) { cancelled = true; break; }
       const id = ids[i];
       const photo = getState().photos[id];
-      const r = { id, name: photo.name, bg: 'skipped', crop: 'skipped', light: 0, faces: 0, issues: [], error: null, bgError: null };
+      const r = { id, name: photo.name, bg: preset.whiteBg ? 'skipped' : 'off', crop: preset.autoCrop ? 'skipped' : 'off', light: 0, faces: 0, issues: [], error: null, bgError: null };
       results.push(r);
       const step = (k, label) => task.update((i + k / 4) / ids.length, `${formatNumber(i + 1)} از ${formatNumber(ids.length)} — ${label}`);
       if (!originalAvailable(photo)) { r.error = 'NO_ORIGINAL'; continue; }
       recordHistory({ type: 'edit', photoId: id }); // one undo step per photo for the whole preset
-      updateEdit(id, { widthMm: size.widthMm, heightMm: size.heightMm, sizeId: size.id, profileId: preset.profileId }, { history: false });
+      updateEdit(id, { widthMm: preset.widthMm, heightMm: preset.heightMm, sizeId: preset.photoId, profileId: preset.profileId }, { history: false });
 
-      step(0, 'سفید کردن پس‌زمینه');
-      if (aiState.segOk) {
-        try { r.bg = await whiteBackground(photo, aiState); } catch (err) { console.error(err); r.bg = 'failed'; r.bgError = err?.code || 'FAILED'; }
+      step(0, 'تغییر پس‌زمینه');
+      if (preset.whiteBg && aiState.segOk) {
+        try { r.bg = await replaceBackground(photo, aiState, preset.bgColor); } catch (err) { console.error(err); r.bg = 'failed'; r.bgError = err?.code || 'FAILED'; }
       }
       if (task.signal.aborted) { cancelled = true; r.cancelled = true; break; }
 
       step(2, 'تحلیل چهره و کادر');
-      if (aiState.faceOk) {
+      if (aiState.faceOk && (preset.autoCrop || preset.autoLight)) {
         try {
           const f = await analyzeFace(getState().photos[id]);
           r.faces = f.faceCount;
           if (f.faceCount) {
-            const crop = suggestionFor(getState().photos[id]);
-            if (crop) { updateEdit(id, { crop }, { history: false }); r.crop = 'ok'; } else r.crop = 'failed';
-            const delta = autoExposureDelta(getFace(id)?.stats?.meanL);
+            if (preset.autoCrop) {
+              const crop = suggestionFor(getState().photos[id]);
+              if (crop) { updateEdit(id, { crop }, { history: false }); r.crop = 'ok'; } else r.crop = 'failed';
+            }
+            const delta = preset.autoLight ? autoExposureDelta(getFace(id)?.stats?.meanL) : 0;
             if (delta) {
               updateEdit(id, (ed) => ({ ...ed, adjust: { ...ed.adjust, exposure: Math.max(-100, Math.min(100, (ed.adjust.exposure || 0) + delta)) } }), { history: false });
               r.light = delta;
@@ -101,13 +102,13 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
             }
             const q = currentQuality(getState().photos[id]) || [];
             r.issues = q.filter((x) => x.level === 'warn' || x.level === 'error');
-          } else r.crop = 'noface';
+          } else if (preset.autoCrop) r.crop = 'noface';
         } catch (err) { console.error(err); r.crop = 'failed'; r.cropError = err?.code || 'FAILED'; }
       }
     }
     const done = results.filter((r) => !r.error).map((r) => r.id);
     if (done.length) {
-      updateSheet((sh) => ({ ...sh, ...quickSheetPatch(preset, done, uid) }));
+      updateSheet((sh) => ({ ...sh, ...quickSheetPatch(preset, done, uid, papers) }));
       logEvent('quick-preset', `${preset.id} × ${done.length}`);
     }
   } finally {
@@ -115,7 +116,7 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
     running = false;
   }
   setSection('print');
-  const summary = { presetId, results, cancelled, aiState: { segOk: aiState.segOk, faceOk: aiState.faceOk, reason: aiState.ai.reason }, capacity: presetCapacity(preset).capacity };
+  const summary = { presetId, results, cancelled, aiState: { segOk: aiState.segOk, faceOk: aiState.faceOk, reason: aiState.ai.reason }, capacity: presetCapacity(preset, papers).capacity };
   if (openReady && results.some((r) => !r.error)) {
     const action = await openDialog('quickready', summary);
     if (action === 'print' || action === 'pdf') {
@@ -126,4 +127,49 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
     toast('عکس اصلی هیچ‌یک از عکس‌ها در دسترس نیست؛ آن‌ها را دوباره انتخاب کنید.', 'error', 9000);
   }
   return summary;
+}
+
+/* ------------------------------------------------ editing the presets */
+
+/**
+ * Save a preset from the editor. Built-ins store an override (resettable);
+ * the user's own presets are inserted or updated. Returns the saved id.
+ */
+export function saveQuickPreset(draft) {
+  const p = normalizeQuickPreset(draft);
+  const fields = quickFields(p);
+  if (p.builtin && QUICK_PRESETS.some((b) => b.id === p.id)) {
+    updateSettings((s) => ({ quickOverrides: { ...(s.quickOverrides || {}), [p.id]: fields } }));
+    return p.id;
+  }
+  const id = p.id && !QUICK_PRESETS.some((b) => b.id === p.id) ? p.id : uid('qp');
+  updateSettings((s) => {
+    const list = s.quickPresets || [];
+    const next = { id, ...fields };
+    return { quickPresets: list.some((x) => x.id === id) ? list.map((x) => (x.id === id ? next : x)) : [...list, next] };
+  });
+  return id;
+}
+
+/** Save a copy as a new user preset (never overwrites the original). */
+export function saveQuickPresetAsNew(draft, nameFa) {
+  return saveQuickPreset({ ...draft, id: '', builtin: false, nameFa: nameFa || draft.nameFa });
+}
+
+/** Back to factory settings for a built-in preset. */
+export function resetQuickPreset(id) {
+  updateSettings((s) => {
+    const o = { ...(s.quickOverrides || {}) };
+    delete o[id];
+    return { quickOverrides: o };
+  });
+}
+
+export function deleteQuickPreset(id) {
+  updateSettings((s) => ({ quickPresets: (s.quickPresets || []).filter((x) => x.id !== id) }));
+}
+
+/** Open the editor dialog. mode: 'edit' an existing preset or create a 'new' one (optionally based on another). */
+export function editQuickPreset(presetId, mode = 'edit') {
+  return openDialog('quickedit', { presetId, mode });
 }

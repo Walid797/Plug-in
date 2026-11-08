@@ -5,8 +5,8 @@ import { computeLayout } from '../../core/layout.js';
 import { COPY_PRESETS, DPI_PRESETS } from '../../core/presets.js';
 import { layoutInput, resolvePaper, allPaperPresets, createSheetElement, labelTextFor, runPrint, runPdfExport, runSheetImageExport, activeCalibration, applyPrintBoost, PRINT_BOOST_FA, runBoostTest } from '../../print/sheet.js';
 import { PRINT_BOOST_IDS } from '../../core/adjust.js';
-import { QUICK_PRESETS, findQuickPreset, presetCapacity } from '../../core/quickpresets.js';
-import { runQuickPreset } from '../../state/quick.js';
+import { allQuickPresets, presetCapacity, copiesPerPerson } from '../../core/quickpresets.js';
+import { runQuickPreset, editQuickPreset } from '../../state/quick.js';
 import { EpsonGuide } from '../EpsonGuide.jsx';
 import { renderPhoto } from '../../render/renderPhoto.js';
 import { canvasToBlob } from '../../platform/image.js';
@@ -271,7 +271,10 @@ export function PrintView() {
   const missingOriginals = sheet.items.some((it) => photos[it.photoId] && !originalAvailable(photos[it.photoId]));
   const cal = activeCalibration(settings);
   const boost = sheet.printBoost || 'off';
-  const qid = quickId || sheet.quickPresetId || QUICK_PRESETS[0].id;
+  const quickList = allQuickPresets(settings);
+  const qid = [quickId, sheet.quickPresetId].find((x) => x && quickList.some((p) => p.id === x)) || quickList[0].id;
+  const qp = quickList.find((p) => p.id === qid);
+  const qcap = presetCapacity(qp, settings.paperPresets);
   const sheetPhotoIds = [...new Set(sheet.items.map((it) => it.photoId).filter((id) => photos[id]))];
   const quickTargets = sheetPhotoIds.length ? sheetPhotoIds : project.photoIds.filter((id) => photos[id]);
   const testPhotoId = sheetPhotoIds[0] || project.photoIds.find((id) => photos[id]) || null;
@@ -326,9 +329,16 @@ export function PrintView() {
             {layout?.warnings?.filter((w) => layoutWarningText(w)).map((w, i) => <Notice key={i} kind={w.code === 'UNUSED_SLOTS' || w.code === 'ROTATED_FOR_FIT' ? 'info' : 'warn'}>{layoutWarningText(w)}</Notice>)}
             {missingOriginals ? <Notice kind="err">عکس اصلی بعضی موارد موجود نیست؛ آن‌ها را جایگزین کنید.</Notice> : null}
             <Group title="قالب آماده (یک کلیک)">
-              <Select label="قالب" value={qid} onChange={setQuickId} options={QUICK_PRESETS.map((p) => ({ value: p.id, label: `${p.nameFa} — ${formatNumber(presetCapacity(p).capacity)} عکس` }))} />
-              <p class="hint">اندازه، پس‌زمینهٔ سفید، کادر و اندازهٔ سر، نور چهره، کاغذ عکس ۱۰×۱۵ (۴×۶ انچ)، حاشیه‌ها و روشن‌سازی چاپ یک‌جا تنظیم می‌شوند. {findQuickPreset(qid)?.perPerson === 'sheet' ? 'هر نفر یک برگهٔ کامل می‌گیرد.' : 'عکس‌ها به‌طور مساوی روی برگه تقسیم می‌شوند.'}</p>
-              <Button variant="gold" icon="wand-sparkles" disabled={busy || !quickTargets.length} onClick={() => runQuickPreset(qid, quickTargets)}>
+              <Select label="قالب" value={qid} onChange={setQuickId} options={quickList.map((p) => {
+                const c = presetCapacity(p, settings.paperPresets);
+                return { value: p.id, label: `${p.nameFa} — ${c.capacity ? `${formatNumber(p.perPerson === 'share' ? c.capacity : copiesPerPerson(p, c.capacity))} عکس` : 'جا نمی‌شود'}${p.edited ? ' (تنظیم‌شده)' : ''}` };
+              })} />
+              <p class="hint">اندازه، پس‌زمینه، کادر و اندازهٔ سر، نور چهره، کاغذ، حاشیه‌ها و روشن‌سازی چاپ یک‌جا طبق قالب تنظیم می‌شوند. {qp.perPerson === 'sheet' ? 'هر نفر یک برگهٔ کامل می‌گیرد.' : qp.perPerson === 'copies' ? `هر نفر ${formatNumber(qp.copies)} عکس.` : 'عکس‌ها به‌طور مساوی روی برگه تقسیم می‌شوند.'}</p>
+              <div class="btn-row">
+                <Button size="sm" variant="ghost" icon="settings" onClick={() => editQuickPreset(qid)}>تنظیم دستی این قالب</Button>
+                <Button size="sm" variant="ghost" icon="plus" onClick={async () => { const id = await editQuickPreset(qid, 'new'); if (id) setQuickId(id); }}>قالب تازه از روی این</Button>
+              </div>
+              <Button variant="gold" icon="wand-sparkles" disabled={busy || !quickTargets.length || !qcap.capacity} onClick={() => runQuickPreset(qid, quickTargets)}>
                 {`اعمال روی ${formatNumber(quickTargets.length)} عکس${sheetPhotoIds.length ? ' این برگه' : ''}`}
               </Button>
             </Group>

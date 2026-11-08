@@ -190,6 +190,10 @@ dialog.modal.wide { width: min(780px, calc(100vw - 24px)); }
 dialog.modal::backdrop { background: rgba(5, 6, 8, .6); backdrop-filter: blur(3px); }
 .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--line); }
 .modal-body { padding: 18px; display: grid; gap: 12px; overflow: auto; max-height: calc(100dvh - 190px); }
+/* head and footer stay visible; only the body scrolls, whatever the footer height */
+dialog.modal[open] { display: flex; flex-direction: column; overflow: hidden; }
+dialog.modal[open] > .modal-head, dialog.modal[open] > .modal-foot { flex: none; }
+dialog.modal[open] > .modal-body { flex: 1 1 auto; min-height: 0; max-height: none; }
 .modal-foot { display: flex; gap: 8px; justify-content: flex-start; padding: 14px 18px; border-top: 1px solid var(--line); flex-wrap: wrap; }
 .checklist { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
 .checklist li { display: flex; gap: 10px; align-items: flex-start; font-size: .9rem; line-height: 1.75; }

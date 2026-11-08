@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { printBoostLut, printBoostValue, applyLut, PRINT_BOOST_IDS, PRINT_BOOST_LEVELS, isPrintBoost } from '../../src/core/adjust.js';
 import { autoExposureDelta, AUTO_LIGHT, QUALITY_THRESHOLDS } from '../../src/core/idphoto.js';
-import { QUICK_PRESETS, QUICK_SHEET, presetCapacity, quickSheetPatch, quickLayoutInput, findQuickPreset } from '../../src/core/quickpresets.js';
+import { QUICK_PRESETS, QUICK_DEFAULTS, presetCapacity, quickSheetPatch, quickLayoutInput, findQuickPreset, normalizeQuickPreset, allQuickPresets, quickFields, quickWarnings, copiesPerPerson, quickPaper } from '../../src/core/quickpresets.js';
 import { computeLayout } from '../../src/core/layout.js';
 import { findPaper, findPhoto, findProfile } from '../../src/core/presets.js';
 
@@ -67,16 +67,16 @@ test('quick presets: real 4R paper, capacities from the layout engine, studio se
     // every photo inside the printable area (hard margins) and never resized
     const l = computeLayout(quickLayoutInput(p, [{ id: 'a', copies: caps[p.id].capacity }], 'exact'));
     assert.ok(l.ok);
-    const hm = QUICK_SHEET.printer.hardMargins;
+    const hm = p.hardMargin;
     for (const pl of l.pages[0].placements) {
       assert.equal(pl.photoSizeMm.w, photo.widthMm); assert.equal(pl.photoSizeMm.h, photo.heightMm);
-      assert.ok(pl.photo.x >= hm.left && pl.photo.y >= hm.top);
-      assert.ok(pl.photo.x + pl.photo.w <= l.sheet.widthMm - hm.right + 1e-9 && pl.photo.y + pl.photo.h <= l.sheet.heightMm - hm.bottom + 1e-9);
+      assert.ok(pl.photo.x >= hm && pl.photo.y >= hm);
+      assert.ok(pl.photo.x + pl.photo.w <= l.sheet.widthMm - hm + 1e-9 && pl.photo.y + pl.photo.h <= l.sheet.heightMm - hm + 1e-9);
     }
+    assert.equal(p.printBoost, 'medium'); assert.equal(p.fillOrder, 'col-ltr'); assert.equal(p.margin, 5); assert.equal(p.bgColor, '#ffffff');
+    assert.ok(p.builtin && p.whiteBg && p.autoCrop && p.autoLight);
   }
   assert.equal(findPaper('4x6in').widthMm, 101.6);
-  assert.equal(QUICK_SHEET.printBoost, 'medium');
-  assert.equal(QUICK_SHEET.fillOrder, 'col-ltr');
 });
 
 test('quick preset sheet: one full sheet per person, or an even share on A4', () => {
@@ -93,4 +93,72 @@ test('quick preset sheet: one full sheet per person, or an even share on A4', ()
   assert.equal(share.mode, 'fill');
   const l2 = computeLayout(quickLayoutInput(findQuickPreset('q-3x4-a4'), share.items, 'fill'));
   assert.deepEqual(Object.values(l2.totals.perItem), [12, 12, 12]);
+});
+
+test('preset editor values are validated: clamped numbers, known enums, safe colour, custom sizes', () => {
+  const p = normalizeQuickPreset({
+    nameFa: '  آزمایش  ', photoId: 'custom', widthMm: 1000, heightMm: -3, margin: -5, gap: 999, copies: 2.6, dpi: 123,
+    printBoost: 'ultra', fillOrder: 'zigzag', orientation: 'diagonal', perPerson: 'many', bgColor: 'red;}', hardMargin: 50,
+    paperId: 'custom', paperWidthMm: 5, paperHeightMm: 99999, whiteBg: 'yes', autoCrop: false, extra: 'dropped',
+  });
+  assert.equal(p.nameFa, 'آزمایش');
+  assert.equal(p.widthMm, 300); assert.equal(p.heightMm, 5);
+  assert.equal(p.margin, 0); assert.equal(p.gap, 50); assert.equal(p.copies, 3);
+  assert.equal(p.dpi, 300); assert.equal(p.printBoost, 'medium'); assert.equal(p.fillOrder, 'col-ltr');
+  assert.equal(p.orientation, 'auto'); assert.equal(p.perPerson, 'sheet'); assert.equal(p.bgColor, '#ffffff');
+  assert.equal(p.hardMargin, 20); assert.equal(p.paperWidthMm, 10); assert.equal(p.paperHeightMm, 2000);
+  assert.equal(p.whiteBg, QUICK_DEFAULTS.whiteBg, 'non-boolean ignored'); assert.equal(p.autoCrop, false);
+  assert.equal('extra' in quickFields(p), false);
+  assert.equal(normalizeQuickPreset({ nameFa: '' }).nameFa, QUICK_DEFAULTS.nameFa);
+  // a preset size picks its own rule profile; custom sizes fall back to generic
+  assert.equal(normalizeQuickPreset({ photoId: '3.5x4.5' }).profileId, 'icao-35x45');
+  assert.equal(normalizeQuickPreset({ photoId: 'custom', widthMm: 33, heightMm: 48 }).profileId, null);
+  assert.equal(normalizeQuickPreset({ photoId: '4x6', profileId: null }).profileId, null);
+});
+
+test('built-in presets can be adjusted (and reset) and user presets are listed after them', () => {
+  const base = findQuickPreset('q-3x4-4r');
+  assert.equal(presetCapacity(base).capacity, 8);
+  const settings = {
+    quickOverrides: { 'q-3x4-4r': { margin: 3, orientation: 'portrait' } },
+    quickPresets: [{ id: 'qp_mine', nameFa: 'قالب من', photoId: '3x4', perPerson: 'copies', copies: 4, bgColor: '#cfe3f5', autoLight: false }],
+  };
+  const list = allQuickPresets(settings);
+  assert.deepEqual(list.map((p) => p.id), ['q-3x4-4r', 'q-35x45-4r', 'q-4x6-4r', 'q-3x4-a4', 'qp_mine']);
+  const edited = list[0];
+  assert.ok(edited.edited && edited.builtin);
+  assert.equal(edited.nameFa, base.nameFa, 'partial override keeps the factory name');
+  assert.equal(edited.paperId, '4x6in');
+  const cap = presetCapacity(edited);
+  assert.equal(cap.capacity, 9, '3 mm margin, portrait 4R → 3 × 3');
+  assert.equal(cap.orientation, 'portrait');
+  assert.deepEqual(quickWarnings(edited, cap), [], 'margin equal to the printer edge is allowed');
+  assert.equal(quickWarnings({ ...edited, margin: 2 }, cap)[0].code, 'MARGIN_IN_HARD');
+  // factory preset untouched
+  assert.equal(QUICK_PRESETS[0].margin, 5);
+  assert.equal(allQuickPresets({}).find((p) => p.id === 'q-3x4-4r').edited, false);
+  const mine = list[4];
+  assert.equal(mine.builtin, false);
+  assert.equal(copiesPerPerson(mine, 8), 4);
+  let n = 0; const id = (x) => `${x}${(n += 1)}`;
+  const patch = quickSheetPatch(mine, ['A', 'B'], id);
+  assert.equal(patch.mode, 'exact');
+  assert.deepEqual(patch.items.map((i) => i.copies), [4, 4]);
+  const l = computeLayout(quickLayoutInput(mine, patch.items, 'exact'));
+  assert.equal(l.totals.sheets, 1, 'two people × 4 copies share one 8-slot sheet');
+  assert.equal(quickWarnings({ ...mine, copies: 20 }, presetCapacity(mine))[0].code, 'COPIES_MULTI_SHEET');
+});
+
+test('custom paper and user-saved papers are honoured', () => {
+  const custom = normalizeQuickPreset({ photoId: '3x4', paperId: 'custom', paperWidthMm: 130, paperHeightMm: 180, margin: 5, gap: 2 });
+  assert.equal(quickPaper(custom).widthMm, 130);
+  const patch = quickSheetPatch(custom, ['A'], (x) => `${x}1`);
+  assert.deepEqual(patch.customPaper, { widthMm: 130, heightMm: 180 });
+  assert.equal(patch.paperId, 'custom');
+  const saved = normalizeQuickPreset({ photoId: '3x4', paperId: 'paper_x' });
+  assert.equal(quickPaper(saved, [{ id: 'paper_x', nameFa: 'کاغذ من', widthMm: 89, heightMm: 127 }]).widthMm, 89);
+  assert.equal(quickPaper(saved).id, '4x6in', 'unknown paper falls back to 4R');
+  const tooBig = normalizeQuickPreset({ photoId: 'custom', widthMm: 200, heightMm: 250, paperId: '4x6in' });
+  assert.equal(presetCapacity(tooBig).capacity, 0);
+  assert.ok(presetCapacity(tooBig).errors.length > 0);
 });

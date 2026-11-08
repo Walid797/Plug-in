@@ -268,3 +268,26 @@ export function FilePick({ accept, multiple, capture, onFiles, children, variant
     </>
   );
 }
+
+/** Modal dialog shell (native <dialog>): focus on open, Esc cancels. */
+export function Modal({ title, children, footer, wide, onCancel, class: cls = '', bodyClass = '' }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const d = ref.current;
+    if (d && !d.open) {
+      try { d.showModal(); } catch { d.setAttribute('open', ''); }
+    }
+    const first = d?.querySelector('[data-autofocus]') || d?.querySelector('button, input, select');
+    first?.focus();
+  }, []);
+  return (
+    <dialog ref={ref} class={`modal ${wide ? 'wide' : ''} ${cls}`} aria-labelledby="dlg-title" onCancel={(e) => { e.preventDefault(); onCancel(); }}>
+      <div class="modal-head">
+        <h2 id="dlg-title">{title}</h2>
+        <IconButton icon="x" label="بستن" onClick={onCancel} />
+      </div>
+      <div class={`modal-body ${bodyClass}`}>{children}</div>
+      {footer ? <div class="modal-foot">{footer}</div> : null}
+    </dialog>
+  );
+}
