@@ -7,6 +7,20 @@ const SHELL = __PRECACHE__;
 const SHELL_CACHE = `hoshmand-shell-${VERSION}`;
 const RUNTIME_CACHE = 'hoshmand-runtime-v1';
 
+/**
+ * Static hosts (Render, GitHub Pages, …) often cannot send COOP/COEP headers.
+ * Adding them to the page response here makes the app cross-origin isolated
+ * (multi-threaded WebAssembly) from the second visit on. Everything the app
+ * loads is same-origin, so `require-corp` blocks nothing it needs.
+ */
+function withIsolation(res) {
+  if (!res || res.status === 0 || res.type === 'opaqueredirect' || res.headers.get('Cross-Origin-Embedder-Policy')) return res;
+  const headers = new Headers(res.headers);
+  headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+  headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(SHELL_CACHE);
@@ -37,11 +51,14 @@ self.addEventListener('fetch', (event) => {
     event.respondWith((async () => {
       try {
         const fresh = await fetch(req);
-        const cache = await caches.open(SHELL_CACHE);
-        cache.put('index.html', fresh.clone());
-        return fresh;
+        if (fresh.ok && fresh.type === 'basic') {
+          const cache = await caches.open(SHELL_CACHE);
+          cache.put('index.html', fresh.clone());
+        }
+        return withIsolation(fresh);
       } catch {
-        return (await caches.match('index.html')) || Response.error();
+        const cached = await caches.match('index.html');
+        return cached ? withIsolation(cached) : Response.error();
       }
     })());
     return;
