@@ -465,15 +465,39 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
     }
   }
   const spots = holeCand ? spotCorrection(Y, Cb, Cr, msSp, bw, bh, ell.rx, skin.spots, holeCand, mSp, protect) : null;
-  report.spotsFrac = spots ? spots.fixedFrac : 0;
   // complete pass: every mark that clearly stands out from its skin (found on the untouched pixels, healed after)
   let blemish = null;
   if (mSp) {
     const sureB = new Float32Array(n);
     for (let j = 0; j < n; j += 1) sureB[j] = smooth(0.6, 0.9, mSp[j]);
-    blemish = findBlemishes(Y, Cr, sureB, coreHard, coreSoft, bw, bh, ell.rx, clamp(skin.spots / 90, 0.3, 1.3));
+    // hair is never touched, by either spot pass: no correction within reach of a hair, stubble stroke or lash
+    const hair = hairMask(Y, sureB, bw, bh, ell.rx);
+    if (spots) {
+      // whole blobs: if any pixel of a corrected blob lies in the hair margin, the entire blob is left as it was
+      const seenS = new Uint8Array(n); const stk = [];
+      let kept = 0; let total = 0;
+      for (let j0 = 0; j0 < n; j0 += 1) {
+        if (seenS[j0] || (spots.dY[j0] === 0 && spots.dCr[j0] === 0 && spots.dCb[j0] === 0)) continue;
+        const pix = []; let hit = false; stk.length = 0; stk.push(j0); seenS[j0] = 1;
+        while (stk.length) {
+          const j = stk.pop(); pix.push(j); if (hair.mask[j]) hit = true;
+          const x = j % bw; const y = (j - x) / bw;
+          for (let oy = -1; oy <= 1; oy += 1) for (let ox = -1; ox <= 1; ox += 1) {
+            const xx = x + ox; const yy = y + oy;
+            if (xx < 0 || yy < 0 || xx >= bw || yy >= bh) continue;
+            const jj = yy * bw + xx;
+            if (!seenS[jj] && (spots.dY[jj] !== 0 || spots.dCr[jj] !== 0 || spots.dCb[jj] !== 0)) { seenS[jj] = 1; stk.push(jj); }
+          }
+        }
+        total += pix.length;
+        if (hit) for (const j of pix) { spots.dY[j] = 0; spots.dCr[j] = 0; spots.dCb[j] = 0; } else kept += pix.length;
+      }
+      if (total) spots.fixedFrac *= kept / total;
+    }
+    blemish = findBlemishes(Y, Cr, sureB, coreHard, coreSoft, bw, bh, ell.rx, clamp(skin.spots / 90, 0.3, 1.3), hair);
     if (typeof params.debugBlemish === 'function') params.debugBlemish(blemish, { x0, y0, bw, bh });
   }
+  report.spotsFrac = spots ? spots.fixedFrac : 0;
   let after = 0; let liftSum = 0; let blotchSum = 0; let protectedW = 0;
   for (let y = 0; y < bh; y += 1) {
     for (let x = 0; x < bw; x += 1) {
@@ -534,13 +558,56 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
 }
 
 /**
+ * Hair-like dark structures (hairs, stubble strokes, lashes, brows) and a margin around them. Compact dark blobs
+ * (a very dark mole) are not hair. Every automatic retouch skips this mask completely: hair is never damaged.
+ * @returns {{mask:Uint8Array, dark:Uint8Array, skinMed:number}}
+ */
+export function hairMask(Y, sure, bw, bh, rx) {
+  const n = bw * bh;
+  const v = []; for (let j = 0; j < n; j += 53) if (sure[j] > 0.95) v.push(Y[j]); v.sort((a, b) => a - b);
+  const skinMed = v.length ? v[v.length >> 1] : 180;
+  const dark = new Uint8Array(n);
+  for (let j = 0; j < n; j += 1) dark[j] = Y[j] < skinMed * 0.55 ? 1 : 0;
+  const hair = new Float32Array(n);
+  const seen = new Uint8Array(n);
+  const stack = [];
+  for (let j0 = 0; j0 < n; j0 += 1) {
+    if (!dark[j0] || seen[j0]) continue;
+    const pix = []; stack.length = 0; stack.push(j0); seen[j0] = 1;
+    let sx = 0; let sy = 0; let sxx = 0; let syy = 0; let sxy = 0;
+    while (stack.length) {
+      const j = stack.pop(); pix.push(j);
+      const x = j % bw; const y = (j - x) / bw;
+      sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y;
+      for (let oy = -1; oy <= 1; oy += 1) for (let ox = -1; ox <= 1; ox += 1) {
+        const xx = x + ox; const yy = y + oy;
+        if (xx < 0 || yy < 0 || xx >= bw || yy >= bh) continue;
+        const jj = yy * bw + xx;
+        if (dark[jj] && !seen[jj]) { seen[jj] = 1; stack.push(jj); }
+      }
+    }
+    const c = pix.length; const mx = sx / c; const my = sy / c;
+    const vxx = sxx / c - mx * mx; const vyy = syy / c - my * my; const vxy = sxy / c - mx * my;
+    const tr = vxx + vyy; const dt = Math.sqrt(Math.max(0, ((vxx - vyy) / 2) ** 2 + vxy * vxy));
+    const e1 = tr / 2 + dt; const e2 = Math.max(1e-3, tr / 2 - dt);
+    const compact = c >= 6 && 4 * Math.sqrt(e2) >= 3 && Math.sqrt(e1 / e2) < 2.5 && c < Math.PI * (rx * 0.06) ** 2;
+    if (!compact) for (const j of pix) hair[j] = 1;
+  }
+  const rho = Math.max(4, Math.round(rx * 0.03));
+  const spread = boxFilter(hair, bw, bh, rho);
+  const mask = new Uint8Array(n);
+  for (let j = 0; j < n; j += 1) mask[j] = spread[j] > 1e-4 ? 1 : 0;
+  return { mask, dark, skinMed };
+}
+
+/**
  * Complete automatic blemish finder: anything on the skin that clearly stands out from its own surroundings
  * (dark spot, mole, pimple, red mark, stain, smudge) becomes a set of discs to heal with real skin texture.
  * Works in bbox coordinates. Hairs and other thin lines, dense clusters (stubble), and the protected zones
  * (eyes, brows, mouth, nostrils) are never touched.
  * @returns {{discs:{x:number,y:number,r:number}[], found:number, rejected:number}}
  */
-export function findBlemishes(Y, Cr, sure, protect, soft, bw, bh, rx, strength = 1) {
+export function findBlemishes(Y, Cr, sure, protect, soft, bw, bh, rx, strength = 1, hair = null) {
   const n = bw * bh;
   const R = Math.max(6, Math.round(rx * 0.08));
   const wY = new Float32Array(n); const wC = new Float32Array(n);
@@ -569,8 +636,10 @@ export function findBlemishes(Y, Cr, sure, protect, soft, bw, bh, rx, strength =
     skinOk += 1;
   }
   if (skinOk < 100) return { discs: [], found: 0, rejected: 0, T };
-  const low = new Uint8Array(n);
-  for (let j = 0; j < n; j += 1) low[j] = sm[j] > 0.4 && cs[j] > 0.45 * T ? 1 : 0;
+  // very dark pixels wherever they are, skin mask or not: if the surroundings of a mark contain them, it is a hairy area
+  const H = hair || hairMask(Y, sure, bw, bh, rx);
+  const dark = H.dark;
+  const low = dark;
   const seen = new Uint8Array(n);
   const comps = [];
   const stack = [];
@@ -633,7 +702,7 @@ export function findBlemishes(Y, Cr, sure, protect, soft, bw, bh, rx, strength =
     // a mark has a sharp edge: just outside it the skin is back to normal (a shading feature fades out slowly)
     const sharp = inC / Math.max(4, ringC * 2.2);
     // flagged pixels around it (stubble, pores): a crowded neighbourhood is texture, not a blemish
-    const cr = Math.max(8, Math.round(rx * 0.14)); let crowd = 0; let crowdN = 0;
+    const cr = Math.max(10, Math.round(rx * 0.12)); let crowd = 0; let crowdN = 0;
     for (let y = Math.max(0, Math.round(my) - cr); y <= Math.min(bh - 1, Math.round(my) + cr); y += 1) {
       for (let x = Math.max(0, Math.round(mx) - cr); x <= Math.min(bw - 1, Math.round(mx) + cr); x += 1) {
         if (x >= x0 - pad && x <= x1 + pad && y >= y0 - pad && y <= y1 + pad) continue; // its own halo does not count
@@ -641,17 +710,18 @@ export function findBlemishes(Y, Cr, sure, protect, soft, bw, bh, rx, strength =
       }
     }
     const crowdFrac = crowd / Math.max(1, crowdN);
-    const strongMole = pk >= 6.5 * T && sharp >= 5 && elong <= 2 && thick >= 4 && thick <= 10 && crowdFrac < 0.4;
+    const strongMole = pk >= 6.5 * T && sharp >= 5 && elong <= 2 && thick >= 4 && thick <= 10;
     let ok = true;
     if (pr > 0.3) ok = false;
     else if (thick < 2.6 && elong > 2.2) ok = false; // a hair
+    else if (thick > rx * 0.09) ok = false; // big dark masses are shading or beard, not a blemish
     else if (elong > (thick >= 4.5 ? 5.5 : 4.2)) ok = false; // long and thin = hair or crease; thick = a stain
     else if (skinFrac < (thick >= 4.5 ? 0.5 : 0.6)) ok = false;
     else if (m > 20 && solid < 0.55) ok = false;
     else if (sharp < 3 || (elong > 3.5 && sharp < 4.5)) ok = false;
     else if (pk < 2.7 * T) ok = false; // freckles and pores stay: only marks that clearly stand out
-    else if (strongMole) ok = true; // a dark, sharp, round dot is a mole even among stubble
-    else if (crowdFrac > 0.16 || (crowdFrac > 0.08 && pk < 4 * T)) ok = false;
+    else if (strongMole && crowdFrac <= 0.012) ok = true; // a dark, sharp, round dot is a mole
+    else if (crowdFrac > 0.012) ok = false; // hairs/stubble around: leave the whole area alone
     else if (ps > 0.3 && (pk < 4 * T || m < 5 || elong > 2.2)) ok = false; // inside stubble areas only clear, round, strong marks
     else if (m <= 4 && pk < 2.6 * T) ok = false; // a 2-4 px speck must be strong
     if (!ok) { rejected += 1; continue; }
@@ -669,10 +739,21 @@ export function findBlemishes(Y, Cr, sure, protect, soft, bw, bh, rx, strength =
   kept.sort((p, q) => q.pk * q.m - p.pk * p.m);
   const discs = [];
   for (const a of kept.slice(0, 80)) {
-    const r = Math.max(2.6, 0.5 * a.thick + 2.4 + 0.12 * a.thick);
+    const r = clamp(0.62 * a.thick + 2.4, 2.6, Math.max(3, rx * 0.05)); // small pen: never a big smear
+    // hair guard: hair (or a margin around it) anywhere in or next to the mark means: do not touch it
+    let hairHit = false;
+    for (let y = Math.max(0, Math.floor(a.my - r * 1.6)); y <= Math.min(bh - 1, Math.ceil(a.my + r * 1.6)) && !hairHit; y += 1) {
+      for (let x = Math.max(0, Math.floor(a.mx - r * 1.6)); x <= Math.min(bw - 1, Math.ceil(a.mx + r * 1.6)); x += 1) if (H.mask[y * bw + x]) { hairHit = true; break; }
+    }
+    if (!hairHit) {
+      for (const j of a.pix) if (H.mask[j]) { hairHit = true; break; }
+    }
+    if (hairHit) { rejected += 1; continue; }
+    // discs: centre first, then whatever is still uncovered (a long stain gets several small discs)
+    const order = [...a.pix].sort((p, q) => Math.hypot(p % bw - a.mx, ((p - (p % bw)) / bw) - a.my) - Math.hypot(q % bw - a.mx, ((q - (q % bw)) / bw) - a.my));
     const cover = new Set();
     let placed = 0;
-    for (const j of a.pix) {
+    for (const j of order) {
       if (cover.has(j) || placed >= 14) continue;
       const x = j % bw; const y = (j - x) / bw;
       discs.push({ x: x + 0.5, y: y + 0.5, r }); placed += 1;

@@ -500,3 +500,16 @@ test('complete automatic pass: moles (even in a stubble zone) and a long stain a
   for (const [x, y] of img.hairs) assert.ok(dist(P(img, x, y), [o2[(y * img.w + x) * 4], o2[(y * img.w + x) * 4 + 1], o2[(y * img.w + x) * 4 + 2]]) <= 8, 'hair untouched');
   for (const [x, y] of [[60, 100], [300, 180], [100, 380]]) assert.deepEqual(P(img, x, y), [orig[(y * img.w + x) * 4], orig[(y * img.w + x) * 4 + 1], orig[(y * img.w + x) * 4 + 2]]);
 });
+
+test('automatic pass never damages hair: a mark with hairs touching or right next to it is left completely alone', () => {
+  const img = skinWith();
+  const disc = (cx, cy, r, rgb) => { for (let y = cy - r; y <= cy + r; y += 1) for (let x = cx - r; x <= cx + r; x += 1) if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r) { const i = (y * img.w + x) * 4; img.d[i] = rgb[0]; img.d[i + 1] = rgb[1]; img.d[i + 2] = rgb[2]; } };
+  disc(100, 120, 4, [150, 96, 74]);                 // a mole...
+  for (let s = 0; s < 14; s += 1) for (const yy of [118 + (s >> 3), 119 + (s >> 3)]) { const i = (yy * img.w + 108 + s) * 4; img.d[i] = 60; img.d[i + 1] = 44; img.d[i + 2] = 38; } // ...with a hair next to it
+  disc(260, 130, 4, [150, 96, 74]);                 // the same mole far from any hair
+  const before = img.d.slice();
+  applyFaceEngine(img.d, img.w, img.h, img.ell, SPOT_ONLY);
+  const near = [[100, 120], [104, 120], [96, 120], [112, 119], [118, 121], [108, 118]];
+  for (const [x, y] of near) assert.deepEqual(P(img, x, y), [before[(y * img.w + x) * 4], before[(y * img.w + x) * 4 + 1], before[(y * img.w + x) * 4 + 2]], `untouched at ${x},${y}`);
+  assert.ok(dist(P(img, 260, 130), [224, 172, 150]) < 30, 'the isolated mole is healed');
+});
