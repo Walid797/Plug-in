@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { applyFaceEngine, faceEllipse, ellipseToOutput, REDNESS_LIMIT, FACE_ENGINE_DEFAULTS, skinDetailWeight } from '../../src/core/faceengine.js';
 import { buildLuts, applyAdjustments, chromaDenoise, localContrast, snapNearWhite, ADJUSTMENT_DEFAULTS } from '../../src/core/adjust.js';
-import { suggestCrop, evaluateCrop, faceMetrics, shoulderSides, assessQuality, exposureTowardTarget, backgroundWhiteness } from '../../src/core/idphoto.js';
+import { suggestCrop, evaluateCrop, faceMetrics, shoulderSides, assessQuality, exposureTowardTarget, backgroundWhiteness, faceProtectZones } from '../../src/core/idphoto.js';
 import { setPngSrgb, setPngDpi, readPngPhys } from '../../src/core/binary.js';
 
 const W = 220; const H = 280;
@@ -325,4 +325,102 @@ test('lift: brightens mid-tones and lights but spares the darks; identity at 0; 
   assert.ok(lift[190] - 190 > 12, `skin/shirt tones are lifted (${lift[190]})`);
   assert.ok(Math.abs(lift[190] - exposure[190]) <= 4, 'on the lights it equals the exposure');
   assert.equal(lift[255], 255); assert.equal(lift[0], 0);
+});
+
+/** Textured synthetic skin with optional blemishes, thin hairs, a stubble cluster and a shadow band. */
+function skinWith(opts = {}) {
+  const w = 360; const h = 470; const ell = { cx: 180, cy: 230, rx: 150, ry: 200, rot: 0 };
+  const d = new Uint8ClampedArray(w * h * 4).fill(255);
+  for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) {
+    const u = (x - ell.cx) / ell.rx; const v = (y - ell.cy) / ell.ry; if (u * u + v * v > 1) continue;
+    const i = (y * w + x) * 4; const t = noise(x, y) * 4; d[i] = 224 + t; d[i + 1] = 172 + t; d[i + 2] = 150 + t;
+  }
+  const disc = (cx, cy, r, rgb) => { for (let y = cy - r; y <= cy + r; y += 1) for (let x = cx - r; x <= cx + r; x += 1) if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r) { const i = (y * w + x) * 4; d[i] = rgb[0]; d[i + 1] = rgb[1]; d[i + 2] = rgb[2]; } };
+  const spots = [[120, 260, 4, [185, 95, 75]], [250, 250, 3, [150, 100, 80]], [180, 180, 2, [200, 140, 120]], [230, 330, 5, [170, 90, 70]]];
+  for (const [x, y, r, c] of spots) disc(x, y, r, c);
+  // thin hairs (mustache-like): 1-2 px wide diagonal and horizontal strokes
+  const hairs = [];
+  // separate strands (strands that cross or clump are a known limit, see docs)
+  for (let k = 0; k < 10; k += 1) { const x0 = 140 + k * 10; for (let s = 0; s < 22; s += 1) { const x = x0 + s; const y = 300 + ((s * (k % 3 + 1)) >> 2); const i = (y * w + x) * 4; d[i] = 72; d[i + 1] = 54; d[i + 2] = 46; hairs.push([x, y]); if (k % 2) { const j = ((y + 1) * w + x) * 4; d[j] = 72; d[j + 1] = 54; d[j + 2] = 46; hairs.push([x, y + 1]); } } }
+  // dense stubble: a patch full of small dark dots
+  const stubble = [];
+  for (let y = 380; y < 420; y += 1) for (let x = 140; x < 220; x += 1) if (noise(x * 3, y * 5) > 0.55) { disc(x, y, 1, [96, 74, 64]); stubble.push([x, y]); }
+  return { d, w, h, ell, spots, hairs, stubble };
+}
+const P = (img, x, y) => [0, 1, 2].map((c) => img.d[(y * img.w + x) * 4 + c]);
+const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+const SPOT_ONLY = { skin: { enabled: true, redness: 0, balance: 0, spots: 100 }, light: { enabled: false } };
+
+test('spot healing: pimples, marks and stains take the colour AND texture of the skin around them', () => {
+  const img = skinWith(); const orig = img.d.slice();
+  const rep = applyFaceEngine(img.d, img.w, img.h, img.ell, SPOT_ONLY);
+  assert.equal(rep.applied, true); assert.ok(rep.spotsFrac > 0);
+  const skin = [224, 172, 150];
+  for (const [x, y, r, c] of img.spots) {
+    const before = dist(c, skin); const after = dist(P(img, x, y), skin);
+    const faint = before < 70; // a faint spot is only faded, a clear blemish is healed completely
+    assert.ok(faint ? after < before * 0.75 : after < before * 0.25 && after < 22, `spot ${x},${y}: distance to skin ${before.toFixed(0)} -> ${after.toFixed(0)}`);
+  }
+  // realistic: the healed patch is not a flat fill (it carries skin grain), and far-away skin is bit-identical
+  const patch = []; for (let y = 256; y <= 264; y += 1) for (let x = 116; x <= 124; x += 1) patch.push(luma(img.d, (y * img.w + x) * 4));
+  const m = patch.reduce((a, b) => a + b) / patch.length; const sd = Math.sqrt(patch.reduce((a, b) => a + (b - m) ** 2, 0) / patch.length);
+  assert.ok(sd > 0.8, `healed area keeps grain (std ${sd.toFixed(2)})`);
+  for (const [x, y] of [[60, 100], [300, 180], [180, 120], [100, 380], [260, 300]]) {
+    const i = (y * img.w + x) * 4; assert.deepEqual([img.d[i], img.d[i + 1], img.d[i + 2]], [orig[i], orig[i + 1], orig[i + 2]], `untouched skin at ${x},${y}`);
+  }
+});
+
+test('spot healing never touches thin hairs (mustache), dense stubble, or the white background', () => {
+  const img = skinWith(); const orig = img.d.slice();
+  applyFaceEngine(img.d, img.w, img.h, img.ell, SPOT_ONLY);
+  let hairDiff = 0; for (const [x, y] of img.hairs) hairDiff = Math.max(hairDiff, dist(P(img, x, y), [orig[(y * img.w + x) * 4], orig[(y * img.w + x) * 4 + 1], orig[(y * img.w + x) * 4 + 2]]));
+  assert.ok(hairDiff <= 8, `hair strokes unchanged (max diff ${hairDiff.toFixed(1)})`);
+  let stubDiff = 0; for (const [x, y] of img.stubble) stubDiff = Math.max(stubDiff, dist(P(img, x, y), [96, 74, 64]));
+  assert.ok(stubDiff <= 10, `stubble dots stay (max diff ${stubDiff.toFixed(1)})`);
+  for (const [x, y] of [[5, 5], [350, 460], [20, 300]]) assert.deepEqual(P(img, x, y), [255, 255, 255]);
+});
+
+test('spot healing keeps lips, eyes, brows and the shading; off at strength 0', () => {
+  const { d, regions, inside } = portrait([224, 172, 150], { shadow: 0.78 });
+  const orig = d.slice();
+  applyFaceEngine(d, W, H, ELL, { skin: { enabled: true, redness: 0, balance: 0, spots: 100 }, light: { enabled: false } });
+  for (const [name, reg] of Object.entries(regions)) {
+    let worst = 0;
+    for (let y = 0; y < H; y += 1) for (let x = 0; x < W; x += 1) {
+      if (!inside(x, y, [reg[0], reg[1], reg[2] - 3, Math.max(1, reg[3] - 2)])) continue;
+      const i = (y * W + x) * 4; worst = Math.max(worst, Math.abs(d[i] - orig[i]), Math.abs(d[i + 1] - orig[i + 1]), Math.abs(d[i + 2] - orig[i + 2]));
+    }
+    assert.ok(worst <= 6, `${name} unchanged by spot healing (max diff ${worst})`);
+  }
+  // the under-eye / nose shadow bands are structures, not blemishes: still there
+  const band = (x, y) => inside(x, y, [86, 118, 16, 5]) || inside(x, y, [134, 118, 16, 5]);
+  const cheek = (x, y) => inside(x, y, [70, 150, 12, 10]) || inside(x, y, [150, 150, 12, 10]);
+  assert.ok(stats(orig, cheek).Y - stats(d, band).Y > 12, 'the shadow band is not removed');
+  assert.ok(Math.abs(stats(d, band).Y - stats(orig, band).Y) < 3, 'shading unchanged');
+  const off = portrait([224, 172, 150]); const o2 = off.d.slice();
+  applyFaceEngine(off.d, W, H, ELL, { skin: { enabled: true, redness: 0, balance: 0, spots: 0 }, light: { enabled: false } });
+  assert.deepEqual(off.d, o2, 'spots 0 = no change');
+});
+
+test('protected zones (eyes, mouth, nostrils) are never retouched, the same blob elsewhere is healed', () => {
+  const dark = [135, 88, 72];
+  const make = () => { const img = skinWith(); const disc = (cx, cy, r) => { for (let y = cy - r; y <= cy + r; y += 1) for (let x = cx - r; x <= cx + r; x += 1) if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r) { const i = (y * img.w + x) * 4; img.d[i] = dark[0]; img.d[i + 1] = dark[1]; img.d[i + 2] = dark[2]; } };
+    disc(200, 140, 5); disc(100, 200, 5); return img; }; // a nostril-like and an eye-corner-like dark round blob
+  const zone = [{ cx: 200, cy: 140, rx: 16, ry: 14, rot: 0 }, { cx: 100, cy: 200, rx: 16, ry: 14, rot: 0 }];
+  const a = make(); const oa = a.d.slice();
+  applyFaceEngine(a.d, a.w, a.h, a.ell, { ...SPOT_ONLY, protect: zone });
+  for (const [x, y] of [[200, 140], [100, 200], [202, 141]]) assert.ok(dist(P(a, x, y), [oa[(y * a.w + x) * 4], oa[(y * a.w + x) * 4 + 1], oa[(y * a.w + x) * 4 + 2]]) <= 6, `protected blob at ${x},${y} unchanged`);
+  const b = make();
+  applyFaceEngine(b.d, b.w, b.h, b.ell, SPOT_ONLY); // no zones: the same blobs are blemishes
+  for (const [x, y] of [[200, 140], [100, 200]]) assert.ok(dist(P(b, x, y), [224, 172, 150]) < 55, `unprotected blob at ${x},${y} is healed (${P(b, x, y)})`);
+  // the zones come from the landmarks: both eyes, the mouth and the underside of the nose
+  const lm = Array.from({ length: 478 }, () => ({ x: 0.5, y: 0.5 }));
+  const set = (i, x, y) => { lm[i] = { x, y }; };
+  set(33, 0.34, 0.4); set(133, 0.45, 0.4); set(263, 0.66, 0.4); set(362, 0.55, 0.4); set(61, 0.4, 0.72); set(291, 0.6, 0.72); set(0, 0.5, 0.7); set(17, 0.5, 0.76); set(98, 0.46, 0.6); set(327, 0.54, 0.6);
+  const zones = faceProtectZones(lm, 1000, 1400);
+  assert.equal(zones.length, 4);
+  const near = (z, x, y) => Math.abs(z.cx - x) < 0.03 && Math.abs(z.cy - y) < 0.03;
+  assert.ok(near(zones[0], 0.395, 0.4) && near(zones[1], 0.605, 0.4), 'eyes'); assert.ok(near(zones[2], 0.5, 0.72), 'mouth'); assert.ok(near(zones[3], 0.5, 0.6), 'nose underside');
+  assert.ok(zones.every((z) => z.rx > 0 && z.ry > 0));
+  assert.deepEqual(faceProtectZones(null, 10, 10), []);
 });

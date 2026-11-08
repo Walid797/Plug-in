@@ -15,7 +15,7 @@ import { boxFilter } from './mask.js';
 import { faceToSource } from './idphoto.js';
 
 export const FACE_ENGINE_DEFAULTS = Object.freeze({
-  skin: Object.freeze({ enabled: true, redness: 40, balance: 40 }),
+  skin: Object.freeze({ enabled: true, redness: 40, balance: 40, spots: 0 }),
   light: Object.freeze({ enabled: true, fill: 45, even: true, protect: true }),
 });
 
@@ -26,6 +26,174 @@ const MAX_BLOTCH_SHIFT = 4;
 const MAX_FILL_LIFT = 24; // luma levels
 const MAX_EVEN_GAIN = 0.08;
 const PROTECT_FROM = 224;
+const MAX_SPOT_LIFT = 70; // luma levels a single spot may be raised
+const MAX_SPOT_RED = 28; // Cr levels a single red mark may be reduced
+
+/** 1-D box average over a window of 2r+1 pixels, horizontal or vertical (edges clamped). */
+function boxAxis(a, w, h, r, horizontal) {
+  const out = new Float32Array(w * h);
+  const win = 2 * r + 1;
+  if (horizontal) {
+    for (let y = 0; y < h; y += 1) {
+      let acc = 0;
+      for (let i = -r; i <= r; i += 1) acc += a[y * w + clamp(i, 0, w - 1)];
+      for (let x = 0; x < w; x += 1) {
+        out[y * w + x] = acc / win;
+        acc += a[y * w + Math.min(w - 1, x + r + 1)] - a[y * w + Math.max(0, x - r)];
+      }
+    }
+  } else {
+    for (let x = 0; x < w; x += 1) {
+      let acc = 0;
+      for (let i = -r; i <= r; i += 1) acc += a[clamp(i, 0, h - 1) * w + x];
+      for (let y = 0; y < h; y += 1) {
+        out[y * w + x] = acc / win;
+        acc += a[Math.min(h - 1, y + r + 1) * w + x] - a[Math.max(0, y - r) * w + x];
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Which flagged pixels belong to a compact ROUND blob of blemish size (1 = yes)? A blob is round when both a
+ * horizontal and a vertical window of its size are mostly flagged and the window is well filled (a thin hair or lash
+ * fails), and small when a much larger window is mostly unflagged again (lips, eyes and brows fail). Tiny
+ * blobs (3×3 window) must additionally be isolated, because crossing or clumped hairs look like blobs there.
+ */
+function roundBlobs(flag, bw, bh, rx) {
+  const n = bw * bh;
+  const q = new Float32Array(n);
+  const radii = [...new Set([0.006, 0.01, 0.014, 0.02, 0.03, 0.04, 0.055].map((f) => Math.max(1, Math.round(rx * f))))];
+  for (const r of radii) {
+    const R = r === 1 ? 5 : Math.round(3.2 * r) + 1; // the 'small blob' window is clearly larger than the blob it tests
+    const fbMax = r === 1 ? 0.12 : 0.3;
+    const fsMin = r === 1 ? 0.88 : 0.7; // the 3x3 window is too coarse: a bend of a 2 px hair would pass 0.7
+    const fh = boxAxis(flag, bw, bh, r, true); const fv = boxAxis(flag, bw, bh, r, false);
+    const fs = boxFilter(flag, bw, bh, r); const fb = boxFilter(flag, bw, bh, R);
+    for (let j = 0; j < n; j += 1) if (flag[j] && Math.min(fh[j], fv[j]) >= 0.6 && fs[j] >= fsMin && fb[j] < fbMax) q[j] = 1;
+  }
+  return q;
+}
+
+/**
+ * Spot healing by frequency separation (realistic, texture kept): small blobs that are darker or redder than
+ * the skin around them (pimples, marks, stains) get their LOW-frequency colour moved towards the surroundings,
+ * while the pixel's fine detail (pores, grain) is untouched. Larger structures (shadows, eye bags, big moles)
+ * are not blobs at this scale and are left alone; clusters of dark dots (stubble, dense freckles) are
+ * detected by their density and skipped, so the beard and natural freckle patterns stay.
+ * A blemish is often outside the skin colour (a red mark), so compact, small "holes" in the skin mask (candidate
+ * pixels that are warm and bright enough, not eye-white, not hair) count as skin for this purpose only. A hole
+ * qualifies when it is round (a window of the blob's size is mostly hole; thin hairs and lashes fail this) and
+ * small (a window 2.5× larger is mostly skin again; lips, eyes and brows fail this).
+ * @param {number} rx face half-width in pixels (sets the blob scales)
+ * @param {Float32Array|null} holeCand 1 for pixels that may be blemishes (outside the strict skin mask)
+ * @returns {{dY:Float32Array, dCr:Float32Array, fixedFrac:number}}
+ */
+export function spotCorrection(Y, Cb, Cr, strictW, bw, bh, rx, strength, holeCand = null, rawM = null, protect = null) {
+  const n = bw * bh;
+  let skinW = strictW;
+  if (holeCand) {
+    const q = roundBlobs(holeCand, bw, bh, rx);
+    skinW = new Float32Array(n);
+    for (let j = 0; j < n; j += 1) skinW[j] = Math.max(strictW[j], q[j] * 0.9);
+  }
+  const dY = new Float32Array(n); const dCb = new Float32Array(n); const dCr = new Float32Array(n);
+  if (!(strength > 0)) return { dY, dCb, dCr, fixedFrac: 0 };
+  const num = (arr, r) => boxFilter(arr, bw, bh, r);
+  // the blob itself (small window) uses skinW; the SURROUNDINGS use CONFIDENT skin only (the unsmoothed skin
+  // probability): a blemish is often half-way a skin pixel by colour and must not weigh in its own reference
+  const wY = new Float32Array(n); const wC = new Float32Array(n); const sY = new Float32Array(n); const sC = new Float32Array(n); const sB = new Float32Array(n);
+  const sure = new Float32Array(n);
+  for (let j = 0; j < n; j += 1) {
+    sure[j] = smooth(0.6, 0.9, rawM ? rawM[j] : strictW[j]);
+    wY[j] = Y[j] * skinW[j]; wC[j] = Cr[j] * skinW[j]; sY[j] = Y[j] * sure[j]; sC[j] = Cr[j] * sure[j]; sB[j] = Cb[j] * sure[j];
+  }
+  const D = new Float32Array(n); const E = new Float32Array(n);
+  for (const f of [0.006, 0.014, 0.03, 0.055]) { // blob radii: ~0.6%, 1.4%, 3% and 5.5% of the face half-width
+    const r1 = Math.max(1, Math.round(rx * f)); const r2 = Math.max(r1 * 2 + 1, Math.round(r1 * 2.6));
+    const m2 = num(sure, r2); const y2 = num(sY, r2); const c2 = num(sC, r2);
+    // the blob signal is measured along a horizontal AND a vertical window and the weaker one counts: a round blemish is
+    // dark/red in both, a thin hair (any direction) is weak in at least one, so hairs and lashes are not mistaken for it
+    const sig = (horizontal) => {
+      const m1 = boxAxis(skinW, bw, bh, r1, horizontal); const y1 = boxAxis(wY, bw, bh, r1, horizontal); const c1 = boxAxis(wC, bw, bh, r1, horizontal);
+      const d = new Float32Array(n); const e = new Float32Array(n);
+      for (let j = 0; j < n; j += 1) {
+        if (m1[j] < 0.25 || m2[j] < 0.25) continue;
+        d[j] = y2[j] / m2[j] - y1[j] / m1[j]; // positive: darker than the surroundings
+        e[j] = c1[j] / m1[j] - c2[j] / m2[j]; // positive: redder
+      }
+      return { d, e };
+    };
+    const H = sig(true); const V = sig(false);
+    for (let j = 0; j < n; j += 1) {
+      // isotropy: a round blob is about equally dark/red in both directions, a line much more along its length
+      const d = Math.min(H.d[j], V.d[j]) >= 0.72 * Math.max(H.d[j], V.d[j]) ? Math.min(H.d[j], V.d[j]) : 0;
+      const e = Math.min(H.e[j], V.e[j]) >= 0.72 * Math.max(H.e[j], V.e[j]) ? Math.min(H.e[j], V.e[j]) : 0;
+      if (d > D[j]) D[j] = d;
+      if (e > E[j]) E[j] = e;
+    }
+  }
+  const raw = new Float32Array(n);
+  for (let j = 0; j < n; j += 1) {
+    if (skinW[j] < 0.5) continue;
+    raw[j] = Math.max(smooth(14, 40, D[j]), smooth(3, 9, E[j])); // clear blemishes only: faint freckles and fine texture stay
+  }
+  // dense clusters of dark dots are texture (stubble, freckles), not blemishes
+  const dens = boxFilter(raw, bw, bh, Math.max(3, Math.round(rx * 0.1)));
+  const k = clamp(strength / 100, 0, 1);
+  const w0 = new Float32Array(n);
+  for (let j = 0; j < n; j += 1) {
+    // weak detections are ignored (thin hairs and fine texture give weak, partial responses); only clear blemishes are healed
+    if (raw[j] > 0.35) w0[j] = raw[j] * (1 - smooth(0.12, 0.3, dens[j])) * k * Math.min(1, skinW[j] * 1.4) * (protect ? 1 - protect[j] : 1);
+  }
+  // grow the repair area by one pixel so the soft rim of the blemish is covered too
+  const wg = boxFilter(w0, bw, bh, 1);
+  const w = new Float32Array(n);
+  let fixed = 0; let total = 0;
+  for (let j = 0; j < n; j += 1) {
+    if (skinW[j] > 0.3) total += 1;
+    w[j] = Math.max(w0[j], Math.min(1, wg[j] * 2.2) * (w0[j] > 0 || wg[j] > 0.15 ? 1 : 0));
+    if (w[j] < 0.03) w[j] = 0;
+    else if (w[j] > 0.25) fixed += 1;
+  }
+  // Heal like a repair brush: the blemish takes the texture of a clean patch of skin nearby (so it is real skin,
+  // not a flat fill), shifted to match the local light and colour of its own surroundings.
+  const Rr = Math.max(3, Math.round(rx * 0.045));
+  const mr = num(sure, Rr); const ryS = num(sY, Rr); const rcS = num(sC, Rr); const rbS = num(sB, Rr);
+  const refOk = (j) => mr[j] > 0.2;
+  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
+  const dists = [Math.max(4, Math.round(rx * 0.07)), Math.max(8, Math.round(rx * 0.14))];
+  for (let j = 0; j < n; j += 1) {
+    if (w[j] === 0) continue;
+    const x = j % bw; const y = (j / bw) | 0;
+    let best = -1; let bestScore = Infinity;
+    if (refOk(j)) {
+      for (const dist of dists) {
+        for (const [ox, oy] of dirs) {
+          const xx = x + ox * dist; const yy = y + oy * dist;
+          if (xx < 0 || yy < 0 || xx >= bw || yy >= bh) continue;
+          const jj = yy * bw + xx;
+          if (sure[jj] < 0.9 || w[jj] > 0 || !refOk(jj)) continue;
+          const sc = Math.abs(ryS[jj] / mr[jj] - ryS[j] / mr[j]) + 2 * Math.abs(rcS[jj] / mr[jj] - rcS[j] / mr[j]);
+          if (sc < bestScore) { bestScore = sc; best = jj; }
+        }
+      }
+    }
+    if (best >= 0) {
+      const tY = Y[best] + (ryS[j] / mr[j] - ryS[best] / mr[best]);
+      const tCr = Cr[best] + (rcS[j] / mr[j] - rcS[best] / mr[best]);
+      const tCb = Cb[best] + (rbS[j] / mr[j] - rbS[best] / mr[best]);
+      dY[j] = w[j] * clamp(tY - Y[j], -MAX_SPOT_LIFT * 1.6, MAX_SPOT_LIFT * 1.6);
+      dCr[j] = w[j] * clamp(tCr - Cr[j], -MAX_SPOT_RED, MAX_SPOT_RED);
+      dCb[j] = w[j] * clamp(tCb - Cb[j], -MAX_SPOT_RED, MAX_SPOT_RED);
+    } else { // no clean patch found: move only the low-frequency colour (still keeps the pixel's own detail)
+      dY[j] = w[j] * Math.min(MAX_SPOT_LIFT, D[j]);
+      dCr[j] = -w[j] * Math.min(MAX_SPOT_RED, E[j]);
+    }
+  }
+  return { dY, dCb, dCr, fixedFrac: total ? fixed / total : 0 };
+}
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
@@ -212,11 +380,39 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
   const gL = lw > 0 && rw > 0 && light.enabled && light.even ? clamp(aY / (lY / lw), 1 - MAX_EVEN_GAIN, 1 + MAX_EVEN_GAIN) : 1;
   const gR = lw > 0 && rw > 0 && light.enabled && light.even ? clamp(aY / (rY / rw), 1 - MAX_EVEN_GAIN, 1 + MAX_EVEN_GAIN) : 1;
   report.evenGain = [gL, gR];
+  let holeCand = null;
+  if (skin.enabled && skin.spots > 0) {
+    holeCand = new Float32Array(n);
+    for (let j = 0; j < n; j += 1) {
+      if (we[j] > 0.5 && ms[j] < 0.5 && Y[j] > 70 && Y[j] < 240 && Cr[j] - 128 >= 0.35 * warm) holeCand[j] = 1;
+    }
+  }
+  // retouch-free zones (eyes, mouth, nostrils) in bbox coordinates, soft edge
+  let protect = null;
+  if (Array.isArray(params.protect) && params.protect.length) {
+    protect = new Float32Array(n);
+    for (const z of params.protect) {
+      const zc = Math.cos(z.rot || 0); const zs = Math.sin(z.rot || 0);
+      for (let y = 0; y < bh; y += 1) {
+        for (let x = 0; x < bw; x += 1) {
+          const dx = x0 + x + 0.5 - z.cx; const dy = y0 + y + 0.5 - z.cy;
+          const u = (dx * zc + dy * zs) / z.rx; const v = (-dx * zs + dy * zc) / z.ry;
+          const dd = Math.hypot(u, v); if (dd >= 1.2) continue;
+          const wgt = dd <= 0.85 ? 1 : 1 - smooth(0.85, 1.2, dd);
+          if (wgt > protect[y * bw + x]) protect[y * bw + x] = wgt;
+        }
+      }
+    }
+  }
+  const spots = holeCand ? spotCorrection(Y, Cb, Cr, ms, bw, bh, ell.rx, skin.spots, holeCand, m, protect) : null;
+  report.spotsFrac = spots ? spots.fixedFrac : 0;
   let after = 0; let liftSum = 0; let blotchSum = 0; let protectedW = 0;
   for (let y = 0; y < bh; y += 1) {
     for (let x = 0; x < bw; x += 1) {
       const j = y * bw + x; const k = ms[j];
-      if (k <= 0.01) continue;
+      // a blemish pixel is outside the strict skin mask but still gets its spot correction
+      const sp = !!spots && (spots.dY[j] !== 0 || spots.dCr[j] !== 0 || spots.dCb[j] !== 0);
+      if (k <= 0.01 && !sp) continue;
       const i = ((y0 + y) * w + x0 + x) * 4;
       let R = data[i]; let G = data[i + 1]; let B = data[i + 2];
       // chroma: redness + evenness
@@ -228,6 +424,10 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
         dCb += eCb; dCr += eCr; blotchSum += Math.abs(eCr) * k;
       }
       R += 1.402 * dCr; G += -0.344136 * dCb - 0.714136 * dCr; B += 1.772 * dCb;
+      if (spots) { // spot healing: raise the blob's light and cool its redness; fine texture is kept
+        const sy = spots.dY[j]; const sc = spots.dCr[j]; const sb = spots.dCb[j];
+        R += sy + 1.402 * sc; G += sy - 0.344136 * sb - 0.714136 * sc; B += sy + 1.772 * sb;
+      }
       // luminance: fill light, left/right balance, highlight protection (multiplicative: keeps chroma ratio)
       const y0v = Y[j];
       let gain = 1;

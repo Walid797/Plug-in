@@ -39,6 +39,8 @@ export const QUICK_DEFAULTS = Object.freeze({
   gHighlights: -10, gShadows: 12, gWhites: 8, gBlacks: -8, gSharpness: 22, gClarity: 55, gDenoise: 30,
   // face & skin engine (never reshapes the face): excess redness, colour evenness
   skinOn: true, skinRedness: 40, skinBalance: 40,
+  // realistic spot healing (pimples, marks, stains): texture kept, beard and freckle clusters skipped; 0 = off
+  skinSpots: 90,
   // lighting engine: fill light for shadows (eyes, nose, chin, forehead), L/R balance, burnt-highlight protection
   lightOn: true, lightFill: 45, lightEven: true, lightProtect: true,
   // crop engine: widen the frame (within the head-size rule) when the shoulders are cut off
@@ -144,7 +146,7 @@ export function presetAdjustFor(p, meanL, sharpness = null) {
 /** Face & skin + lighting parameters a preset writes to the photo edit (ellipse added by the analysis). */
 export function presetFaceParams(p) {
   return {
-    skin: { enabled: p.skinOn, redness: p.skinRedness, balance: p.skinBalance },
+    skin: { enabled: p.skinOn, redness: p.skinRedness, balance: p.skinBalance, spots: p.skinSpots },
     light: { enabled: p.lightOn, fill: p.lightFill, even: p.lightEven, protect: p.lightProtect },
   };
 }
@@ -201,6 +203,7 @@ export function normalizeQuickPreset(raw = {}) {
   p.skinOn = bool(raw.skinOn, D.skinOn);
   p.skinRedness = Math.round(num(raw.skinRedness, 0, 100, D.skinRedness));
   p.skinBalance = Math.round(num(raw.skinBalance, 0, 100, D.skinBalance));
+  p.skinSpots = Math.round(num(raw.skinSpots, 0, 100, D.skinSpots));
   p.lightOn = bool(raw.lightOn, D.lightOn);
   p.lightFill = Math.round(num(raw.lightFill, 0, 100, D.lightFill));
   p.lightEven = bool(raw.lightEven, D.lightEven);

@@ -63,6 +63,32 @@ export function faceMetrics(lm, srcW, srcH, opts = {}) {
   };
 }
 
+/**
+ * Zones that retouching must never touch: both eyes (inner corner, lashes, lids), the mouth (lips and
+ * corners) and the underside of the nose (nostrils). Ellipses in source-normalised units like faceEllipse
+ * (centre over the source size, radii over the source width). Derived from the landmarks only; nothing is
+ * stored about the person beyond these shapes.
+ */
+export function faceProtectZones(lm, srcW, srcH) {
+  if (!lm || lm.length < 400) return [];
+  const P = (i) => ({ x: lm[i].x * srcW, y: lm[i].y * srcH });
+  const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  const rot = (a, b) => (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+  const zone = (c, rx, ry, deg) => ({ cx: c.x / srcW, cy: c.y / srcH, rx: rx / srcW, ry: ry / srcW, rot: deg });
+  const out = [];
+  for (const [o, i] of [[33, 133], [263, 362]]) { // eyes
+    const a = P(o); const b = P(i); const w = d(a, b);
+    out.push(zone(mid(a, b), w * 0.78, w * 0.5, rot(a, b)));
+  }
+  const m1 = P(61); const m2 = P(291); const mw = d(m1, m2); // mouth
+  const mc = mid(mid(m1, m2), mid(P(0), P(17)));
+  out.push(zone(mc, mw * 0.68, Math.max(d(P(0), P(17)) * 0.95, mw * 0.3), rot(m1, m2)));
+  const n1 = P(98); const n2 = P(327); const nw = d(n1, n2); // nostrils / underside of the nose
+  out.push(zone({ x: (n1.x + n2.x) / 2, y: (n1.y + n2.y) / 2 - nw * 0.08 }, nw * 0.72, nw * 0.4, rot(n1, n2)));
+  return out;
+}
+
 /** Map face-frame (u,v) back to source pixels. */
 export function faceToSource(m, u, v) {
   const r = (m.rollDeg * Math.PI) / 180;

@@ -4,6 +4,7 @@ import { PhotoCanvas } from '../PhotoCanvas.jsx';
 import { Queue, NeedPhotos } from '../Queue.jsx';
 import { Icon, Button, Group, Notice, Badge, Select, Switch, Slider } from '../kit.jsx';
 import { faceEllipse } from '../../core/faceengine.js';
+import { faceProtectZones } from '../../core/idphoto.js';
 import { useCropHandlers, ViewSwitch } from './Editor.jsx';
 import { analyzeFace, currentQuality, suggestionFor, profileFor, shoulderFracFor, refineCrownWithMask } from '../../ai/face.js';
 import { getFace } from '../../state/media.js';
@@ -115,13 +116,14 @@ export function SmartView() {
     } finally { task.done(); }
   };
 
-  const faceCfg = { skin: { enabled: false, redness: 40, balance: 30, ...(e.face?.skin || {}) }, light: { enabled: false, fill: 35, even: true, protect: true, ...(e.face?.light || {}) } };
+  const faceCfg = { skin: { enabled: false, redness: 40, balance: 30, spots: 0, ...(e.face?.skin || {}) }, light: { enabled: false, fill: 35, even: true, protect: true, ...(e.face?.light || {}) } };
   const setFaceEngine = (patch, history = true) => {
     const f = getState().photos[photo.id].edit.face;
     const metrics = getFace(photo.id)?.metrics;
     const ellipse = f?.ellipse || (metrics ? faceEllipse(metrics, photo.width, photo.height) : null);
     if (!ellipse) return;
-    updateEdit(photo.id, (ed) => ({ ...ed, face: { ...faceCfg, ...(ed.face || {}), ...patch, ellipse } }), { history });
+    const protect = f?.protect?.length ? f.protect : faceProtectZones(getFace(photo.id)?.landmarks, photo.width, photo.height);
+    updateEdit(photo.id, (ed) => ({ ...ed, face: { ...faceCfg, ...(ed.face || {}), ...patch, ellipse, protect } }), { history });
   };
 
   const engineSlider = (grp, key) => ({
@@ -196,6 +198,7 @@ export function SmartView() {
                     <>
                       <Slider label="کاهش قرمزی" min={0} max={100} value={faceCfg.skin.redness} defaultValue={40} format={(v) => formatNumber(v)} {...engineSlider('skin', 'redness')} />
                       <Slider label="توازن رنگ" min={0} max={100} value={faceCfg.skin.balance} defaultValue={30} format={(v) => formatNumber(v)} {...engineSlider('skin', 'balance')} />
+                      <Slider label="پاک‌کردن جوش، لکه و داغ (واقعی)" min={0} max={100} value={faceCfg.skin.spots ?? 0} defaultValue={0} format={(v) => formatNumber(v)} {...engineSlider('skin', 'spots')} />
                     </>
                   ) : null}
                   <Switch label="نور نرم و یکنواخت (سایه‌ها، چپ/راست، نور سوخته)" checked={!!e.face?.light?.enabled && !!e.face?.ellipse}

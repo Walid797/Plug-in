@@ -92,6 +92,7 @@ function engineStatus(r, preset) {
     else if (!e) out.push({ kind: 'warn', icon: 'triangle-alert', text: 'موتور پوست و نور اجرا نشد (خطا)' });
     else if (!e.applied) out.push({ kind: 'warn', icon: 'triangle-alert', text: e.reason === 'NO_SKIN' ? 'پوست در عکس به‌اندازهٔ کافی تشخیص داده نشد؛ موتور پوست و نور اعمال نشد' : 'موتور پوست و نور اعمال نشد' });
     else {
+      if (preset.skinOn && preset.skinSpots > 0) out.push(e.spotsFrac > 0.0005 ? { kind: 'ok', icon: 'check', text: 'جوش و لکه‌های کوچک پاک شد (ریش، سبیل و بافت پوست حفظ شد)' } : { kind: 'ok', icon: 'check', text: 'لکهٔ واضحی برای پاک‌کردن پیدا نشد' });
       if (preset.skinOn) out.push(e.redShift > 0.3 ? { kind: 'ok', icon: 'check', text: 'قرمزی بیش‌ازحد پوست کم شد' } : { kind: 'ok', icon: 'check', text: 'رنگ پوست طبیعی بود؛ تغییر نکرد' });
       if (preset.lightOn) out.push(e.lift > 0.5 || e.protectedFrac > 0.02 ? { kind: 'ok', icon: 'check', text: `نور صورت یکنواخت‌تر شد${e.protectedFrac > 0.02 ? ' (نور سوخته مهار شد)' : ''}` } : { kind: 'ok', icon: 'check', text: 'نور صورت از قبل یکنواخت بود' });
     }

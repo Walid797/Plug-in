@@ -158,7 +158,8 @@ export function renderPhoto(edit, assets, outW, outH, opts = {}) {
     }
     if (adjustOn) applyAdjustments(data, outW, outH, edit.adjust, { scale: Math.max(1, frameWidthPx / 350), detailWeight });
     if (faceOn) {
-      const rep = applyFaceEngine(data, outW, outH, ellipseToOutput(face.ellipse, src.width, src.height, M), face);
+      const protect = (face.protect || []).map((z) => ellipseToOutput(z, src.width, src.height, M));
+      const rep = applyFaceEngine(data, outW, outH, ellipseToOutput(face.ellipse, src.width, src.height, M), { ...face, protect });
       if (opts.faceReport) Object.assign(opts.faceReport, rep);
     }
     if (snapWhite) snapNearWhite(data);
