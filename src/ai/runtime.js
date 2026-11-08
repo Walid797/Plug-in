@@ -1,6 +1,8 @@
 // Lazy loading of the local inference runtimes (MediaPipe Tasks, ONNX Runtime Web)
 // from the app's own vendor folder. Nothing is fetched from the internet.
-import { loadModelBytes, markModel } from './models.js';
+import { loadModelBytes, markModel, sha256Hex } from './models.js';
+import { CPU_FILES, createCpuSegmenter, createCpuFaceLandmarker } from './cpu-engine.js';
+import { classifyAiError } from './errors.js';
 import { getState } from '../state/store.js';
 
 const scripts = new Map();
@@ -96,7 +98,57 @@ async function getInstance(id, create) {
   return p;
 }
 
+/* ------------------------------------------------- WebGL-free engine (ONNX) */
+
+let glChecked = null;
+/** Can this browser create a WebGL2 context? (MediaPipe Tasks needs it even for its CPU path.) Checked once. */
+export function webgl2Works() {
+  if (glChecked !== null) return glChecked;
+  try {
+    const gl = document.createElement('canvas').getContext('webgl2');
+    glChecked = !!gl;
+    gl?.getExtension('WEBGL_lose_context')?.loseContext();
+  } catch { glChecked = false; }
+  return glChecked;
+}
+let glBroken = false; // MediaPipe failed because of WebGL in this session: use the ONNX engine from now on
+
+/** Use the WebGL-free ONNX engine? (setting «بدون گرافیک», no WebGL2, or MediaPipe already failed on WebGL) */
+export function useCpuEngine() {
+  return getState().settings.aiDelegate === 'nogl' || glBroken || !webgl2Works();
+}
+
+async function loadCpuFile(file) {
+  const r = await fetch(file.path, { cache: 'force-cache' }).catch(() => null);
+  if (!r || !r.ok) throw Object.assign(new Error('MODEL_MISSING'), { code: 'MODEL_MISSING' });
+  const bytes = new Uint8Array(await r.arrayBuffer());
+  const h = await sha256Hex(bytes);
+  if (h && h !== file.sha256) throw Object.assign(new Error('HASH_MISMATCH'), { code: 'HASH_MISMATCH' });
+  return bytes;
+}
+
+async function cpuSession(ort, file) {
+  const bytes = await withTimeout(loadCpuFile(file), 'model');
+  return withTimeout(ort.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' }), 'create');
+}
+
+const cpuBackend = (ort) => `ONNX WASM (CPU، بدون گرافیک، ${ort.env.wasm.numThreads} رشته)`;
+
+async function createCpuFace() {
+  const ort = await withTimeout(ortRuntime(), 'runtime');
+  const det = await cpuSession(ort, CPU_FILES.detector);
+  const lmk = await cpuSession(ort, CPU_FILES.landmarks);
+  return { instance: createCpuFaceLandmarker(ort, det, lmk, { numFaces: 3 }), delegate: 'ONNX', backend: cpuBackend(ort) };
+}
+
+async function createCpuSegmenterInstance() {
+  const ort = await withTimeout(ortRuntime(), 'runtime');
+  const seg = await cpuSession(ort, CPU_FILES.segmenter);
+  return { instance: createCpuSegmenter(ort, seg), delegate: 'ONNX', backend: cpuBackend(ort) };
+}
+
 export function getFaceLandmarker({ cpuOnly = false } = {}) {
+  if (useCpuEngine()) return getInstance('face-landmarker', createCpuFace);
   return getInstance('face-landmarker', () => createMediapipe('face-landmarker', (V, baseOptions) => V.FaceLandmarker.createFromOptions(FILESET(), {
     baseOptions, runningMode: 'IMAGE', numFaces: 3, outputFaceBlendshapes: false, outputFacialTransformationMatrixes: false,
     minFaceDetectionConfidence: 0.5, minFacePresenceConfidence: 0.5,
@@ -104,9 +156,15 @@ export function getFaceLandmarker({ cpuOnly = false } = {}) {
 }
 
 export function getSegmenter({ cpuOnly = false } = {}) {
+  if (useCpuEngine()) return getInstance('selfie-multiclass', createCpuSegmenterInstance);
   return getInstance('selfie-multiclass', () => createMediapipe('selfie-multiclass', (V, baseOptions) => V.ImageSegmenter.createFromOptions(FILESET(), {
     baseOptions, runningMode: 'IMAGE', outputConfidenceMasks: true, outputCategoryMask: false,
   }), cpuOnly ? ['CPU'] : delegateOrder()));
+}
+
+/** A MediaPipe failure that the WebGL-free engine avoids: no WebGL, or the model never finished starting. */
+function isGlFailure(e) {
+  return classifyAiError(e).kind === 'webgl' || classifyAiError(e).kind === 'gpu' || (e?.code === 'TIMEOUT' && (e.stage === 'create' || e.stage === 'run'));
 }
 
 /**
@@ -116,6 +174,20 @@ export function getSegmenter({ cpuOnly = false } = {}) {
  * on the CPU and the inference is retried once.
  */
 export async function runWithFallback(id, getter, fn, validate = () => true) {
+  const usedCpuEngine = useCpuEngine();
+  try {
+    return await runOnce(id, getter, fn, validate);
+  } catch (e) {
+    if (usedCpuEngine || !isGlFailure(e)) throw e;
+    // MediaPipe cannot run here (WebGL missing or stuck): switch to the WebGL-free engine for the rest of the session
+    console.warn(`${id}: MediaPipe failed (${e?.message || e}); switching to the WebGL-free ONNX engine`);
+    glBroken = true;
+    disposeAll();
+    return runOnce(id, getter, fn, validate);
+  }
+}
+
+async function runOnce(id, getter, fn, validate) {
   const inst = await getter();
   if (delegateOf(id) !== 'GPU') {
     try {

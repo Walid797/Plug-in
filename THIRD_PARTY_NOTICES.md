@@ -13,6 +13,7 @@
 | MediaPipe Tasks Vision (Google LLC) | 1.2.2 | Apache-2.0 | `vendor/mediapipe/` | `vendor/mediapipe/LICENSE.txt` |
 | MediaPipe Face Landmarker model (Google LLC) | float16 / v1 | Apache-2.0 (per official model card) | `models/mediapipe/face_landmarker.task` | `models/mediapipe/LICENSE.txt` |
 | MediaPipe Selfie Multiclass 256×256 model (Google LLC) | float32 / latest | Apache-2.0 (per official model card) | `models/mediapipe/selfie_multiclass_256x256.tflite` | `models/mediapipe/LICENSE.txt` |
+| MediaPipe face detector, face landmarks and Selfie Multiclass models converted to ONNX (WebGL-free engine; converted with tf2onnx, weights unchanged) | same as above | Apache-2.0 | `models/onnx-cpu/` | `models/onnx-cpu/LICENSE.txt` |
 | ONNX Runtime Web (Microsoft Corporation) | 1.31.1 | MIT | `vendor/ort/` | `vendor/ort/LICENSE.txt` |
 | Lucide icons | 1.70.0 | ISC | icon paths compiled into `app/app.js` | `vendor/icons/LICENSE` |
 | esbuild (build only, not shipped) | 0.28.2 | MIT | dev dependency | — |

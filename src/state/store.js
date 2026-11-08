@@ -14,7 +14,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   workspaceGray: false,
   onboardingDone: false,
   segModel: 'auto', // auto | mediapipe-multiclass | modnet
-  aiDelegate: 'auto', // auto | gpu | cpu
+  aiDelegate: 'auto', // auto | gpu | cpu | nogl (WebGL-free ONNX engine)
   calibrationProfiles: [],
   activeCalibrationId: null,
   companion: { enabled: false, url: 'http://127.0.0.1:7860' },

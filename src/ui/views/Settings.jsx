@@ -81,8 +81,9 @@ function Models() {
         })}
       </div>
       <Segmented label="سخت‌افزار اجرای مدل" value={delegate} onChange={(v) => { updateSettings({ aiDelegate: v }); disposeAll(); }} options={[
-        { value: 'auto', label: 'خودکار (پایدار)' }, { value: 'gpu', label: 'کارت گرافیک (GPU)' }, { value: 'cpu', label: 'پردازنده (CPU)' },
+        { value: 'auto', label: 'خودکار (پایدار)' }, { value: 'gpu', label: 'کارت گرافیک (GPU)' }, { value: 'cpu', label: 'پردازنده (CPU)' }, { value: 'nogl', label: 'بدون گرافیک (ONNX)' },
       ]} />
+      <p class="hint">«بدون گرافیک» همان مدل‌ها را با موتور ONNX فقط روی پردازنده اجرا می‌کند و به WebGL نیاز ندارد. اگر این کمپیوتر WebGL نداشته باشد (مثلاً کارت گرافیک ندارد)، برنامه خودش همین را به کار می‌برد.</p>
       <p class="hint">«خودکار» از پردازنده (WASM) استفاده می‌کند که روی همهٔ دستگاه‌ها نتیجهٔ یکسان می‌دهد. کارت گرافیک در بعضی موبایل‌ها نتیجهٔ خالی یا خطا می‌دهد؛ اگر آن را انتخاب کنید و خطا رخ دهد، برنامه خودکار با پردازنده دوباره امتحان می‌کند.</p>
       <p class="hint">راهنمای کامل نصب مدل‌ها: پوشهٔ docs، فایل «ai-models.md».</p>
     </section>

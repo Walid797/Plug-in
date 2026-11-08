@@ -18,8 +18,8 @@ async function runMulticlass(pv) {
   return runWithFallback('selfie-multiclass', getSegmenter, (seg) => multiclassOnce(seg, pv), (r) => plausibleMask(r.person));
 }
 
-function multiclassOnce(seg, pv) {
-  const res = seg.segment(pv.image);
+async function multiclassOnce(seg, pv) {
+  const res = await seg.segment(pv.image); // MediaPipe answers at once, the WebGL-free ONNX engine asynchronously
   try {
     const masks = res.confidenceMasks || [];
     if (masks.length < 5) throw Object.assign(new Error('BAD_OUTPUT'), { code: 'BAD_OUTPUT' });
