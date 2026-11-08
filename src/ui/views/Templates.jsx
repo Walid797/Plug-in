@@ -33,7 +33,7 @@ export function sanitizeTemplates(json) {
         margins: { top: m.top, right: m.right, bottom: m.bottom, left: m.left }, gap: { x: sh.gap.x, y: sh.gap.y },
         mode: sh.mode === 'fill' ? 'fill' : 'exact', allowRotation: !!sh.allowRotation,
         fillOrder: ['col-ltr', 'col-rtl', 'rtl', 'ltr'].includes(sh.fillOrder) ? sh.fillOrder : 'col-ltr',
-        marks: { cutLines: !!sh.marks?.cutLines, cropMarks: !!sh.marks?.cropMarks, borders: !!sh.marks?.borders },
+        marks: { cutLines: !!sh.marks?.cutLines, cropMarks: !!sh.marks?.cropMarks, borders: !!sh.marks?.borders, borderWidth: isNum(sh.marks?.borderWidth, 0.05, 2) ? sh.marks.borderWidth : 0.2, borderColor: /^#[0-9a-f]{6}$/i.test(sh.marks?.borderColor || '') ? sh.marks.borderColor.toLowerCase() : '#000000' },
         dpi: [300, 350, 400, 600].includes(sh.dpi) ? sh.dpi : 300,
       },
     });

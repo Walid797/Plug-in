@@ -35,14 +35,19 @@ try {
   await dlg.getByRole('button', { name: 'ذخیره', exact: true }).click();
   await dlg.waitFor({ state: 'detached' });
   const cardText = await card.innerText();
-  assert(cardText.includes('۹') && cardText.includes('تنظیم‌شده'), `card shows 9 and "adjusted" (${cardText})`);
+  assert(cardText.includes('۴ عکس برای هر نفر') && cardText.includes('تنظیم‌شده') && cardText.includes('عمودی'), `card: 4 per person, portrait, "adjusted" (${cardText})`);
 
   // 2) survives a reload (settings are stored locally)
   await page.waitForTimeout(1500);
   await page.reload();
   await page.waitForSelector('.quick-card[data-preset="q-3x4-4r"]');
   const after = await page.locator('.quick-card[data-preset="q-3x4-4r"]').innerText();
-  assert(after.includes('۹'), `adjustment kept after reload (${after})`);
+  assert(after.includes('تنظیم‌شده') && after.includes('عمودی'), `adjustment kept after reload (${after})`);
+  await page.locator('.quick-card[data-preset="q-3x4-4r"] .quick-edit').click();
+  await editor(page).waitFor();
+  assert((await editor(page).locator('.qp-cap .num').innerText()) === '۹', 'reopened editor shows 9 slots');
+  await page.keyboard.press('Escape');
+  await editor(page).waitFor({ state: 'detached' });
 
   // 3) a new own preset: 4 copies per person, light-blue background, no auto light
   await page.locator('.quick-new').click();
@@ -62,6 +67,11 @@ try {
   const counted = await nd.getByLabel('تعداد عکس برای هر نفر', { exact: true }).inputValue();
   assert(counted === '۶', `chip sets the count (${counted})`);
   await nd.getByRole('button', { name: '۴', exact: true }).click();
+  // border: off by default, configurable width/colour
+  assert((await nd.getByRole('switch', { name: /بوردر/ }).isChecked()) === false, 'border is off by default');
+  await nd.getByRole('switch', { name: /بوردر/ }).setChecked(true, { force: true });
+  await setNumber(nd, 'ضخامت بوردر', '۰٫۵');
+  await nd.locator('button.swatch[aria-label="خاکستری تیره"]').click();
   await page.waitForTimeout(150);
   const summary = await nd.locator('.qp-summary').innerText();
   assert(summary.includes('۴ عکس برای هر نفر') && summary.includes('آبی روشن'), `summary (${summary})`);
@@ -84,13 +94,21 @@ try {
   assert(rt.includes('برای هر نفر ۴ عکس'), 'four copies per person');
   const st = await page.evaluate(() => {
     const h = window.__hoshmand; const s = h.getState(); const ph = Object.values(s.photos)[0]; const l = h.sheet.computeSheetLayout(s);
-    return { color: ph.edit.bg.color, enabled: ph.edit.bg.enabled, refine: ph.edit.bg.refine, shadow: ph.edit.bg.shadow, exposure: ph.edit.adjust.exposure, items: s.project.sheet.items.map((i) => i.copies), mode: s.project.sheet.mode, paper: s.project.sheet.paperId, margins: s.project.sheet.margins.top, placed: l.totals.placed, cap: l.capacity, boost: s.project.sheet.printBoost };
+    return { color: ph.edit.bg.color, enabled: ph.edit.bg.enabled, refine: ph.edit.bg.refine, shadow: ph.edit.bg.shadow, marks: s.project.sheet.marks, exposure: ph.edit.adjust.exposure, items: s.project.sheet.items.map((i) => i.copies), mode: s.project.sheet.mode, paper: s.project.sheet.paperId, margins: s.project.sheet.margins.top, placed: l.totals.placed, cap: l.capacity, boost: s.project.sheet.printBoost };
   });
   assert(st.enabled && st.color === '#cfe3f5', `bg ${st.color}`);
+  assert(st.marks.borders === true && st.marks.borderWidth === 0.5 && st.marks.borderColor === '#404040', `border applied from the template ${JSON.stringify(st.marks)}`);
   assert(st.refine.feather === 3 && st.shadow.enabled === true, `own edge settings applied (${JSON.stringify(st.refine)} ${JSON.stringify(st.shadow)})`);
   assert(JSON.stringify(st.items) === '[4]' && st.mode === 'exact' && st.placed === 4 && st.cap === 8, `sheet ${JSON.stringify(st)}`);
   assert(st.paper === '4x6in' && st.margins === 5 && st.boost === 'medium', 'paper/margins/boost from the preset');
   await ready.getByRole('button', { name: 'اول پیش‌نمایش را ببینم' }).click();
+  await page.waitForTimeout(500);
+  const frames = await page.evaluate(() => [...document.querySelectorAll('.sheets .marks-over rect')].map((r) => [r.getAttribute('stroke'), r.getAttribute('stroke-width')]));
+  assert(frames.length === 4 && frames.every(([c, w]) => c === '#404040' && Number(w) === 0.5), `4 bordered photos in the preview (${JSON.stringify(frames)})`);
+  // the print studio exposes the same setting for any sheet
+  const sw = page.getByRole('switch', { name: /بوردر/ });
+  assert(await sw.isChecked(), 'print studio shows the border switch on');
+  assert((await page.getByLabel('ضخامت بوردر', { exact: true }).inputValue()) === '۰٫۵', 'print studio shows the width');
   await page.waitForTimeout(800);
   await page.screenshot({ path: path.join(outDir, 'quick-edit-print.png') });
 

@@ -5,7 +5,7 @@ import { useStore, closeDialog, confirmDialog, toast } from '../state/store.js';
 import { Button, Icon, Group, NumberInput, Select, Segmented, Switch, Notice, Badge, Modal, Slider } from './kit.jsx';
 import { formatNumber, toFaDigits } from '../core/digits.js';
 import { orientationName, layoutErrorText } from '../i18n/fa.js';
-import { PAPER_PRESETS, PHOTO_PRESETS, RULE_PROFILES, BACKGROUND_PRESETS, DPI_PRESETS } from '../core/presets.js';
+import { PAPER_PRESETS, PHOTO_PRESETS, RULE_PROFILES, BACKGROUND_PRESETS, DPI_PRESETS, BORDER_COLORS } from '../core/presets.js';
 import { PRINT_BOOST_IDS } from '../core/adjust.js';
 import { findQuickPreset, normalizeQuickPreset, presetCapacity, quickPaper, quickWarnings, copiesPerPerson, QUICK_DEFAULTS, QUICK_PRESETS } from '../core/quickpresets.js';
 import { saveQuickPreset, saveQuickPresetAsNew, resetQuickPreset, deleteQuickPreset } from '../state/quick.js';
@@ -37,7 +37,7 @@ export function SheetDiagram({ layout, preset }) {
       {hm > 0 ? <rect x={hm} y={hm} width={W - 2 * hm} height={H - 2 * hm} fill="none" stroke="#e05252" stroke-width="0.35" stroke-dasharray="1.5 1.2" /> : null}
       {page.placements.map((pl) => (
         <g key={pl.index}>
-          <rect x={pl.photo.x} y={pl.photo.y} width={pl.photo.w} height={pl.photo.h} fill={preset.whiteBg ? preset.bgColor : '#e9edf5'} stroke="#3b5bdb" stroke-width="0.4" />
+          <rect x={pl.photo.x} y={pl.photo.y} width={pl.photo.w} height={pl.photo.h} fill={preset.whiteBg ? preset.bgColor : '#e9edf5'} stroke={preset.border ? preset.borderColor : '#3b5bdb'} stroke-width={preset.border ? Math.max(0.3, preset.borderWidth) : 0.4} />
           <circle cx={pl.photo.x + pl.photo.w / 2} cy={pl.photo.y + pl.photo.h * 0.42} r={Math.min(pl.photo.w, pl.photo.h) * 0.2} fill="#c9d3e6" />
           <text x={pl.photo.x + pl.photo.w / 2} y={pl.photo.y + pl.photo.h * 0.88} font-size={fs} text-anchor="middle" fill="#1f3fbf" font-weight="700">{toFaDigits(String(pl.index + 1))}</text>
         </g>
@@ -193,6 +193,20 @@ export function QuickPresetEditorDialog({ presetId, mode = 'edit' }) {
             <Select label="کیفیت (DPI)" value={String(d.dpi)} onChange={(v) => set({ dpi: Number(v) })} options={DPI_PRESETS.map((x) => ({ value: String(x), label: `${formatNumber(x)} DPI${x === 300 ? ' (پیشنهادی)' : ''}` }))} />
             <Switch label="نشانه‌های برش در حاشیه" checked={d.cropMarks} onChange={(v) => set({ cropMarks: v })} />
             <Switch label="خطوط برش کامل (در فاصله‌ها)" checked={d.cutLines} onChange={(v) => set({ cutLines: v })} />
+            <Switch label="بوردر (کادر دور هر عکس)" checked={d.border} onChange={(v) => set({ border: v })} hint="داخل لبهٔ هر عکس کشیده می‌شود؛ اندازهٔ عکس تغییر نمی‌کند." />
+            {d.border ? (
+              <>
+                <NumberInput label="ضخامت بوردر" unit="ملی‌متر" value={d.borderWidth} min={0.05} max={2} step={0.05} maxFraction={2} onChange={(v) => set({ borderWidth: v })} />
+                <div class="swatches" role="group" aria-label="رنگ بوردر">
+                  {BORDER_COLORS.map((b) => (
+                    <button type="button" key={b.id} class="swatch" style={{ background: b.color }} aria-pressed={String(d.borderColor === b.color)} aria-label={b.nameFa} data-tip={b.nameFa} onClick={() => set({ borderColor: b.color })} />
+                  ))}
+                  <label class="swatch custom" data-tip="رنگ دلخواه">
+                    <input type="color" value={d.borderColor} aria-label="رنگ دلخواه بوردر" onChange={(ev) => set({ borderColor: ev.currentTarget.value })} />
+                  </label>
+                </div>
+              </>
+            ) : null}
             <Switch label="چاپگر بدون حاشیه (Borderless)" checked={d.borderless} onChange={(v) => set({ borderless: v })} />
             {!d.borderless ? <NumberInput label="حاشیهٔ غیرقابل چاپ چاپگر" unit="ملی‌متر" value={d.hardMargin} min={0} max={20} step={0.5} hint="اپسون سری L در حالت عادی معمولاً ۳ ملی‌متر." onChange={(v) => set({ hardMargin: v })} /> : null}
           </Group>

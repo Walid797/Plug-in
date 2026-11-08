@@ -40,7 +40,7 @@ export const DEFAULT_SHEET = Object.freeze({
   fillOrder: 'col-ltr',
   schema: 2,
   compact: true,
-  marks: { cutLines: false, cropMarks: true, borders: false },
+  marks: { cutLines: false, cropMarks: true, borders: false, borderWidth: 0.2, borderColor: '#000000' },
   label: { enabled: false, heightMm: 4, gapMm: 1, content: 'name', custom: '' },
   dpi: 300,
   printer: { borderless: false, hardMargins: { top: 3, right: 3, bottom: 3, left: 3 } },

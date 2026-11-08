@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { printBoostLut, printBoostValue, applyLut, PRINT_BOOST_IDS, PRINT_BOOST_LEVELS, isPrintBoost } from '../../src/core/adjust.js';
 import { autoExposureDelta, AUTO_LIGHT, QUALITY_THRESHOLDS } from '../../src/core/idphoto.js';
 import { QUICK_PRESETS, QUICK_DEFAULTS, presetCapacity, quickSheetPatch, quickLayoutInput, findQuickPreset, normalizeQuickPreset, allQuickPresets, quickFields, quickWarnings, copiesPerPerson, quickPaper } from '../../src/core/quickpresets.js';
-import { computeLayout } from '../../src/core/layout.js';
+import { computeLayout, computeMarks } from '../../src/core/layout.js';
+import { layoutToPdfPages } from '../../src/core/pdf.js';
 import { findPaper, findPhoto, findProfile } from '../../src/core/presets.js';
 
 const lin = (v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
@@ -79,14 +80,30 @@ test('quick presets: real 4R paper, capacities from the layout engine, studio se
   assert.equal(findPaper('4x6in').widthMm, 101.6);
 });
 
-test('quick preset sheet: one full sheet per person, or an even share on A4', () => {
+test('quick preset sheet: 4 photos for the 3x4 template, a full sheet per person for the others, even share on A4', () => {
   let n = 0; const id = (p) => `${p}${(n += 1)}`;
-  const per = quickSheetPatch(findQuickPreset('q-3x4-4r'), ['A', 'B'], id);
-  assert.equal(per.mode, 'exact');
-  assert.deepEqual(per.items.map((i) => [i.photoId, i.copies]), [['A', 8], ['B', 8]]);
-  assert.equal(per.paperId, '4x6in');
-  assert.equal(per.label.enabled, false);
-  const l = computeLayout(quickLayoutInput(findQuickPreset('q-3x4-4r'), per.items, 'exact'));
+  const p34 = findQuickPreset('q-3x4-4r');
+  assert.equal(presetCapacity(p34).capacity, 8, 'the sheet still has 8 slots');
+  assert.equal(p34.perPerson, 'copies'); assert.equal(p34.copies, 4);
+  const four = quickSheetPatch(p34, ['A', 'B'], id);
+  assert.equal(four.mode, 'exact');
+  assert.deepEqual(four.items.map((i) => [i.photoId, i.copies]), [['A', 4], ['B', 4]]);
+  assert.equal(four.paperId, '4x6in');
+  assert.equal(four.label.enabled, false);
+  // one person → 4 photos in the two left columns, rest of the paper untouched
+  const one = computeLayout(quickLayoutInput(p34, [{ id: 'a', copies: 4 }], 'exact'));
+  assert.equal(one.totals.placed, 4); assert.equal(one.totals.sheets, 1);
+  const pos = one.pages[0].placements.map((pl) => [pl.photo.x, pl.photo.y]);
+  const expected = [[13.2, 9.8], [13.2, 51.8], [45.2, 9.8], [45.2, 51.8]]; // 152.4×101.6 landscape, columns 1-2 from the left
+  pos.forEach(([x, y], i) => { assert.ok(Math.abs(x - expected[i][0]) < 1e-6 && Math.abs(y - expected[i][1]) < 1e-6, `slot ${i}: ${x},${y}`); });
+  assert.ok(pos[2][0] < 60 && 152.4 - (pos[3][0] + 30) > 60, 'the right half of the paper stays untouched');
+  // two people share the 8-slot sheet (A in columns 1-2, B in 3-4)
+  const two = computeLayout(quickLayoutInput(p34, four.items, 'exact'));
+  assert.equal(two.totals.sheets, 1); assert.equal(two.totals.placed, 8);
+  const p35 = findQuickPreset('q-35x45-4r');
+  const full = quickSheetPatch(p35, ['A', 'B'], id);
+  assert.deepEqual(full.items.map((i) => i.copies), [6, 6]);
+  const l = computeLayout(quickLayoutInput(p35, full.items, 'exact'));
   assert.equal(l.totals.sheets, 2);
   for (const page of l.pages) assert.equal(new Set(page.placements.map((pl) => pl.itemId)).size, 1, 'each sheet holds one person');
   const share = quickSheetPatch(findQuickPreset('q-3x4-a4'), ['A', 'B', 'C'], id);
@@ -178,4 +195,31 @@ test('edge clean-up defaults: 1 px feather in every template, fully editable and
   assert.equal(p.edgeAware, true); assert.equal(p.shadow, true); assert.equal(p.shadowOpacity, 80);
   assert.equal(p.shadowBlur, 2.3); assert.equal(p.shadowX, -4); assert.equal(p.shadowY, 0.8);
   assert.equal(normalizeQuickPreset({ edgeFeather: 0 }).edgeFeather, 0, '0 (off) is allowed');
+});
+
+test('border: configurable width/colour inside every photo frame, in marks, PDF and defaults', () => {
+  for (const p of QUICK_PRESETS) { assert.equal(p.border, false, 'off unless chosen'); assert.equal(p.borderWidth, 0.2); assert.equal(p.borderColor, '#000000'); }
+  const p = normalizeQuickPreset({ border: true, borderWidth: 9, borderColor: 'red', photoId: '3x4' });
+  assert.equal(p.border, true); assert.equal(p.borderWidth, 2); assert.equal(p.borderColor, '#000000');
+  assert.equal(normalizeQuickPreset({ borderWidth: 0.001 }).borderWidth, 0.05);
+  assert.equal(normalizeQuickPreset({ borderColor: '#AABBCC' }).borderColor, '#aabbcc');
+  const preset = normalizeQuickPreset({ photoId: '3x4', border: true, borderWidth: 0.5, borderColor: '#404040', perPerson: 'sheet' });
+  const patch = quickSheetPatch(preset, ['A'], (x) => `${x}1`);
+  assert.deepEqual(patch.marks, { cutLines: false, cropMarks: true, borders: true, borderWidth: 0.5, borderColor: '#404040' });
+  const layout = computeLayout(quickLayoutInput(preset, patch.items, 'exact'));
+  const page = layout.pages[0];
+  const on = computeMarks(layout, page, patch.marks);
+  assert.equal(on.over.length, page.placements.length);
+  assert.ok(on.over.every((o) => o.width === 0.5 && o.color === '#404040'));
+  for (const [o, pl] of on.over.map((o, i) => [o, page.placements[i]])) assert.deepEqual(o.rect, pl.photo, 'border follows the exact photo frame');
+  assert.equal(computeMarks(layout, page, { ...patch.marks, borders: false }).over.length, 0);
+  // old projects (no width/colour) fall back to 0.2 mm black; bad values are clamped
+  const legacy = computeMarks(layout, page, { borders: true }).over[0];
+  assert.equal(legacy.width, 0.2); assert.equal(legacy.color, '#000000');
+  assert.equal(computeMarks(layout, page, { borders: true, borderWidth: 50, borderColor: 'x' }).over[0].width, 2);
+  // the PDF draws it in the chosen colour and width
+  const pages = layoutToPdfPages(layout, { imageName: () => 'Im1', marks: (pg) => computeMarks(layout, pg, patch.marks) });
+  const op = pages[0].content;
+  assert.ok(/0\.251 0\.251 0\.251 RG/.test(op), 'stroke colour #404040 in the PDF');
+  assert.equal((op.match(/ re S Q/g) || []).length, page.placements.length);
 });

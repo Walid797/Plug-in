@@ -156,9 +156,10 @@ export function createSheetElement(layout, page, ctx) {
     const svg = svgLayer(W, H, 'marks marks-over');
     for (const o of marks.over) {
       const r = document.createElementNS(SVG_NS, 'rect');
-      r.setAttribute('x', o.rect.x + 0.05); r.setAttribute('y', o.rect.y + 0.05);
-      r.setAttribute('width', o.rect.w - 0.1); r.setAttribute('height', o.rect.h - 0.1);
-      r.setAttribute('fill', 'none'); r.setAttribute('stroke', '#404040'); r.setAttribute('stroke-width', '0.1');
+      const bw = o.width || 0.2;
+      r.setAttribute('x', o.rect.x + bw / 2); r.setAttribute('y', o.rect.y + bw / 2);
+      r.setAttribute('width', o.rect.w - bw); r.setAttribute('height', o.rect.h - bw);
+      r.setAttribute('fill', 'none'); r.setAttribute('stroke', o.color || '#000000'); r.setAttribute('stroke-width', bw);
       svg.appendChild(r);
     }
     content.appendChild(svg);
@@ -503,8 +504,9 @@ export async function renderSheetCanvas(state, layout, page, assets, dpi) {
     }
   }
   for (const o of marks.over) {
-    cx.strokeStyle = '#404040'; cx.lineWidth = Math.max(1, 0.1 * k);
-    cx.strokeRect((o.rect.x + 0.05) * k, (o.rect.y + 0.05) * k, (o.rect.w - 0.1) * k, (o.rect.h - 0.1) * k);
+    const bw = o.width || 0.2;
+    cx.strokeStyle = o.color || '#000000'; cx.lineWidth = Math.max(1, bw * k);
+    cx.strokeRect((o.rect.x + bw / 2) * k, (o.rect.y + bw / 2) * k, (o.rect.w - bw) * k, (o.rect.h - bw) * k);
   }
   return c;
 }

@@ -30,12 +30,15 @@ export const QUICK_DEFAULTS = Object.freeze({
   edgeAware: true, edgeShift: 0, edgeSoftness: 40, edgeFeather: 1, decontaminate: true,
   shadow: false, shadowOpacity: 25, shadowBlur: 1.5, shadowX: 0, shadowY: 0.8,
   printBoost: 'medium', dpi: 300, cropMarks: true, cutLines: false, borderless: false, hardMargin: 3,
+  // frame drawn inside each photo (photo size unchanged): off by default, width in mm
+  border: false, borderWidth: 0.2, borderColor: '#000000',
 });
 
 export const QUICK_FIELDS = Object.freeze(Object.keys(QUICK_DEFAULTS));
 
 const BUILTIN = [
-  { id: 'q-3x4-4r', nameFa: '۳×۴ — تذکره، مکتب، کارمندی', photoId: '3x4', profileId: 'generic-3x4', paperId: '4x6in', perPerson: 'sheet' },
+  // 4 photos per person (the left two columns); the rest of the 8-slot sheet stays in one piece
+  { id: 'q-3x4-4r', nameFa: '۳×۴ — تذکره، مکتب، کارمندی', photoId: '3x4', profileId: 'generic-3x4', paperId: '4x6in', perPerson: 'copies', copies: 4 },
   { id: 'q-35x45-4r', nameFa: '۳٫۵×۴٫۵ — پاسپورت و ویزا', photoId: '3.5x4.5', profileId: 'icao-35x45', paperId: '4x6in', perPerson: 'sheet' },
   { id: 'q-4x6-4r', nameFa: '۴×۶ — عکس شخصی', photoId: '4x6', profileId: 'generic-4x6', paperId: '4x6in', perPerson: 'sheet' },
   { id: 'q-3x4-a4', nameFa: '۳×۴ — چند نفر روی A4', photoId: '3x4', profileId: 'generic-3x4', paperId: 'a4', perPerson: 'share' },
@@ -92,6 +95,9 @@ export function normalizeQuickPreset(raw = {}) {
   p.dpi = pick(raw.dpi, DPI_PRESETS, D.dpi);
   p.cropMarks = bool(raw.cropMarks, D.cropMarks);
   p.cutLines = bool(raw.cutLines, D.cutLines);
+  p.border = bool(raw.border, D.border);
+  p.borderWidth = Math.round(num(raw.borderWidth, 0.05, 2, D.borderWidth) * 100) / 100;
+  p.borderColor = typeof raw.borderColor === 'string' && /^#[0-9a-f]{6}$/i.test(raw.borderColor) ? raw.borderColor.toLowerCase() : D.borderColor;
   p.borderless = bool(raw.borderless, D.borderless);
   p.hardMargin = num(raw.hardMargin, 0, 20, D.hardMargin);
   return p;
@@ -193,7 +199,7 @@ export function quickSheetPatch(preset, photoIds, makeId, papers = []) {
     align: { mode: 'center', offsetX: 0, offsetY: 0 },
     fillOrder: preset.fillOrder,
     compact: true,
-    marks: { cutLines: preset.cutLines, cropMarks: preset.cropMarks, borders: false },
+    marks: { cutLines: preset.cutLines, cropMarks: preset.cropMarks, borders: preset.border, borderWidth: preset.borderWidth, borderColor: preset.borderColor },
     dpi: preset.dpi,
     printer: { borderless: preset.borderless, hardMargins: sides(preset.hardMargin) },
     printBoost: preset.printBoost,

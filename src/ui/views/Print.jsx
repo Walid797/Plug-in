@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { useStore, updateSheet, openDialog, updateSettings, uid, setSection, toast } from '../../state/store.js';
 import { thumbUrl, getPreview, gatherAssets, originalAvailable } from '../../state/media.js';
 import { computeLayout } from '../../core/layout.js';
-import { COPY_PRESETS, DPI_PRESETS } from '../../core/presets.js';
+import { COPY_PRESETS, DPI_PRESETS, BORDER_COLORS } from '../../core/presets.js';
 import { layoutInput, resolvePaper, allPaperPresets, createSheetElement, labelTextFor, runPrint, runPdfExport, runSheetImageExport, activeCalibration, applyPrintBoost, PRINT_BOOST_FA, runBoostTest } from '../../print/sheet.js';
 import { PRINT_BOOST_IDS } from '../../core/adjust.js';
 import { allQuickPresets, presetCapacity, copiesPerPerson } from '../../core/quickpresets.js';
@@ -402,7 +402,20 @@ export function PrintView() {
             <Group title="خطوط برش و برچسب">
               <Switch label="نشانه‌های برش در حاشیه" checked={sheet.marks.cropMarks} onChange={(v) => updateSheet((sh) => ({ ...sh, marks: { ...sh.marks, cropMarks: v } }))} />
               <Switch label="خطوط برش کامل (در فاصله‌ها)" checked={sheet.marks.cutLines} onChange={(v) => updateSheet((sh) => ({ ...sh, marks: { ...sh.marks, cutLines: v } }))} />
-              <Switch label="کادر نازک دور هر عکس" checked={sheet.marks.borders} onChange={(v) => updateSheet((sh) => ({ ...sh, marks: { ...sh.marks, borders: v } }))} />
+              <Switch label="بوردر (کادر دور هر عکس)" checked={sheet.marks.borders} onChange={(v) => updateSheet((sh) => ({ ...sh, marks: { ...sh.marks, borders: v } }))} hint="کادر داخل لبهٔ هر عکس کشیده می‌شود و اندازهٔ عکس تغییر نمی‌کند. روی پیش‌نمایش، چاپ، PDF و تصویر برگه اعمال می‌شود." />
+              {sheet.marks.borders ? (
+                <>
+                  <NumberInput label="ضخامت بوردر" unit="ملی‌متر" value={sheet.marks.borderWidth ?? 0.2} min={0.05} max={2} step={0.05} maxFraction={2} onChange={(v) => updateSheet((sh) => ({ ...sh, marks: { ...sh.marks, borderWidth: v } }))} />
+                  <div class="swatches" role="group" aria-label="رنگ بوردر">
+                    {BORDER_COLORS.map((b) => (
+                      <button type="button" key={b.id} class="swatch" style={{ background: b.color }} aria-pressed={String((sheet.marks.borderColor || '#000000') === b.color)} aria-label={b.nameFa} data-tip={b.nameFa} onClick={() => updateSheet((sh) => ({ ...sh, marks: { ...sh.marks, borderColor: b.color } }))} />
+                    ))}
+                    <label class="swatch custom" data-tip="رنگ دلخواه">
+                      <input type="color" value={sheet.marks.borderColor || '#000000'} aria-label="رنگ دلخواه بوردر" onChange={(ev) => updateSheet((sh) => ({ ...sh, marks: { ...sh.marks, borderColor: ev.currentTarget.value } }))} />
+                    </label>
+                  </div>
+                </>
+              ) : null}
               <Switch label="برچسب زیر عکس" checked={sheet.label.enabled} onChange={(v) => updateSheet((sh) => ({ ...sh, label: { ...sh.label, enabled: v } }))} hint="به‌طور پیش‌فرض خاموش؛ ارتفاع برچسب به ظرفیت برگه اضافه می‌شود." />
               {sheet.label.enabled ? (
                 <>

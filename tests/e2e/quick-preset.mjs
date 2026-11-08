@@ -16,7 +16,7 @@ try {
   const card = page.locator('.quick-card').first();
   await card.waitFor();
   const cardText = await card.innerText();
-  assert(cardText.includes('۸') && cardText.includes('۱۰×۱۵'), `3×4 card shows 8 on 10×15 (${cardText})`);
+  assert(cardText.includes('۴ عکس برای هر نفر') && cardText.includes('۱۰×۱۵'), `3×4 card shows 4 photos on 10×15 (${cardText})`);
   await page.screenshot({ path: path.join(outDir, 'quick-home.png') });
   const [chooser] = await Promise.all([page.waitForEvent('filechooser'), card.locator('.quick-main').click()]);
   await chooser.setFiles(path.join(root, 'tests/fixtures/astronaut.png'));
@@ -32,7 +32,7 @@ try {
   await page.screenshot({ path: path.join(outDir, 'quick-ready.png') });
   assert(readyText.includes('پس‌زمینه سفید شد'), 'white background really applied');
   assert(readyText.includes('کادر و اندازهٔ سر تنظیم شد'), 'face-based crop applied');
-  assert(readyText.includes('۸ عکس') && readyText.includes('۱ برگهٔ'), `8 photos on 1 sheet (${readyText.slice(0, 200)})`);
+  assert(readyText.includes('۴ عکس') && readyText.includes('۱ برگهٔ'), `4 photos on 1 sheet (${readyText.slice(0, 200)})`);
   assert(readyText.includes('روشن‌سازی چاپ: متوسط'), 'print brightening shown');
 
   const st = await page.evaluate(() => {
@@ -49,8 +49,8 @@ try {
   assert(st.crop, 'crop set');
   assert(st.refine.feather === 1 && st.refine.edgeAware === true && st.refine.shift === 0 && Math.abs(st.refine.softness - 0.4) < 1e-9, `edge feather 1 px by default (${JSON.stringify(st.refine)})`);
   assert(st.sheet.paperId === '4x6in' && st.sheet.printBoost === 'medium' && st.sheet.mode === 'exact' && st.sheet.fill === 'col-ltr', `sheet ${JSON.stringify(st.sheet)}`);
-  assert(JSON.stringify(st.sheet.items) === '[8]', 'one full sheet for the person');
-  assert(st.layout.ok && st.layout.cap === 8 && st.layout.orient === 'landscape' && st.layout.w === 152.4 && st.layout.h === 101.6, `layout ${JSON.stringify(st.layout)}`);
+  assert(JSON.stringify(st.sheet.items) === '[4]', '4 photos for the person');
+  assert(st.layout.ok && st.layout.cap === 8 && st.layout.placed === 4 && st.layout.orient === 'landscape' && st.layout.w === 152.4 && st.layout.h === 101.6, `layout ${JSON.stringify(st.layout)}`);
 
   // Print output: brightening lifts the face but the white background stays pure white
   const tone = await page.evaluate(async () => {
@@ -88,7 +88,7 @@ try {
     imgs: document.querySelectorAll('#print-root .print-photo').length,
     size: [...document.adoptedStyleSheets].map((x) => [...x.cssRules].map((r) => r.cssText).join(' ')).join(' '),
   }));
-  assert(printed.sheets === 1 && printed.imgs === 8, `print DOM ${JSON.stringify(printed)}`);
+  assert(printed.sheets === 1 && printed.imgs === 4, `print DOM ${JSON.stringify(printed)}`);
   assert(/size:\s*152\.4mm 101\.6mm/.test(printed.size), `@page size is 4R landscape (${printed.size})`);
   await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
   await page.waitForTimeout(500);
@@ -107,7 +107,7 @@ try {
   await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
   // the real sheet is unchanged by the test
   const after = await page.evaluate(() => window.__hoshmand.getState().project.sheet.items.map((i) => i.copies));
-  assert(JSON.stringify(after) === '[8]', 'test sheet does not alter the project sheet');
+  assert(JSON.stringify(after) === '[4]', 'test sheet does not alter the project sheet');
 
   // Mobile width: cards fit without horizontal scroll
   await page.setViewportSize({ width: 390, height: 844 });
@@ -119,7 +119,7 @@ try {
   await page.screenshot({ path: path.join(outDir, 'quick-home-mobile.png') });
 
   assert(log.external.length === 0, `no external requests ${log.external}`);
-  report.push(`PASS One-click 3×4 preset in ${secs}s — white background, face crop, 8 photos on 4R landscape (152.4×101.6 mm), print brightening medium (face ${tone.off.face.toFixed(1)} → ${tone.boosted.face.toFixed(1)}, white corner ${tone.boosted.corner.join(',')}), single print page; brightness test sheet with 4 labelled levels`);
+  report.push(`PASS One-click 3×4 preset in ${secs}s — white background, face crop, 4 photos on 4R landscape (152.4×101.6 mm), print brightening medium (face ${tone.off.face.toFixed(1)} → ${tone.boosted.face.toFixed(1)}, white corner ${tone.boosted.corner.join(',')}), single print page (4 photos in the left two columns); brightness test sheet with 4 labelled levels`);
 } finally {
   console.log(report.join('\n'));
   await browser.close();

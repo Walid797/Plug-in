@@ -633,9 +633,13 @@ function dedupe(list) {
  * Cut guides / crop marks / borders for one page, as line segments in mm.
  * Cut lines run along photo edges and are drawn BEHIND photos, so they are only
  * visible in gaps and margins. Crop marks live in the margins only.
+ * Borders are drawn INSIDE each photo's frame (the photo keeps its exact size);
+ * width in mm (0.05..2) and colour (#rrggbb) are configurable.
  */
 export function computeMarks(layout, page, opts = {}) {
   const { cutLines = false, cropMarks = false, borders = false, markLength = 4, markOffset = 1 } = opts;
+  const borderWidth = Number.isFinite(opts.borderWidth) ? Math.min(2, Math.max(0.05, opts.borderWidth)) : 0.2;
+  const borderColor = /^#[0-9a-f]{6}$/i.test(opts.borderColor || '') ? opts.borderColor.toLowerCase() : '#000000';
   const W = layout.sheet.widthMm; const H = layout.sheet.heightMm;
   const under = []; const over = [];
   const rects = page.placements.map((p) => p.photo);
@@ -659,7 +663,7 @@ export function computeMarks(layout, page, opts = {}) {
     }
   }
   if (borders) {
-    for (const r of rects) over.push({ rect: { ...r }, kind: 'border' });
+    for (const r of rects) over.push({ rect: { ...r }, kind: 'border', width: borderWidth, color: borderColor });
   }
   return { under, over };
 }

@@ -74,6 +74,13 @@ export const BACKGROUND_PRESETS = Object.freeze([
   { id: 'lightgray', nameFa: 'خاکستری روشن', color: '#e4e6e8' },
 ]);
 
+/** Border (frame) colours offered for photos. */
+export const BORDER_COLORS = Object.freeze([
+  { id: 'black', nameFa: 'سیاه', color: '#000000' },
+  { id: 'darkgray', nameFa: 'خاکستری تیره', color: '#404040' },
+  { id: 'gray', nameFa: 'خاکستری', color: '#9ca3af' },
+]);
+
 export const findPaper = (id) => PAPER_PRESETS.find((p) => p.id === id) || null;
 export const findPhoto = (id) => PHOTO_PRESETS.find((p) => p.id === id) || null;
 export const findProfile = (id, custom = []) => [...RULE_PROFILES, ...custom].find((p) => p.id === id) || null;
