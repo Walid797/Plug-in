@@ -89,6 +89,9 @@ try {
     size: [...document.adoptedStyleSheets].map((x) => [...x.cssRules].map((r) => r.cssText).join(' ')).join(' '),
   }));
   assert(printed.sheets === 1 && printed.imgs === 4, `print DOM ${JSON.stringify(printed)}`);
+  // crop marks sit 0.5 mm outside the photos (in the white gap), not on the photo edge
+  const guides = await page.evaluate(() => [...document.querySelectorAll('#print-root .marks-under line')].filter((l) => l.getAttribute('x1') === l.getAttribute('x2')).map((l) => Number(l.getAttribute('x1'))));
+  assert(guides.some((x) => Math.abs(x - 12.7) < 1e-6) && guides.some((x) => Math.abs(x - 43.7) < 1e-6 || Math.abs(x - 44.7) < 1e-6) && !guides.some((x) => Math.abs(x - 13.2) < 1e-6), `crop marks offset into the white gap (${guides})`);
   assert(/size:\s*152\.4mm 101\.6mm/.test(printed.size), `@page size is 4R landscape (${printed.size})`);
   await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
   await page.waitForTimeout(500);

@@ -22,6 +22,13 @@ function photoRecord(ph) {
 export async function loadSettings() {
   const s = await kvGet('settings', null);
   const settings = { ...DEFAULT_SETTINGS, ...(s || {}) };
+  if ((settings.quickSchema || 1) < 2) {
+    // v2: the default border became thinner (0.2 → 0.1 mm); saved values equal to the old default follow
+    const thin = (p) => (p && p.borderWidth === 0.2 ? { ...p, borderWidth: 0.1 } : p);
+    settings.quickPresets = (settings.quickPresets || []).map(thin);
+    settings.quickOverrides = Object.fromEntries(Object.entries(settings.quickOverrides || {}).map(([k, v]) => [k, thin(v)]));
+    settings.quickSchema = 2;
+  }
   setState((st) => ({ ...st, settings }));
   lastSaved.settings = settings;
   return settings;
@@ -80,6 +87,12 @@ export async function openProject(id) {
     // only the old default is changed, an explicit 'ltr' choice is kept.
     if (project.sheet.fillOrder === 'rtl') project.sheet.fillOrder = 'col-ltr';
     project.sheet.schema = 2;
+  }
+  if ((project.sheet.schema || 1) < 3) {
+    // v3: thinner default border (0.2 → 0.1 mm) and cut guides moved into the white gap
+    const mk = project.sheet.marks || {};
+    project.sheet.marks = { ...mk, borderWidth: mk.borderWidth === 0.2 || mk.borderWidth == null ? 0.1 : mk.borderWidth, cutOffset: mk.cutOffset ?? 0.5 };
+    project.sheet.schema = 3;
   }
   setState((s) => ({ ...s, project, photos: map, selectedPhotoId: project.photoIds[0] || null, rev: {} }));
   await restoreThumbs(photos);

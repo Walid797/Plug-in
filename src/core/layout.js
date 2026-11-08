@@ -633,19 +633,27 @@ function dedupe(list) {
  * Cut guides / crop marks / borders for one page, as line segments in mm.
  * Cut lines run along photo edges and are drawn BEHIND photos, so they are only
  * visible in gaps and margins. Crop marks live in the margins only.
+ * Cut guides (lines and crop marks) sit `cutOffset` mm OUTSIDE each photo edge,
+ * in the white gap, so scissors cut in the white and never through a border;
+ * the offset is limited to half the gap (0 when photos touch).
  * Borders are drawn INSIDE each photo's frame (the photo keeps its exact size);
  * width in mm (0.05..2) and colour (#rrggbb) are configurable.
  */
 export function computeMarks(layout, page, opts = {}) {
   const { cutLines = false, cropMarks = false, borders = false, markLength = 4, markOffset = 1 } = opts;
-  const borderWidth = Number.isFinite(opts.borderWidth) ? Math.min(2, Math.max(0.05, opts.borderWidth)) : 0.2;
+  const borderWidth = Number.isFinite(opts.borderWidth) ? Math.min(2, Math.max(0.05, opts.borderWidth)) : 0.1;
   const borderColor = /^#[0-9a-f]{6}$/i.test(opts.borderColor || '') ? opts.borderColor.toLowerCase() : '#000000';
   const W = layout.sheet.widthMm; const H = layout.sheet.heightMm;
   const under = []; const over = [];
   const rects = page.placements.map((p) => p.photo);
   if (!rects.length) return { under, over };
-  const xs = [...new Set(rects.flatMap((r) => [r.x, r.x + r.w]).map((v) => Math.round(v * 1e4) / 1e4))].sort((a, b) => a - b);
-  const ys = [...new Set(rects.flatMap((r) => [r.y, r.y + r.h]).map((v) => Math.round(v * 1e4) / 1e4))].sort((a, b) => a - b);
+  const gapX = layout.gap?.x ?? 0; const gapY = layout.gap?.y ?? 0;
+  const want = Number.isFinite(opts.cutOffset) ? Math.max(0, opts.cutOffset) : 0.5;
+  const offX = Math.min(want, gapX / 2); const offY = Math.min(want, gapY / 2);
+  const uniq = (list, lo, hi) => [...new Set(list.map((v) => Math.round(Math.min(hi, Math.max(lo, v)) * 1e4) / 1e4))].sort((a, b) => a - b);
+  // left/top edges move away from their photo, right/bottom edges too: the guides lie in the gaps
+  const xs = uniq(rects.flatMap((r) => [r.x - offX, r.x + r.w + offX]), 0, W);
+  const ys = uniq(rects.flatMap((r) => [r.y - offY, r.y + r.h + offY]), 0, H);
   const minX = Math.min(...rects.map((r) => r.x)); const maxX = Math.max(...rects.map((r) => r.x + r.w));
   const minY = Math.min(...rects.map((r) => r.y)); const maxY = Math.max(...rects.map((r) => r.y + r.h));
   if (cutLines) {

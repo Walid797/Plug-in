@@ -156,7 +156,7 @@ export function createSheetElement(layout, page, ctx) {
     const svg = svgLayer(W, H, 'marks marks-over');
     for (const o of marks.over) {
       const r = document.createElementNS(SVG_NS, 'rect');
-      const bw = o.width || 0.2;
+      const bw = o.width || 0.1;
       r.setAttribute('x', o.rect.x + bw / 2); r.setAttribute('y', o.rect.y + bw / 2);
       r.setAttribute('width', o.rect.w - bw); r.setAttribute('height', o.rect.h - bw);
       r.setAttribute('fill', 'none'); r.setAttribute('stroke', o.color || '#000000'); r.setAttribute('stroke-width', bw);
@@ -504,7 +504,7 @@ export async function renderSheetCanvas(state, layout, page, assets, dpi) {
     }
   }
   for (const o of marks.over) {
-    const bw = o.width || 0.2;
+    const bw = o.width || 0.1;
     cx.strokeStyle = o.color || '#000000'; cx.lineWidth = Math.max(1, bw * k);
     cx.strokeRect((o.rect.x + bw / 2) * k, (o.rect.y + bw / 2) * k, (o.rect.w - bw) * k, (o.rect.h - bw) * k);
   }

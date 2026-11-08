@@ -162,7 +162,7 @@ export function layoutToPdfPages(layout, ctx) {
       }
     }
     for (const o of marks.over) {
-      const bw = o.width || 0.2;
+      const bw = o.width || 0.1;
       const r = o.rect;
       const c = /^#[0-9a-f]{6}$/i.test(o.color || '') ? [1, 3, 5].map((i) => parseInt(o.color.slice(i, i + 2), 16) / 255) : [0, 0, 0];
       ops.push(`q ${c.map(n).join(' ')} RG ${n(mmToPt(bw))} w ${n(mmToPt(r.x + bw / 2))} ${n(yPt(r.y + r.h - bw / 2))} ${n(mmToPt(r.w - bw))} ${n(mmToPt(r.h - bw))} re S Q`);

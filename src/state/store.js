@@ -23,6 +23,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   layoutPresets: [],
   quickPresets: [], // user's own one-click presets (core/quickpresets.js fields)
   quickOverrides: {}, // adjustments to built-in one-click presets, by id
+  quickSchema: 2,
 });
 
 export const DEFAULT_SHEET = Object.freeze({
@@ -38,9 +39,9 @@ export const DEFAULT_SHEET = Object.freeze({
   grid: { cols: null, rows: null, rotated: false },
   align: { mode: 'center', offsetX: 0, offsetY: 0 },
   fillOrder: 'col-ltr',
-  schema: 2,
+  schema: 3,
   compact: true,
-  marks: { cutLines: false, cropMarks: true, borders: false, borderWidth: 0.2, borderColor: '#000000' },
+  marks: { cutLines: false, cropMarks: true, borders: false, borderWidth: 0.1, borderColor: '#000000', cutOffset: 0.5 },
   label: { enabled: false, heightMm: 4, gapMm: 1, content: 'name', custom: '' },
   dpi: 300,
   printer: { borderless: false, hardMargins: { top: 3, right: 3, bottom: 3, left: 3 } },

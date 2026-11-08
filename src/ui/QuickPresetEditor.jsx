@@ -193,6 +193,7 @@ export function QuickPresetEditorDialog({ presetId, mode = 'edit' }) {
             <Select label="کیفیت (DPI)" value={String(d.dpi)} onChange={(v) => set({ dpi: Number(v) })} options={DPI_PRESETS.map((x) => ({ value: String(x), label: `${formatNumber(x)} DPI${x === 300 ? ' (پیشنهادی)' : ''}` }))} />
             <Switch label="نشانه‌های برش در حاشیه" checked={d.cropMarks} onChange={(v) => set({ cropMarks: v })} />
             <Switch label="خطوط برش کامل (در فاصله‌ها)" checked={d.cutLines} onChange={(v) => set({ cutLines: v })} />
+            {d.cropMarks || d.cutLines ? <NumberInput label="فاصلهٔ خط برش از لبهٔ عکس (به سمت سفیدی)" unit="ملی‌متر" value={d.cutOffset} min={0} max={3} step={0.1} maxFraction={2} hint="قیچی در سفیدی بین عکس‌ها می‌افتد نه روی بوردر؛ حداکثر نصف فاصلهٔ عکس‌ها." onChange={(v) => set({ cutOffset: v })} /> : null}
             <Switch label="بوردر (کادر دور هر عکس)" checked={d.border} onChange={(v) => set({ border: v })} hint="داخل لبهٔ هر عکس کشیده می‌شود؛ اندازهٔ عکس تغییر نمی‌کند." />
             {d.border ? (
               <>

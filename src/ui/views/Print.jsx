@@ -402,10 +402,14 @@ export function PrintView() {
             <Group title="خطوط برش و برچسب">
               <Switch label="نشانه‌های برش در حاشیه" checked={sheet.marks.cropMarks} onChange={(v) => updateSheet((sh) => ({ ...sh, marks: { ...sh.marks, cropMarks: v } }))} />
               <Switch label="خطوط برش کامل (در فاصله‌ها)" checked={sheet.marks.cutLines} onChange={(v) => updateSheet((sh) => ({ ...sh, marks: { ...sh.marks, cutLines: v } }))} />
+              {sheet.marks.cutLines || sheet.marks.cropMarks ? (
+                <NumberInput label="فاصلهٔ خط برش از لبهٔ عکس (به سمت سفیدی)" unit="ملی‌متر" value={sheet.marks.cutOffset ?? 0.5} min={0} max={3} step={0.1} maxFraction={2} onChange={(v) => updateSheet((sh) => ({ ...sh, marks: { ...sh.marks, cutOffset: v } }))}
+                  hint="خط‌ها و نشانه‌های برش کمی بیرون از عکس، در فاصلهٔ سفید می‌افتند تا قیچی از بوردر رد نشود. حداکثر نصف فاصلهٔ بین عکس‌ها (اگر عکس‌ها چسبیده باشند صفر)." />
+              ) : null}
               <Switch label="بوردر (کادر دور هر عکس)" checked={sheet.marks.borders} onChange={(v) => updateSheet((sh) => ({ ...sh, marks: { ...sh.marks, borders: v } }))} hint="کادر داخل لبهٔ هر عکس کشیده می‌شود و اندازهٔ عکس تغییر نمی‌کند. روی پیش‌نمایش، چاپ، PDF و تصویر برگه اعمال می‌شود." />
               {sheet.marks.borders ? (
                 <>
-                  <NumberInput label="ضخامت بوردر" unit="ملی‌متر" value={sheet.marks.borderWidth ?? 0.2} min={0.05} max={2} step={0.05} maxFraction={2} onChange={(v) => updateSheet((sh) => ({ ...sh, marks: { ...sh.marks, borderWidth: v } }))} />
+                  <NumberInput label="ضخامت بوردر" unit="ملی‌متر" value={sheet.marks.borderWidth ?? 0.1} min={0.05} max={2} step={0.05} maxFraction={2} onChange={(v) => updateSheet((sh) => ({ ...sh, marks: { ...sh.marks, borderWidth: v } }))} />
                   <div class="swatches" role="group" aria-label="رنگ بوردر">
                     {BORDER_COLORS.map((b) => (
                       <button type="button" key={b.id} class="swatch" style={{ background: b.color }} aria-pressed={String((sheet.marks.borderColor || '#000000') === b.color)} aria-label={b.nameFa} data-tip={b.nameFa} onClick={() => updateSheet((sh) => ({ ...sh, marks: { ...sh.marks, borderColor: b.color } }))} />

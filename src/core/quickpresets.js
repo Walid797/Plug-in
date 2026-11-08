@@ -31,7 +31,9 @@ export const QUICK_DEFAULTS = Object.freeze({
   shadow: false, shadowOpacity: 25, shadowBlur: 1.5, shadowX: 0, shadowY: 0.8,
   printBoost: 'medium', dpi: 300, cropMarks: true, cutLines: false, borderless: false, hardMargin: 3,
   // frame drawn inside each photo (photo size unchanged): off by default, width in mm
-  border: false, borderWidth: 0.2, borderColor: '#000000',
+  border: false, borderWidth: 0.1, borderColor: '#000000',
+  // cut lines / crop marks sit this far outside each photo, in the white gap (limited to half the gap)
+  cutOffset: 0.5,
 });
 
 export const QUICK_FIELDS = Object.freeze(Object.keys(QUICK_DEFAULTS));
@@ -95,6 +97,7 @@ export function normalizeQuickPreset(raw = {}) {
   p.dpi = pick(raw.dpi, DPI_PRESETS, D.dpi);
   p.cropMarks = bool(raw.cropMarks, D.cropMarks);
   p.cutLines = bool(raw.cutLines, D.cutLines);
+  p.cutOffset = Math.round(num(raw.cutOffset, 0, 3, D.cutOffset) * 100) / 100;
   p.border = bool(raw.border, D.border);
   p.borderWidth = Math.round(num(raw.borderWidth, 0.05, 2, D.borderWidth) * 100) / 100;
   p.borderColor = typeof raw.borderColor === 'string' && /^#[0-9a-f]{6}$/i.test(raw.borderColor) ? raw.borderColor.toLowerCase() : D.borderColor;
@@ -199,7 +202,7 @@ export function quickSheetPatch(preset, photoIds, makeId, papers = []) {
     align: { mode: 'center', offsetX: 0, offsetY: 0 },
     fillOrder: preset.fillOrder,
     compact: true,
-    marks: { cutLines: preset.cutLines, cropMarks: preset.cropMarks, borders: preset.border, borderWidth: preset.borderWidth, borderColor: preset.borderColor },
+    marks: { cutLines: preset.cutLines, cropMarks: preset.cropMarks, borders: preset.border, borderWidth: preset.borderWidth, borderColor: preset.borderColor, cutOffset: preset.cutOffset },
     dpi: preset.dpi,
     printer: { borderless: preset.borderless, hardMargins: sides(preset.hardMargin) },
     printBoost: preset.printBoost,
