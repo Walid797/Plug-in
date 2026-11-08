@@ -76,7 +76,7 @@ function bgStatus(r, color) {
 }
 
 function cropStatus(r) {
-  if (r.crop === 'ok') return { kind: 'ok', text: r.faces > 1 ? `کادر بر اساس بزرگ‌ترین چهره (${formatNumber(r.faces)} چهره)` : 'کادر و اندازهٔ سر تنظیم شد' };
+  if (r.crop === 'ok') return { kind: 'ok', text: r.faces > 1 ? `کادر بر اساس بزرگ‌ترین چهره (${formatNumber(r.faces)} چهره)` : `کادر و اندازهٔ سر تنظیم شد${Math.abs(r.straightened || 0) >= 0.3 ? `؛ کجی سر ${formatNumber(Math.abs(r.straightened), { maxFraction: 1 })} درجه صاف شد` : ''}` };
   if (r.crop === 'noface') return { kind: 'err', text: 'چهره پیدا نشد؛ کادر پیش‌فرض ماند' };
   if (r.crop === 'failed') return { kind: 'err', text: 'تحلیل چهره ناموفق بود؛ کادر پیش‌فرض ماند' };
   if (r.cancelled) return { kind: 'warn', text: 'کادر خودکار انجام نشد (لغو شد)' };
@@ -95,6 +95,12 @@ function engineStatus(r, preset) {
       if (preset.skinOn && preset.skinSmooth > 0) out.push({ kind: 'ok', icon: 'check', text: `پوست صاف و تمیز شد (${formatNumber(preset.skinSmooth)}٪؛ مو، ابرو، چشم و لب دست‌نخورده)` });
       if (preset.skinOn && preset.skinSpots > 0) out.push(e.spotsFrac > 0.0005 || e.blemishes > 0 ? { kind: 'ok', icon: 'check', text: `جوش، خال و لکه‌ها خودکار پاک شد${e.blemishes ? ` (${formatNumber(e.blemishes)} نقطه با بافت واقعی پوست ترمیم شد)` : ''}؛ ریش، ابرو، چشم، لب و بافت پوست حفظ شد` } : { kind: 'ok', icon: 'check', text: 'لکهٔ واضحی برای پاک‌کردن پیدا نشد' });
       if (preset.skinOn) out.push(e.redShift > 0.3 ? { kind: 'ok', icon: 'check', text: 'قرمزی بیش‌ازحد پوست کم شد' } : { kind: 'ok', icon: 'check', text: 'رنگ پوست طبیعی بود؛ تغییر نکرد' });
+      if (preset.lightOn && preset.lightEven && r.sidesEvened) {
+        const l = Math.round((r.sidesEvened.left - 1) * 100); const rt = Math.round((r.sidesEvened.right - 1) * 100);
+        out.push(r.sidesEvened.clipped
+          ? { kind: 'warn', icon: 'triangle-alert', text: 'سایهٔ یک طرف صورت خیلی تند بود؛ تا حد مجاز یکنواخت شد ولی ممکن است هنوز کمی فرق باشد' }
+          : { kind: 'ok', icon: 'check', text: `نور دو طرف صورت یکسان شد (چپ ${formatNumber(Math.abs(l))}٪ ${l >= 0 ? 'روشن‌تر' : 'تیره‌تر'}، راست ${formatNumber(Math.abs(rt))}٪ ${rt >= 0 ? 'روشن‌تر' : 'تیره‌تر'})` });
+      }
       if (preset.lightOn) out.push(e.lift > 0.5 || e.protectedFrac > 0.02 ? { kind: 'ok', icon: 'check', text: `نور صورت یکنواخت‌تر شد${e.protectedFrac > 0.02 ? ' (نور سوخته مهار شد)' : ''}` } : { kind: 'ok', icon: 'check', text: 'نور صورت از قبل یکنواخت بود' });
     }
   }

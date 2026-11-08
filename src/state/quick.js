@@ -5,6 +5,7 @@ import { getState, updateEdit, updateSheet, updateSettings, recordHistory, start
 import { getPersonMask, hasMask, getFace, maskForegroundFraction, originalAvailable, getPreview, gatherAssets } from './media.js';
 import { renderPhoto } from '../render/renderPhoto.js';
 import { findQuickPreset, quickSheetPatch, presetCapacity, quickFields, normalizeQuickPreset, QUICK_PRESETS, presetAdjustFor, gradeStrength, detailStrength, presetFaceParams } from '../core/quickpresets.js';
+import { MAX_EVEN_GAIN } from '../core/faceengine.js';
 import { autoExposureDelta, exposureTowardTarget, suggestCrop, backgroundWhiteness, faceProtectZones, QUALITY_THRESHOLDS } from '../core/idphoto.js';
 import { isFrameInside } from '../core/crop.js';
 import { faceEllipse } from '../core/faceengine.js';
@@ -212,6 +213,17 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
             const stats = await shoulderStatsFor(getState().photos[id]).catch(() => null);
             const q = currentQuality(getState().photos[id], stats ? { shoulderFrac: stats.frac, shoulderSides: stats } : {}) || [];
             r.issues = q.filter((x) => x.level === 'warn' || x.level === 'error');
+            // the quality check measures the photo before the lighting engine; when the engine evened the two sides completely
+            // (its correction was not at the limit) the "one side darker" warning no longer applies
+            const eg = r.engine?.evenGain;
+            if (preset.lightOn && preset.lightEven && eg && (eg[0] !== 1 || eg[1] !== 1)) {
+              const clipped = Math.abs(eg[0] - 1) >= MAX_EVEN_GAIN - 1e-3 || Math.abs(eg[1] - 1) >= MAX_EVEN_GAIN - 1e-3;
+              r.sidesEvened = { left: eg[0], right: eg[1], clipped };
+              if (!clipped) r.issues = r.issues.filter((x) => x.code !== 'LIGHT_BALANCE');
+            }
+            // how much the head was straightened (the frame is turned by the measured tilt of the eye line)
+            const rot = getState().photos[id].edit.crop?.rotation;
+            if (preset.autoCrop && Number.isFinite(rot)) r.straightened = rot;
           } else if (preset.autoCrop) r.crop = 'noface';
         } catch (err) { console.error(err); r.crop = 'failed'; r.cropError = err?.code || 'FAILED'; }
       }

@@ -24,7 +24,8 @@ export const REDNESS_LIMIT = 1.5;
 const MAX_RED_SHIFT = 7; // Cr levels
 const MAX_BLOTCH_SHIFT = 4;
 const MAX_FILL_LIFT = 24; // luma levels
-const MAX_EVEN_GAIN = 0.08;
+/** Largest left/right brightness correction (±22 %): a hard side shadow is evened out, a natural asymmetry is not forced flat. */
+export const MAX_EVEN_GAIN = 0.22;
 const PROTECT_FROM = 224;
 const MAX_SPOT_LIFT = 70; // luma levels a single spot may be raised
 const MAX_SPOT_RED = 28; // Cr levels a single red mark may be reduced
@@ -537,7 +538,7 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
         liftSum += lift * k;
       }
       if (gL !== 1 || gR !== 1) {
-        const t = clamp((U[j] + 1) / 2, 0, 1);
+        const t = smooth(-0.35, 0.35, U[j]); // each half gets its own gain, blended across the middle of the face
         gain *= 1 + ((gL + (gR - gL) * t) - 1) * k;
       }
       if (light.enabled && light.protect) {

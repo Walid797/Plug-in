@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyFaceEngine, faceEllipse, ellipseToOutput, REDNESS_LIMIT, FACE_ENGINE_DEFAULTS, skinDetailWeight, healDiscs } from '../../src/core/faceengine.js';
+import { applyFaceEngine, faceEllipse, ellipseToOutput, REDNESS_LIMIT, FACE_ENGINE_DEFAULTS, skinDetailWeight, healDiscs, MAX_EVEN_GAIN } from '../../src/core/faceengine.js';
 import { fixesToDiscs } from '../../src/render/renderPhoto.js';
 import { buildLuts, applyAdjustments, chromaDenoise, localContrast, snapNearWhite, ADJUSTMENT_DEFAULTS } from '../../src/core/adjust.js';
 import { suggestCrop, evaluateCrop, faceMetrics, shoulderSides, assessQuality, exposureTowardTarget, backgroundWhiteness, faceProtectZones } from '../../src/core/idphoto.js';
@@ -527,4 +527,31 @@ test('skin smoothing: grain is calmed on the skin, edges (hair, eyes) and the wh
   const off = skinWith(); const o2 = off.d.slice();
   applyFaceEngine(off.d, off.w, off.h, off.ell, { skin: { enabled: true, redness: 0, balance: 0, spots: 0, smooth: 0 }, light: { enabled: false } });
   assert.deepEqual(off.d, o2, 'smooth 0 = no change');
+});
+
+test('lighting engine: a hard shadow on one side of the face is evened out (up to ±22 %), a flat face is left alone', () => {
+  const side = (gainL, gainR) => {
+    const img = skinWith();
+    for (let y = 0; y < img.h; y += 1) for (let x = 0; x < img.w; x += 1) {
+      const i = (y * img.w + x) * 4; if (img.d[i] === 255 && img.d[i + 1] === 255) continue;
+      const g = x < img.ell.cx ? gainL : gainR; img.d[i] *= g; img.d[i + 1] *= g; img.d[i + 2] *= g;
+    }
+    return img;
+  };
+  const half = (img, left) => { let s = 0; let n = 0; for (let y = 150; y < 260; y += 1) for (let x = left ? 90 : 190; x < (left ? 170 : 270); x += 1) { const i = (y * img.w + x) * 4; s += 0.299 * img.d[i] + 0.587 * img.d[i + 1] + 0.114 * img.d[i + 2]; n += 1; } return s / n; };
+  const LIGHT = { skin: { enabled: false }, light: { enabled: true, fill: 0, even: true, protect: false } };
+  const shadowed = side(1, 0.84); // right side 16 % darker
+  const before = half(shadowed, true) / half(shadowed, false);
+  const rep = applyFaceEngine(shadowed.d, shadowed.w, shadowed.h, shadowed.ell, LIGHT);
+  const after = half(shadowed, true) / half(shadowed, false);
+  assert.ok(before > 1.12, `the shadow is there (${before.toFixed(2)})`);
+  assert.ok(Math.abs(after - 1) < 0.06, `both sides now match (${after.toFixed(2)})`);
+  assert.ok(Math.abs(rep.evenGain[0] - 1) < MAX_EVEN_GAIN && Math.abs(rep.evenGain[1] - 1) < MAX_EVEN_GAIN, 'within the limit');
+  const flat = side(1, 1); const o = flat.d.slice();
+  applyFaceEngine(flat.d, flat.w, flat.h, flat.ell, LIGHT);
+  let maxd = 0; for (let i = 0; i < o.length; i += 1) maxd = Math.max(maxd, Math.abs(o[i] - flat.d[i]));
+  assert.ok(maxd <= 3, `a flat face is not changed (max ${maxd})`);
+  // too hard a shadow is only corrected up to the limit
+  const hard = side(1, 0.6); const r2 = applyFaceEngine(hard.d, hard.w, hard.h, hard.ell, LIGHT);
+  assert.ok(Math.abs(r2.evenGain[1] - 1) <= MAX_EVEN_GAIN + 1e-9, 'never beyond the limit');
 });
