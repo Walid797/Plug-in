@@ -636,6 +636,8 @@ function dedupe(list) {
  * Cut guides (lines and crop marks) sit `cutOffset` mm OUTSIDE each photo edge,
  * in the white gap, so scissors cut in the white and never through a border;
  * the offset is limited to half the gap (0 when photos touch).
+ * Crop marks are drawn only on sides where the printed block reaches the full-sheet
+ * grid edge (no marks toward unused paper).
  * Cut lines span only the block of printed photos (cutUsedOnly, default true), so
  * the unused part of the paper stays completely white and can be reused.
  * Borders are drawn INSIDE each photo's frame (the photo keeps its exact size);
@@ -666,13 +668,19 @@ export function computeMarks(layout, page, opts = {}) {
     for (const y of ys) under.push({ x1: x0, y1: y, x2: x1, y2: y, kind: 'cut' });
   }
   if (cropMarks) {
+    // A side gets crop marks only where the printed block reaches the edge of the full-sheet
+    // grid: where free paper follows (a partly filled sheet), no marks run into it.
+    const blk = layout.block;
+    const eps = 1e-3;
+    const sideTop = !blk || minY <= blk.y + eps; const sideBottom = !blk || maxY >= blk.y + blk.h - eps;
+    const sideLeft = !blk || minX <= blk.x + eps; const sideRight = !blk || maxX >= blk.x + blk.w - eps;
     for (const x of xs) {
-      if (minY - markOffset > 0) under.push({ x1: x, y1: Math.max(0, minY - markOffset - markLength), x2: x, y2: minY - markOffset, kind: 'crop' });
-      if (maxY + markOffset < H) under.push({ x1: x, y1: maxY + markOffset, x2: x, y2: Math.min(H, maxY + markOffset + markLength), kind: 'crop' });
+      if (sideTop && minY - markOffset > 0) under.push({ x1: x, y1: Math.max(0, minY - markOffset - markLength), x2: x, y2: minY - markOffset, kind: 'crop' });
+      if (sideBottom && maxY + markOffset < H) under.push({ x1: x, y1: maxY + markOffset, x2: x, y2: Math.min(H, maxY + markOffset + markLength), kind: 'crop' });
     }
     for (const y of ys) {
-      if (minX - markOffset > 0) under.push({ x1: Math.max(0, minX - markOffset - markLength), y1: y, x2: minX - markOffset, y2: y, kind: 'crop' });
-      if (maxX + markOffset < W) under.push({ x1: maxX + markOffset, y1: y, x2: Math.min(W, maxX + markOffset + markLength), y2: y, kind: 'crop' });
+      if (sideLeft && minX - markOffset > 0) under.push({ x1: Math.max(0, minX - markOffset - markLength), y1: y, x2: minX - markOffset, y2: y, kind: 'crop' });
+      if (sideRight && maxX + markOffset < W) under.push({ x1: maxX + markOffset, y1: y, x2: Math.min(W, maxX + markOffset + markLength), y2: y, kind: 'crop' });
     }
   }
   if (borders) {

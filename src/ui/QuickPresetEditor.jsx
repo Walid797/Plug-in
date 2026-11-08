@@ -165,6 +165,9 @@ export function QuickPresetEditorDialog({ presetId, mode = 'edit' }) {
               <NumberInput label="حاشیهٔ بیرونی" unit="ملی‌متر" value={d.margin} min={0} max={100} step={0.5} onChange={(v) => set({ margin: v })} />
               <NumberInput label="فاصلهٔ بین عکس‌ها" unit="ملی‌متر" value={d.gap} min={0} max={50} step={0.5} onChange={(v) => set({ gap: v })} />
             </div>
+            <Select label="جای عکس‌ها روی برگه" value={d.align} onChange={(v) => set({ align: v })} options={[
+              { value: 'top-left', label: 'بالا — چپ (حاشیه تا لبه، بقیه کاغذ سفید)' }, { value: 'center', label: 'وسط برگه' }, { value: 'top-right', label: 'بالا — راست' },
+            ]} />
             <Select label="ترتیب پر شدن" value={d.fillOrder} onChange={(v) => set({ fillOrder: v })} options={[
               { value: 'col-ltr', label: 'ستون‌به‌ستون از چپ' }, { value: 'col-rtl', label: 'ستون‌به‌ستون از راست' },
               { value: 'rtl', label: 'ردیف‌به‌ردیف از راست' }, { value: 'ltr', label: 'ردیف‌به‌ردیف از چپ' },

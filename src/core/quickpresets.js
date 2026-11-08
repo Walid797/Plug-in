@@ -24,6 +24,7 @@ export const QUICK_DEFAULTS = Object.freeze({
   photoId: '3x4', widthMm: 30, heightMm: 40, profileId: 'generic-3x4',
   paperId: '4x6in', paperWidthMm: 101.6, paperHeightMm: 152.4,
   orientation: 'auto', margin: 5, gap: 2, fillOrder: 'col-ltr',
+  align: 'top-left', // where the photo grid sits on the sheet: top-left | center | top-right
   perPerson: 'sheet', copies: 8,
   whiteBg: true, bgColor: '#ffffff', autoCrop: true, autoLight: true,
   // background edge clean-up (same meaning as the Background section; feather in mask pixels)
@@ -79,6 +80,7 @@ export function normalizeQuickPreset(raw = {}) {
   p.margin = num(raw.margin, 0, 100, D.margin);
   p.gap = num(raw.gap, 0, 50, D.gap);
   p.fillOrder = pick(raw.fillOrder, FILL_ORDERS, D.fillOrder);
+  p.align = pick(raw.align, ['top-left', 'center', 'top-right'], D.align);
   p.perPerson = pick(raw.perPerson, PER_PERSON, D.perPerson);
   p.copies = Math.round(num(raw.copies, 1, 500, D.copies));
   p.whiteBg = bool(raw.whiteBg, D.whiteBg);
@@ -153,7 +155,7 @@ export function quickLayoutInput(preset, items, mode = 'fill', papers = []) {
     mode,
     allowRotation: false,
     grid: { cols: null, rows: null, rotated: false },
-    align: { mode: 'center', offsetX: 0, offsetY: 0 },
+    align: { mode: preset.align, offsetX: 0, offsetY: 0 },
     fillOrder: preset.fillOrder,
     compact: true,
     label: { enabled: false, heightMm: 4, gapMm: 1 },
@@ -202,7 +204,7 @@ export function quickSheetPatch(preset, photoIds, makeId, papers = []) {
     gapLinked: true,
     allowRotation: false,
     grid: { cols: null, rows: null, rotated: false },
-    align: { mode: 'center', offsetX: 0, offsetY: 0 },
+    align: { mode: preset.align, offsetX: 0, offsetY: 0 },
     fillOrder: preset.fillOrder,
     compact: true,
     marks: { cutLines: preset.cutLines, cropMarks: preset.cropMarks, borders: preset.border, borderWidth: preset.borderWidth, borderColor: preset.borderColor, cutOffset: preset.cutOffset, cutUsedOnly: preset.cutUsedOnly },

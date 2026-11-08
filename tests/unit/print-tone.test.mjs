@@ -94,9 +94,9 @@ test('quick preset sheet: 4 photos for the 3x4 template, a full sheet per person
   const one = computeLayout(quickLayoutInput(p34, [{ id: 'a', copies: 4 }], 'exact'));
   assert.equal(one.totals.placed, 4); assert.equal(one.totals.sheets, 1);
   const pos = one.pages[0].placements.map((pl) => [pl.photo.x, pl.photo.y]);
-  const expected = [[13.2, 9.8], [13.2, 51.8], [45.2, 9.8], [45.2, 51.8]]; // 152.4×101.6 landscape, columns 1-2 from the left
+  const expected = [[5, 5], [5, 47], [37, 5], [37, 47]]; // 152.4×101.6 landscape, top-left (5 mm margin), columns 1-2
   pos.forEach(([x, y], i) => { assert.ok(Math.abs(x - expected[i][0]) < 1e-6 && Math.abs(y - expected[i][1]) < 1e-6, `slot ${i}: ${x},${y}`); });
-  assert.ok(pos[2][0] < 60 && 152.4 - (pos[3][0] + 30) > 60, 'the right half of the paper stays untouched');
+  assert.ok(pos[3][0] + 30 < 70 && 152.4 - (pos[3][0] + 30) > 80, 'the right half of the paper stays untouched');
   // two people share the 8-slot sheet (A in columns 1-2, B in 3-4)
   const two = computeLayout(quickLayoutInput(p34, four.items, 'exact'));
   assert.equal(two.totals.sheets, 1); assert.equal(two.totals.placed, 8);
@@ -284,4 +284,33 @@ test('with fewer photos than the sheet holds, no cut line enters the unused pape
   const legacy = computeMarks(layout, page, { cutLines: true }).under.filter((m) => m.kind === 'cut');
   assert.ok(legacy.every((m) => m.x2 <= right + 0.5 + 1e-6));
   assert.equal(normalizeQuickPreset({}).cutUsedOnly, true);
+});
+
+test('templates place the photos at the top-left; no crop marks run toward unused paper', () => {
+  for (const p of QUICK_PRESETS) assert.equal(p.align, 'top-left');
+  assert.equal(normalizeQuickPreset({ align: 'middle' }).align, 'top-left');
+  assert.equal(normalizeQuickPreset({ align: 'center' }).align, 'center');
+  const p34 = findQuickPreset('q-3x4-4r');
+  const patch = quickSheetPatch(p34, ['A'], (x) => `${x}1`);
+  assert.equal(patch.align.mode, 'top-left');
+  const four = computeLayout(quickLayoutInput(p34, [{ id: 'a', copies: 4 }], 'exact'));
+  const first = four.pages[0].placements[0].photo;
+  assert.ok(Math.abs(first.x - 5) < 1e-6 && Math.abs(first.y - 5) < 1e-6, 'first photo in the top-left corner of the printable area');
+  const marks = computeMarks(four, four.pages[0], patch.marks).under.filter((m) => m.kind === 'crop');
+  const horiz = marks.filter((m) => m.y1 === m.y2);
+  const right = Math.max(...four.pages[0].placements.map((pl) => pl.photo.x + pl.photo.w));
+  assert.ok(horiz.length > 0, 'left-side marks stay');
+  assert.ok(horiz.every((m) => m.x2 <= first.x), 'no horizontal mark to the right of the printed photos (the free paper)');
+  assert.ok(horiz.every((m) => m.x2 < right));
+  assert.ok(marks.some((m) => m.x1 === m.x2 && m.y1 > four.pages[0].placements[1].photo.y), 'bottom marks stay (both rows are printed)');
+  // a full sheet keeps marks on all four sides
+  const full = computeLayout(quickLayoutInput(p34, [{ id: 'a', copies: 8 }], 'exact'));
+  const fm = computeMarks(full, full.pages[0], patch.marks).under.filter((m) => m.kind === 'crop' && m.y1 === m.y2);
+  const fr = Math.max(...full.pages[0].placements.map((pl) => pl.photo.x + pl.photo.w));
+  assert.ok(fm.some((m) => m.x1 > fr), 'full sheet: marks on the right side as before');
+  // 1 photo: only the top and left sides touch the block edge... right/bottom marks are not drawn
+  const one = computeLayout(quickLayoutInput(p34, [{ id: 'a', copies: 1 }], 'exact'));
+  const om = computeMarks(one, one.pages[0], patch.marks).under.filter((m) => m.kind === 'crop');
+  const ph = one.pages[0].placements[0].photo;
+  assert.ok(om.length > 0 && om.every((m) => (m.y1 === m.y2 ? m.x2 <= ph.x + 1e-6 : m.y2 <= ph.y + 1e-6)), 'single photo: marks only on the top and left, none toward the rest of the sheet');
 });
