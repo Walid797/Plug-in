@@ -141,7 +141,8 @@ test('face metrics, suggested crop and evaluation agree with the rule profile', 
     assert.ok(close(m.rollDeg, rollDeg, 1e-6));
     assert.ok(close(m.eyeDist, 300, 1e-6));
     assert.ok(m.crownEstimated);
-    const profile = RULE_PROFILES.find((p) => p.id === 'generic-3x4');
+    // explicit profile: this test checks the geometry, independent of the shipped (reference-based) numbers
+    const profile = { ...RULE_PROFILES.find((p) => p.id === 'generic-3x4'), headHeight: { min: 25, max: 31, target: 28 }, eyeFromBottom: { min: 21, max: 26, target: 23.5 } };
     const crop = suggestCrop(m, profile, srcW, srcH);
     assert.ok(close(crop.rotation, rollDeg, 1e-9), 'straightened to the eye line');
     const ev = evaluateCrop(m, crop, profile.widthMm, profile.heightMm, srcW, srcH);
@@ -207,7 +208,7 @@ test('shoulder coverage and head-top margin checks', async () => {
   const set = (i, x, y) => { lm[i] = { x, y }; };
   set(468, 0.45, 0.45); set(473, 0.55, 0.45); set(152, 0.5, 0.62); set(10, 0.5, 0.36); set(1, 0.5, 0.51); set(234, 0.395, 0.48); set(454, 0.605, 0.48);
   const m = fm(lm, 1000, 1000);
-  const profile = RULE_PROFILES[0];
+  const profile = { ...RULE_PROFILES[0], headHeight: { min: 25, max: 31, target: 28 }, eyeFromBottom: { min: 21, max: 26, target: 23.5 } };
   const good = sc(m, profile, 1000, 1000);
   const q = assessQuality({ metrics: m, evaluation: ev(m, good, 30, 40, 1000, 1000), profile, faceCount: 1, shoulderFrac: 0.9 });
   assert.equal(q.find((x) => x.code === 'TOP_MARGIN').level, 'ok');

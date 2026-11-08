@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { printBoostLut, printBoostValue, applyLut, PRINT_BOOST_IDS, PRINT_BOOST_LEVELS, isPrintBoost } from '../../src/core/adjust.js';
 import { autoExposureDelta, AUTO_LIGHT, QUALITY_THRESHOLDS } from '../../src/core/idphoto.js';
-import { QUICK_PRESETS, QUICK_DEFAULTS, presetCapacity, quickSheetPatch, quickLayoutInput, findQuickPreset, normalizeQuickPreset, allQuickPresets, quickFields, quickWarnings, copiesPerPerson, quickPaper } from '../../src/core/quickpresets.js';
+import { gradeStrength, detailStrength, presetAdjustFor, presetAdjust, GRADE_FULL_BELOW_L, DETAIL_FULL_BELOW_SHARPNESS, QUICK_PRESETS, QUICK_DEFAULTS, presetCapacity, quickSheetPatch, quickLayoutInput, findQuickPreset, normalizeQuickPreset, allQuickPresets, quickFields, quickWarnings, copiesPerPerson, quickPaper } from '../../src/core/quickpresets.js';
 import { computeLayout, computeMarks } from '../../src/core/layout.js';
 import { layoutToPdfPages } from '../../src/core/pdf.js';
 import { findPaper, findPhoto, findProfile } from '../../src/core/presets.js';
@@ -295,6 +295,43 @@ test('with fewer photos than the sheet holds, no cut line enters the unused pape
   const legacy = computeMarks(layout, page, { cutLines: true }).under.filter((m) => m.kind === 'cut');
   assert.ok(legacy.every((m) => m.x2 <= right + 1 + 1e-6));
   assert.equal(normalizeQuickPreset({}).cutUsedOnly, true);
+});
+
+test('adaptive grading: dark faces get the whole table, reference-bright faces get no brightening', () => {
+  const p = findQuickPreset('q-3x4-4r');
+  assert.equal(p.gradeAdaptive, true);
+  assert.equal(gradeStrength(0.40), 1); assert.equal(gradeStrength(GRADE_FULL_BELOW_L), 1);
+  assert.equal(gradeStrength(0.668), 0, 'the quality reference portrait (mean luma 0.668) is not brightened');
+  assert.equal(gradeStrength(0.80), 0);
+  assert.ok(Math.abs(gradeStrength(0.555) - 0.5) < 0.01, 'halfway');
+  assert.equal(gradeStrength(null), 1); assert.equal(gradeStrength(NaN), 1);
+  const dark = presetAdjustFor(p, 0.4); const full = presetAdjust(p);
+  assert.deepEqual(dark, full);
+  const ref = presetAdjustFor(p, 0.668);
+  for (const k of ['exposure', 'brightness', 'shadows', 'whites']) assert.equal(ref[k], 0, `${k} not applied to a bright face`);
+  // the subtle part is always applied in full (detail values depend on sharpness, see below)
+  for (const k of ['contrast', 'saturation', 'temperature', 'highlights', 'blacks', 'denoise']) assert.equal(ref[k], full[k], k);
+  // detail: soft photo gets all of it, a photo as crisp as the reference gets none, unknown sharpness = all
+  assert.equal(detailStrength(789), 1, 'the soft original (measured 789)'); assert.equal(detailStrength(DETAIL_FULL_BELOW_SHARPNESS), 1);
+  assert.equal(detailStrength(1977), 0, 'the quality reference (measured 1977) gets no extra detail'); assert.equal(detailStrength(3000), 0);
+  assert.ok(Math.abs(detailStrength(1350) - 0.5) < 0.01); assert.equal(detailStrength(null), 1);
+  const crisp = presetAdjustFor(p, 0.668, 1977); const soft = presetAdjustFor(p, 0.54, 789); const unknown = presetAdjustFor(p, 0.668);
+  assert.equal(crisp.sharpness, 0); assert.equal(crisp.clarity, 0);
+  assert.equal(soft.sharpness, full.sharpness); assert.equal(soft.clarity, full.clarity);
+  assert.equal(unknown.sharpness, full.sharpness);
+  assert.equal(presetAdjustFor(normalizeQuickPreset({ photoId: '3x4', gradeAdaptive: false }), 0.7, 3000).clarity, full.clarity, 'non-adaptive: always full');
+  const half = presetAdjustFor(p, 0.555);
+  assert.ok(Math.abs(half.brightness - 4) < 0.1 && Math.abs(half.exposure - 3.8) < 0.15);
+  // switched off: always the full table
+  assert.deepEqual(presetAdjustFor(normalizeQuickPreset({ photoId: '3x4', gradeAdaptive: false }), 0.7), full);
+  assert.equal(presetAdjustFor(normalizeQuickPreset({ photoId: '3x4', grade: false }), 0.4), null);
+});
+
+test('the 3x4 profile follows the quality reference framing', () => {
+  const prof = findProfile('generic-3x4');
+  assert.ok(prof.headHeight.target >= 25 && prof.headHeight.target <= 26.5, 'head ≈ 25.5 mm (62–64% of the 40 mm height)');
+  assert.ok(prof.eyeFromBottom.target >= 25.5 && prof.eyeFromBottom.target <= 26.5, 'eye line ≈ 26 mm from the bottom');
+  assert.ok(prof.headHeight.min <= 25 && prof.headHeight.max >= 26 && prof.eyeFromBottom.min <= 26.05 && prof.eyeFromBottom.max >= 26.05, 'the reference (head ≈ 25.8–25.9, eye ≈ 26.05) is inside the allowed ranges');
 });
 
 test('full cut lines are on in every template (and can be turned off)', () => {

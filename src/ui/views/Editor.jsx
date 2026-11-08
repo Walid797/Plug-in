@@ -47,6 +47,7 @@ const ADJ = [
   { key: 'whites', label: 'سفیدها (Whites)', min: -100, max: 100 },
   { key: 'blacks', label: 'سیاه‌ها (Blacks)', min: -100, max: 100 },
   { key: 'sharpness', label: 'وضوح (تیزی)', min: 0, max: 100 },
+  { key: 'clarity', label: 'وضوح موضعی (Clarity: مو، ابرو، ریش)', min: 0, max: 100 },
   { key: 'denoise', label: 'کاهش نویز رنگی', min: 0, max: 100 },
 ];
 

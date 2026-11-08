@@ -30,12 +30,15 @@ export const QUICK_DEFAULTS = Object.freeze({
   // colour-grading engine: suggested starting values for a natural personnel look (not measured data)
   // exposure 7.5 on the slider = +0.15 EV (the slider spans ±2 EV over ±100)
   grade: true,
+  // scale the brightening values of the table (exposure, brightness, shadows, whites) by how dark the face really is
+  // and the detail values (sharpness, clarity) by how soft it is, so a photo that is already well lit and crisp is not edited twice
+  gradeAdaptive: true,
   gExposure: 7.5, gBrightness: 8, gContrast: 5, gSaturation: 3, gTemperature: 2, gTint: 0,
-  gHighlights: -10, gShadows: 12, gWhites: 8, gBlacks: -3, gSharpness: 14, gDenoise: 30,
+  gHighlights: -10, gShadows: 12, gWhites: 8, gBlacks: -3, gSharpness: 22, gClarity: 55, gDenoise: 30,
   // face & skin engine (never reshapes the face): excess redness, colour evenness
-  skinOn: true, skinRedness: 40, skinBalance: 30,
+  skinOn: true, skinRedness: 40, skinBalance: 40,
   // lighting engine: fill light for shadows (eyes, nose, chin, forehead), L/R balance, burnt-highlight protection
-  lightOn: true, lightFill: 35, lightEven: true, lightProtect: true,
+  lightOn: true, lightFill: 45, lightEven: true, lightProtect: true,
   // crop engine: widen the frame (within the head-size rule) when the shoulders are cut off
   cropShoulders: true,
   // background edge clean-up (same meaning as the Background section; feather in mask pixels)
@@ -56,11 +59,11 @@ export const QUICK_FIELDS = Object.freeze(Object.keys(QUICK_DEFAULTS));
 export const GRADE_RANGES = Object.freeze([
   ['gExposure', -100, 100], ['gBrightness', -100, 100], ['gContrast', -100, 100], ['gSaturation', -100, 100],
   ['gTemperature', -100, 100], ['gTint', -100, 100], ['gHighlights', -100, 100], ['gShadows', -100, 100],
-  ['gWhites', -100, 100], ['gBlacks', -100, 100], ['gSharpness', 0, 100], ['gDenoise', 0, 100],
+  ['gWhites', -100, 100], ['gBlacks', -100, 100], ['gSharpness', 0, 100], ['gClarity', 0, 100], ['gDenoise', 0, 100],
 ]);
 const GRADE_KEYS = Object.freeze({
   gExposure: 'exposure', gBrightness: 'brightness', gContrast: 'contrast', gSaturation: 'saturation', gTemperature: 'temperature',
-  gTint: 'tint', gHighlights: 'highlights', gShadows: 'shadows', gWhites: 'whites', gBlacks: 'blacks', gSharpness: 'sharpness', gDenoise: 'denoise',
+  gTint: 'tint', gHighlights: 'highlights', gShadows: 'shadows', gWhites: 'whites', gBlacks: 'blacks', gSharpness: 'sharpness', gClarity: 'clarity', gDenoise: 'denoise',
 });
 
 /** Photo adjustments a preset applies (all neutral defaults + the grading values), or null when grading is off. */
@@ -68,6 +71,44 @@ export function presetAdjust(p) {
   if (!p.grade) return null;
   const a = { ...ADJUSTMENT_DEFAULTS };
   for (const [k, adj] of Object.entries(GRADE_KEYS)) a[adj] = p[k];
+  return a;
+}
+
+/** Face brightness (mean luma 0..1) of the studio's quality reference portrait: nothing to brighten at or above it. */
+export const GRADE_REFERENCE_L = 0.66;
+/** Face brightness at (and below) which the table's brightening values apply in full. */
+export const GRADE_FULL_BELOW_L = 0.45;
+const BRIGHTENING_KEYS = Object.freeze(['exposure', 'brightness', 'shadows', 'whites']);
+
+/** 0..1: how much of the brightening values a face of this mean luma needs (1 when unknown). */
+export function gradeStrength(meanL) {
+  if (!Number.isFinite(meanL)) return 1;
+  return Math.min(1, Math.max(0, (GRADE_REFERENCE_L - meanL) / (GRADE_REFERENCE_L - GRADE_FULL_BELOW_L)));
+}
+
+/** Face sharpness (the app's own measure, laplacian variance of the face at 160 px) of the quality reference portrait. */
+export const DETAIL_REFERENCE_SHARPNESS = 1900;
+/** At or below this the detail values (sharpness, clarity) apply in full: a soft phone photo. */
+export const DETAIL_FULL_BELOW_SHARPNESS = 800;
+const DETAIL_KEYS = Object.freeze(['sharpness', 'clarity']);
+
+/** 0..1: how much extra detail a face of this measured sharpness needs (1 when unknown). */
+export function detailStrength(sharpness) {
+  if (!Number.isFinite(sharpness)) return 1;
+  return Math.min(1, Math.max(0, (DETAIL_REFERENCE_SHARPNESS - sharpness) / (DETAIL_REFERENCE_SHARPNESS - DETAIL_FULL_BELOW_SHARPNESS)));
+}
+
+/**
+ * presetAdjust with the brightening values scaled by the face brightness and the detail values scaled by
+ * the face sharpness (when the template is adaptive): a photo that is already bright / crisp is not edited twice.
+ */
+export function presetAdjustFor(p, meanL, sharpness = null) {
+  const a = presetAdjust(p);
+  if (!a || !p.gradeAdaptive) return a;
+  const s = gradeStrength(meanL);
+  for (const k of BRIGHTENING_KEYS) a[k] = Math.round(a[k] * s * 10) / 10;
+  const d = detailStrength(sharpness);
+  for (const k of DETAIL_KEYS) a[k] = Math.round(a[k] * d * 10) / 10;
   return a;
 }
 
@@ -126,6 +167,7 @@ export function normalizeQuickPreset(raw = {}) {
   p.autoCrop = bool(raw.autoCrop, D.autoCrop);
   p.autoLight = bool(raw.autoLight, D.autoLight);
   p.grade = bool(raw.grade, D.grade);
+  p.gradeAdaptive = bool(raw.gradeAdaptive, D.gradeAdaptive);
   for (const [k, lo, hi] of GRADE_RANGES) p[k] = Math.round(num(raw[k], lo, hi, D[k]) * 10) / 10;
   p.skinOn = bool(raw.skinOn, D.skinOn);
   p.skinRedness = Math.round(num(raw.skinRedness, 0, 100, D.skinRedness));

@@ -171,6 +171,22 @@ export function shoulderSides(crop, widthMm, heightMm, srcW, srcH, sample) {
   return { left: l / (n / 2), right: r / (n / 2), frac: (l + r) / n };
 }
 
+/**
+ * Is the background already clean white? Looks at the top strip and the upper side strips of the
+ * frame (where there is no person in a personnel photo). Replacing an already white background only
+ * costs fine hair detail, so the pipeline leaves it alone.
+ * @returns {{white:boolean, mean:number, spread:number}}
+ */
+export function backgroundWhiteness(rgba, w, h) {
+  const vals = [];
+  const top = Math.max(1, Math.round(h * 0.05)); const side = Math.max(1, Math.round(w * 0.06)); const sideH = Math.round(h * 0.3);
+  const take = (x0, x1, y0, y1) => { for (let y = y0; y < y1; y += 1) for (let x = x0; x < x1; x += 1) { const i = (y * w + x) * 4; vals.push(Math.min(rgba[i], rgba[i + 1], rgba[i + 2])); } };
+  take(0, w, 0, top); take(0, side, 0, sideH); take(w - side, w, 0, sideH);
+  const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+  const spread = Math.sqrt(vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length);
+  return { white: mean >= 244 && spread <= 6, mean, spread };
+}
+
 /** Luma statistics of a face crop: brightness, left/right balance, sharpness. */
 export function faceRegionStats(rgba, w, h) {
   const L = new Float32Array(w * h);
@@ -257,6 +273,21 @@ export function assessQuality({ metrics, evaluation, profile, stats, faceCount, 
 export const AUTO_LIGHT = Object.freeze({ darkBelow: QUALITY_THRESHOLDS.darkL, darkTarget: 0.33, maxEv: 0.7, brightAbove: QUALITY_THRESHOLDS.brightL, brightTarget: 0.82, minEv: -0.5 });
 
 const toLinear = (v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+
+/**
+ * Gentle exposure toward the brightness of a well-lit personnel photo (studio quality reference:
+ * face mean luma ≈ 0.66). Never more than +0.5 EV (so dark skin tones are not "whitened") and never
+ * above the target; faces that are brighter than the target are left to autoExposureDelta.
+ * @returns {number} integer slider delta (0 = leave as is)
+ */
+export const EXPOSURE_TARGET = Object.freeze({ meanL: 0.66, maxEv: 0.5, dead: 0.02 });
+export function exposureTowardTarget(meanL) {
+  if (!Number.isFinite(meanL) || meanL <= 0.005) return 0;
+  const T = EXPOSURE_TARGET;
+  if (meanL >= T.meanL - T.dead) return 0;
+  const ev = Math.min(T.maxEv, Math.log2(toLinear(T.meanL) / toLinear(meanL)));
+  return Math.round((ev / 2) * 100);
+}
 
 export function autoExposureDelta(meanL) {
   if (!Number.isFinite(meanL) || meanL <= 0.005 || meanL >= 0.995) return 0;

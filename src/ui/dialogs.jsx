@@ -68,6 +68,7 @@ function PrePrintDialog({ layout, paper, mode }) {
 function bgStatus(r, color) {
   const name = bgColorName(color);
   if (r.bg === 'ok') return { kind: 'ok', text: `پس‌زمینه ${name} شد` };
+  if (r.bg === 'white') return { kind: 'ok', text: 'پس‌زمینه از قبل سفید بود؛ دست نخورد (جزئیات مو حفظ شد)' };
   if (r.bg === 'reused') return { kind: 'ok', text: `پس‌زمینه ${name} شد (ماسک قبلی)` };
   if (r.bg === 'failed') return { kind: 'err', text: `پس‌زمینه ${name} نشد`, detail: segErrorText({ code: r.bgError }) };
   if (r.bg === 'off') return { kind: '', text: 'پس‌زمینه طبق قالب دست نخورد' };
@@ -95,7 +96,13 @@ function engineStatus(r, preset) {
       if (preset.lightOn) out.push(e.lift > 0.5 || e.protectedFrac > 0.02 ? { kind: 'ok', icon: 'check', text: `نور صورت یکنواخت‌تر شد${e.protectedFrac > 0.02 ? ' (نور سوخته مهار شد)' : ''}` } : { kind: 'ok', icon: 'check', text: 'نور صورت از قبل یکنواخت بود' });
     }
   }
-  if (preset?.grade) out.push({ kind: 'ok', icon: 'check', text: 'تنظیم رنگ قالب اعمال شد' });
+  if (preset?.grade) {
+    const gs = r.gradeStrength ?? 1;
+    const ds = r.detailStrength ?? 1;
+    if (preset.gradeAdaptive && ds <= 0.05) out.push({ kind: 'ok', icon: 'check', text: 'عکس از قبل واضح بود؛ وضوح موضعی اضافه نشد' });
+    else if (preset.gradeAdaptive && ds < 0.95) out.push({ kind: 'ok', icon: 'check', text: `وضوح موضعی ${formatNumber(Math.round(ds * 100))}٪ اعمال شد (عکس تا حدی واضح بود)` });
+    out.push({ kind: 'ok', icon: 'check', text: !preset.gradeAdaptive || gs >= 0.95 ? 'تنظیم رنگ قالب اعمال شد' : gs <= 0.05 ? 'چهره از قبل روشن بود؛ روشن‌سازی انجام نشد (فقط تنظیم‌های ظریف رنگ و وضوح)' : `تنظیم رنگ قالب اعمال شد (روشن‌سازی ${formatNumber(Math.round(gs * 100))}٪ چون چهره نسبتاً روشن بود)` });
+  }
   if (r.shoulders === 'ok') out.push({ kind: 'ok', icon: 'check', text: 'هر دو شانه دیده می‌شود' });
   else if (r.shoulders === 'widened') out.push({ kind: 'ok', icon: 'check', text: 'کادر برای دیدن شانه‌ها بازتر شد' });
   else if (r.shoulders === 'limited') out.push({ kind: 'warn', icon: 'triangle-alert', text: 'شانه‌ها کامل دیده نمی‌شوند و کادر بازتر نمی‌شود (قاعدهٔ اندازهٔ سر یا لبهٔ عکس)' });

@@ -16,7 +16,7 @@ const sameSize = (a, w, h) => Math.abs(a.widthMm - w) < 0.01 && Math.abs(a.heigh
 const GRADE_LABELS = {
   gExposure: 'نوردهی (Exposure؛ ۷٫۵ = ‎+۰٫۱۵ EV)', gBrightness: 'روشنایی (Brightness)', gContrast: 'کنتراست (Contrast)', gSaturation: 'اشباع رنگ (Saturation)',
   gTemperature: 'دمای رنگ (Temperature)', gTint: 'ته‌رنگ (Tint)', gHighlights: 'روشنی‌ها (Highlights)', gShadows: 'سایه‌ها (Shadows)',
-  gWhites: 'سفیدها (Whites)', gBlacks: 'سیاه‌ها (Blacks)', gSharpness: 'وضوح / تیزی جزئی (Sharpness)', gDenoise: 'کاهش نویز رنگی',
+  gWhites: 'سفیدها (Whites)', gBlacks: 'سیاه‌ها (Blacks)', gSharpness: 'وضوح / تیزی جزئی (Sharpness)', gClarity: 'وضوح موضعی (Clarity: مو، ابرو، ریش)', gDenoise: 'کاهش نویز رنگی',
 };
 
 export function bgColorName(color) {
@@ -159,6 +159,7 @@ export function QuickPresetEditorDialog({ presetId, mode = 'edit' }) {
 
           <Group title="موتور تنظیم رنگ (Color Grading)">
             <Switch label="اعمال مقادیر تنظیم رنگ این قالب روی عکس" checked={d.grade} onChange={(v) => set({ grade: v })} hint="مقادیر پیشنهادی برای ظاهر طبیعی عکس پرسنلی‌اند، نه مقادیر ثبت‌شده از یک پردازش؛ روی عکس خودتان بررسی کنید. اجرای قالب، تنظیمات نور و رنگ قبلی آن عکس را با این مقادیر جایگزین می‌کند (با واگرد برمی‌گردد)." />
+            {d.grade ? <Switch label="تطبیق روشن‌سازی با روشنایی واقعی چهره (پیشنهادی)" checked={d.gradeAdaptive} onChange={(v) => set({ gradeAdaptive: v })} hint="نوردهی، روشنایی، سایه‌ها و سفیدها بسته به تاریکیِ چهره، و وضوح و وضوح موضعی بسته به نرمیِ چهره کم و زیاد می‌شوند: عکس تاریک و نرم مقدار کامل می‌گیرد و عکسی که از قبل روشن و واضح است دوباره ادیت نمی‌شود. کنتراست، اشباع، دما، تینت و نویز رنگی همیشه کامل‌اند." /> : null}
             {d.grade ? GRADE_RANGES.map(([k, lo, hi]) => (
               <Slider key={k} label={GRADE_LABELS[k]} min={lo} max={hi} step={k === 'gExposure' ? 0.5 : 1} value={d[k]} defaultValue={QUICK_DEFAULTS[k]} format={(v) => formatNumber(v, { maxFraction: 1 })} onInput={(v) => set({ [k]: v })} />
             )) : null}

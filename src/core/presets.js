@@ -30,8 +30,11 @@ export const DPI_PRESETS = Object.freeze([300, 350, 400, 600]);
  */
 export const RULE_PROFILES = Object.freeze([
   {
+    // framing taken from the studio's quality reference (measured with the app's own face analysis):
+    // head ≈ 25.5 mm (62–64% of the height), eye line ≈ 26 mm from the bottom, ≈ 2 mm above the head,
+    // both shoulders and part of the jacket visible
     id: 'generic-3x4', nameFa: 'عکس پرسنلی عمومی ۳×۴', photoId: '3x4', widthMm: 30, heightMm: 40,
-    headHeight: { min: 25, max: 31, target: 28 }, eyeFromBottom: { min: 21, max: 26, target: 23.5 },
+    headHeight: { min: 24, max: 28, target: 25.5 }, eyeFromBottom: { min: 24.5, max: 27.5, target: 26 },
     background: '#ffffff', verified: false,
     noteFa: 'راهنمای عمومی؛ با شرایط ادارهٔ صادرکننده (تذکره، مکتب، اداره) مطابقت داده نشده است.',
   },

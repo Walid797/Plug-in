@@ -15,8 +15,8 @@ import { boxFilter } from './mask.js';
 import { faceToSource } from './idphoto.js';
 
 export const FACE_ENGINE_DEFAULTS = Object.freeze({
-  skin: Object.freeze({ enabled: true, redness: 40, balance: 30 }),
-  light: Object.freeze({ enabled: true, fill: 35, even: true, protect: true }),
+  skin: Object.freeze({ enabled: true, redness: 40, balance: 40 }),
+  light: Object.freeze({ enabled: true, fill: 45, even: true, protect: true }),
 });
 
 /** Natural limit for red vs yellow in skin ((Cr-128)/(128-Cb)); only redness above it is reduced. */
@@ -61,6 +61,52 @@ const median = (arr) => {
   const a = Float32Array.from(arr).sort();
   return a[a.length >> 1];
 };
+
+/**
+ * Per-photo skin colour cluster (median Cb/Cr of the face's own skin pixels), or null when too little skin is found.
+ * @returns {{mCb:number,mCr:number}|null}
+ */
+export function measureSkinCluster(data, w, h, ell) {
+  if (!ell || !(ell.rx > 4) || !(ell.ry > 4)) return null;
+  const cos = Math.cos(ell.rot); const sin = Math.sin(ell.rot);
+  const rr = Math.max(ell.rx, ell.ry);
+  const x0 = Math.max(0, Math.floor(ell.cx - rr)); const x1 = Math.min(w, Math.ceil(ell.cx + rr));
+  const y0 = Math.max(0, Math.floor(ell.cy - rr)); const y1 = Math.min(h, Math.ceil(ell.cy + rr));
+  const cbs = []; const crs = [];
+  for (let y = y0; y < y1; y += 1) {
+    for (let x = x0; x < x1; x += 1) {
+      const dx = x + 0.5 - ell.cx; const dy = y + 0.5 - ell.cy;
+      const u = (dx * cos + dy * sin) / ell.rx; const v = (-dx * sin + dy * cos) / ell.ry;
+      if (Math.hypot(u, v) >= 0.6) continue;
+      const i = (y * w + x) * 4; const R = data[i]; const G = data[i + 1]; const B = data[i + 2];
+      const Yv = 0.299 * R + 0.587 * G + 0.114 * B; const cb = 128 - 0.168736 * R - 0.331264 * G + 0.5 * B; const cr = 128 + 0.5 * R - 0.418688 * G - 0.081312 * B;
+      if (Yv > 50 && Yv < 240 && cb > 77 && cb < 127 && cr > 133 && cr < 173) { cbs.push(cb); crs.push(cr); }
+    }
+  }
+  if (cbs.length < 150) return null;
+  return { mCb: median(cbs), mCr: median(crs) };
+}
+
+/**
+ * Detail weight map for sharpening / clarity: 1 on everything that is not skin (hair, brows, stubble,
+ * clothes) and `skinFactor` on skin, so crisp hair does not turn into crunchy skin. Whole image, smooth.
+ * @returns {Float32Array|null} null when the skin colour cannot be measured (then detail applies evenly)
+ */
+export function skinDetailWeight(data, w, h, ell, skinFactor = 0.35) {
+  const cl = measureSkinCluster(data, w, h, ell);
+  if (!cl) return null;
+  const n = w * h;
+  const p = new Float32Array(n);
+  for (let j = 0, i = 0; j < n; j += 1, i += 4) {
+    const R = data[i]; const G = data[i + 1]; const B = data[i + 2];
+    const Yv = 0.299 * R + 0.587 * G + 0.114 * B;
+    const dCb = (128 - 0.168736 * R - 0.331264 * G + 0.5 * B - cl.mCb) / 7; const dCr = (128 + 0.5 * R - 0.418688 * G - 0.081312 * B - cl.mCr) / 8;
+    p[j] = Math.exp(-0.5 * (dCb * dCb + dCr * dCr)) * smooth(35, 75, Yv) * (1 - smooth(238, 252, Yv));
+  }
+  const ps = boxFilter(p, w, h, Math.max(1, Math.round(Math.min(w, h) / 300)));
+  for (let j = 0; j < n; j += 1) ps[j] = 1 - (1 - skinFactor) * clamp(ps[j], 0, 1);
+  return ps;
+}
 
 /**
  * Apply the engines in place.

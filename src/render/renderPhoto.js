@@ -6,9 +6,9 @@
 // → clothing template overlay.
 
 import { cropMatrix, invertMatrix, applyMatrix, multiplyMatrix, defaultCrop } from '../core/crop.js';
-import { applyAdjustments, isNeutral } from '../core/adjust.js';
+import { applyAdjustments, isNeutral, snapNearWhite } from '../core/adjust.js';
 import { decontaminate, recolorRegion, boxFilter } from '../core/mask.js';
-import { applyFaceEngine, ellipseToOutput } from '../core/faceengine.js';
+import { applyFaceEngine, ellipseToOutput, skinDetailWeight } from '../core/faceengine.js';
 import { makeCanvas } from '../platform/image.js';
 
 export const FULL_FRAME = Object.freeze({ cx: 0.5, cy: 0.5, cw: 1, rotation: 0 });
@@ -134,22 +134,29 @@ export function renderPhoto(edit, assets, outW, outH, opts = {}) {
   const bgOn = !before && edit.bg?.enabled && assets.mask;
   const adjustOn = !before && !isNeutral(edit.adjust);
   const face = edit.face;
+  const snapWhite = !before && !!edit.bg?.whiteSnap && !edit.bg?.enabled;
   const faceOn = !before && !!(face?.ellipse && (face.skin?.enabled || face.light?.enabled));
   const frameWidthPx = opts.frameWidthPx || outW;
   const pxPerMm = opts.pxPerMm || outW / (edit.widthMm || 30);
 
-  if (recolorOn || bgOn || adjustOn || faceOn) {
+  if (recolorOn || bgOn || adjustOn || faceOn || snapWhite) {
     const img = fctx.getImageData(0, 0, outW, outH);
     const data = img.data;
     if (recolorOn) {
       const a = maskInOutput(assets.clothesMask, src.width, src.height, M, outW, outH);
       recolorRegion(data, a, outW, outH, hexToRgb(clothes.recolor.color), (clothes.recolor.strength ?? 100) / 100);
     }
-    if (adjustOn) applyAdjustments(data, outW, outH, edit.adjust, { scale: Math.max(1, frameWidthPx / 350) });
+    let detailWeight = null;
+    if (adjustOn && face?.ellipse && (edit.adjust.clarity > 0 || edit.adjust.sharpness > 0)) {
+      // crisp hair/brows/stubble/clothes, calmer skin (measured per photo)
+      detailWeight = skinDetailWeight(data, outW, outH, ellipseToOutput(face.ellipse, src.width, src.height, M));
+    }
+    if (adjustOn) applyAdjustments(data, outW, outH, edit.adjust, { scale: Math.max(1, frameWidthPx / 350), detailWeight });
     if (faceOn) {
       const rep = applyFaceEngine(data, outW, outH, ellipseToOutput(face.ellipse, src.width, src.height, M), face);
       if (opts.faceReport) Object.assign(opts.faceReport, rep);
     }
+    if (snapWhite) snapNearWhite(data);
     let alpha = null;
     if (bgOn) {
       alpha = maskInOutput(assets.mask, src.width, src.height, M, outW, outH);

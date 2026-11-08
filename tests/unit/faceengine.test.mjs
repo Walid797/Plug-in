@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyFaceEngine, faceEllipse, ellipseToOutput, REDNESS_LIMIT, FACE_ENGINE_DEFAULTS } from '../../src/core/faceengine.js';
-import { buildLuts, applyAdjustments, chromaDenoise, ADJUSTMENT_DEFAULTS } from '../../src/core/adjust.js';
-import { suggestCrop, evaluateCrop, faceMetrics, shoulderSides, assessQuality } from '../../src/core/idphoto.js';
+import { applyFaceEngine, faceEllipse, ellipseToOutput, REDNESS_LIMIT, FACE_ENGINE_DEFAULTS, skinDetailWeight } from '../../src/core/faceengine.js';
+import { buildLuts, applyAdjustments, chromaDenoise, localContrast, snapNearWhite, ADJUSTMENT_DEFAULTS } from '../../src/core/adjust.js';
+import { suggestCrop, evaluateCrop, faceMetrics, shoulderSides, assessQuality, exposureTowardTarget, backgroundWhiteness } from '../../src/core/idphoto.js';
 import { setPngSrgb, setPngDpi, readPngPhys } from '../../src/core/binary.js';
 
 const W = 220; const H = 280;
@@ -232,4 +232,85 @@ test('shoulder sides report left/right coverage and symmetry; PNG gets an sRGB c
   assert.ok(text.indexOf('IHDR') < text.indexOf('sRGB') && text.indexOf('sRGB') < text.indexOf('IDAT'), 'sRGB chunk before the image data');
   assert.ok(Math.abs(readPngPhys(tagged).x * 0.0254 - 300) < 1);
   assert.equal(Buffer.from(setPngSrgb(tagged)).toString('latin1').split('sRGB').length - 1, 1, 'idempotent: one sRGB chunk');
+});
+
+test('clarity and sharpening: crisp hair, calmer skin, luminance only, no colour shifts', () => {
+  // image: left half "hair" (dark brown, high-frequency stripes), right half skin with the same stripes
+  const w = 120; const h = 80;
+  const make = (rgbA, rgbB) => {
+    const d = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) {
+      const i = (y * w + x) * 4; const hair = x < 60; const stripe = ((x >> 1) + (y >> 1)) % 2 === 0;
+      const base = hair ? [92, 66, 48] : [224, 172, 150];
+      const k = stripe ? 8 : -8;
+      d[i] = base[0] + k; d[i + 1] = base[1] + k; d[i + 2] = base[2] + k; d[i + 3] = 255;
+    }
+    return d;
+  };
+  const src = make();
+  const ell = { cx: 90, cy: 40, rx: 26, ry: 34, rot: 0 };
+  const weight = skinDetailWeight(src, w, h, ell, 0.3);
+  assert.ok(weight, 'skin cluster measured');
+  const at = (x, y) => weight[y * w + x];
+  assert.ok(at(30, 40) > 0.8, `hair gets (nearly) full detail (${at(30, 40).toFixed(2)})`);
+  assert.ok(at(90, 40) < 0.45, `skin gets reduced detail (${at(90, 40).toFixed(2)})`);
+  const amp = (d, x0, x1) => { let s = 0; let n = 0; for (let y = 10; y < h - 10; y += 1) for (let x = x0; x < x1; x += 1) { const i = (y * w + x) * 4; s += Math.abs(luma(d, i) - luma(d, i + ((x % 2 ? 1 : -1) * 8)));
+    n += 1; } return s / n; };
+  void amp;
+  const contrast = (d, x0, x1) => { const v = []; for (let y = 10; y < h - 10; y += 1) for (let x = x0; x < x1; x += 1) v.push(luma(d, (y * w + x) * 4)); const m = v.reduce((a, b) => a + b) / v.length; return Math.sqrt(v.reduce((a, b) => a + (b - m) ** 2, 0) / v.length); };
+  const plain = src.slice(); applyAdjustments(plain, w, h, { clarity: 70 }, { scale: 1 });
+  const weighted = src.slice(); applyAdjustments(weighted, w, h, { clarity: 70 }, { scale: 1, detailWeight: weight });
+  const c0 = { hair: contrast(src, 10, 50), skin: contrast(src, 70, 110) };
+  const cp = { hair: contrast(plain, 10, 50), skin: contrast(plain, 70, 110) };
+  const cw = { hair: contrast(weighted, 10, 50), skin: contrast(weighted, 70, 110) };
+  assert.ok(cp.hair > c0.hair * 1.1 && cp.skin > c0.skin * 1.1, 'unweighted clarity boosts both');
+  assert.ok(cw.hair > c0.hair * 1.1, `hair detail still boosted with the weight map (${c0.hair.toFixed(1)} → ${cw.hair.toFixed(1)})`);
+  assert.ok(cw.skin - c0.skin < (cp.skin - c0.skin) * 0.6, `skin boost is much smaller (${(cw.skin - c0.skin).toFixed(1)} vs ${(cp.skin - c0.skin).toFixed(1)})`);
+  // colour is untouched: the same amount is added to R, G and B
+  for (let i = 0; i < w * h * 4; i += 4) {
+    const dr = plain[i] - src[i]; const dg = plain[i + 1] - src[i + 1]; const db = plain[i + 2] - src[i + 2];
+    if (plain[i] > 0 && plain[i] < 255 && plain[i + 1] > 0 && plain[i + 1] < 255 && plain[i + 2] > 0 && plain[i + 2] < 255) assert.ok(Math.abs(dr - dg) <= 1 && Math.abs(dg - db) <= 1, 'equal change in all channels');
+  }
+  // flat areas stay flat, amount 0 is a no-op, a missing skin cluster gives no weights
+  const flat = new Uint8ClampedArray(w * h * 4).fill(150); for (let i = 3; i < flat.length; i += 4) flat[i] = 255;
+  const f2 = flat.slice(); localContrast(f2, w, h, 1, 1); assert.deepEqual(f2, flat);
+  const same = src.slice(); applyAdjustments(same, w, h, { clarity: 0 }, {}); assert.deepEqual(same, src);
+  assert.equal(skinDetailWeight(flat, w, h, ell), null);
+});
+
+test('exposure toward the reference brightness: capped at +0.5 EV, never above the target, dark skin not whitened', () => {
+  assert.equal(exposureTowardTarget(0.66), 0); assert.equal(exposureTowardTarget(0.65), 0); assert.equal(exposureTowardTarget(0.8), 0);
+  assert.equal(exposureTowardTarget(NaN), 0); assert.equal(exposureTowardTarget(0), 0);
+  const mid = exposureTowardTarget(0.56);
+  assert.ok(mid > 0 && mid <= 25, `${mid}`);
+  for (const L of [0.3, 0.4, 0.5, 0.6]) assert.ok(exposureTowardTarget(L) <= 25, 'never more than +0.5 EV (slider 25)');
+  assert.ok(exposureTowardTarget(0.4) >= exposureTowardTarget(0.6), 'darker faces get at least as much');
+  // applying it to a dark-skinned face does not push it to the reference brightness
+  const lin = (v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4); const srgb = (v) => (v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055);
+  const afterL = srgb(lin(0.35) * 2 ** ((exposureTowardTarget(0.35) / 100) * 2));
+  assert.ok(afterL < 0.5, `a face at 0.35 stays dark (${afterL.toFixed(2)})`);
+});
+
+test('background whiteness: a clean white backdrop is left alone, a coloured wall is not', () => {
+  const w = 100; const h = 130;
+  const frame = (bg) => { const d = new Uint8ClampedArray(w * h * 4); for (let i = 0; i < d.length; i += 4) { d[i] = bg[0]; d[i + 1] = bg[1]; d[i + 2] = bg[2]; d[i + 3] = 255; }
+    for (let y = 40; y < h; y += 1) for (let x = 25; x < 75; x += 1) { const i = (y * w + x) * 4; d[i] = 60; d[i + 1] = 45; d[i + 2] = 40; } return d; };
+  assert.equal(backgroundWhiteness(frame([254, 254, 254]), w, h).white, true, 'white backdrop with a person in the middle');
+  assert.equal(backgroundWhiteness(frame([226, 238, 247]), w, h).white, false, 'light-blue wall (the studio\'s original photo)');
+  assert.equal(backgroundWhiteness(frame([236, 236, 236]), w, h).white, false, 'grey-white backdrop is not clean white');
+  const noisy = frame([250, 250, 250]); for (let i = 0; i < 4 * w * 6; i += 4) { const v = i % 8 ? 215 : 255; noisy[i] = v; noisy[i + 1] = v; noisy[i + 2] = v; }
+  assert.equal(backgroundWhiteness(noisy, w, h).white, false, 'uneven backdrop (shadow/stains) is replaced');
+});
+
+test('white snap: neutral near-white becomes pure white; skin, blue shirt and mid-greys are untouched', () => {
+  const px = new Uint8ClampedArray([251, 252, 250, 255,  253, 253, 253, 255,  224, 229, 248, 255,  232, 188, 168, 255,  200, 200, 200, 255,  242, 242, 242, 255,  255, 255, 255, 255]);
+  snapNearWhite(px);
+  assert.deepEqual([...px.slice(0, 3)], [255, 255, 255], 'backdrop at 251-253 -> 255');
+  assert.deepEqual([...px.slice(4, 7)], [255, 255, 255]);
+  assert.deepEqual([...px.slice(8, 11)], [224, 229, 248], 'light-blue shirt untouched');
+  assert.deepEqual([...px.slice(12, 15)], [232, 188, 168], 'skin untouched');
+  assert.deepEqual([...px.slice(16, 19)], [200, 200, 200], 'grey untouched');
+  assert.ok(px[20] > 242 && px[20] < 255, 'in-between values blend smoothly (hair edge fringes stay natural)');
+  assert.equal(px[24], 255);
+  assert.deepEqual([...px.filter((_, i) => i % 4 === 3)], Array(7).fill(255), 'alpha untouched');
 });

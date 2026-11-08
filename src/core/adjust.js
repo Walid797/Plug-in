@@ -14,6 +14,7 @@ export const ADJUSTMENT_DEFAULTS = Object.freeze({
   whites: 0, // -100..100: moves the white point (brightens/dims the lightest tones)
   blacks: 0, // -100..100: moves the black point (negative = deeper blacks)
   denoise: 0, // 0..100: colour-noise reduction (chrominance only; luminance detail untouched)
+  clarity: 0, // 0..100: local contrast on luminance only (hair curls, brows, stubble get crisper; no colour fringes)
   grayscale: false,
 });
 
@@ -116,6 +117,45 @@ export function boxBlurRGB(src, w, h, r) {
 }
 
 /**
+ * Snap near-white, neutral pixels to pure white (all channels ≥ 244 and nearly equal → 255, smoothly).
+ * Used when the photo's own white backdrop is kept: tone adjustments may leave it at 250–253, but the
+ * backdrop must print as clean white. Skin and tinted clothes have colour and are not affected.
+ */
+export function snapNearWhite(data) {
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i]; const g = data[i + 1]; const b = data[i + 2];
+    const lo = Math.min(r, g, b); const hi = Math.max(r, g, b);
+    if (lo < 238 || hi - lo > 12) continue;
+    const t = smoothstep(238, 248, lo) * (1 - smoothstep(6, 12, hi - lo));
+    data[i] = r + (255 - r) * t; data[i + 1] = g + (255 - g) * t; data[i + 2] = b + (255 - b) * t;
+  }
+  return data;
+}
+
+/**
+ * Local contrast ("clarity"): adds (luma − blurred luma) × amount to all channels equally, so only
+ * luminance detail changes (no colour shifts); the boost per pixel is capped to avoid halos.
+ * @param {number} amount 0..1
+ */
+export function localContrast(data, w, h, amount, scale = 1, weight = null) {
+  const n = w * h;
+  const r = Math.max(2, Math.round(3 * Math.max(1, scale)));
+  const pack = new Uint8ClampedArray(n * 4);
+  for (let i = 0; i < n * 4; i += 4) {
+    const y = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    pack[i] = y; pack[i + 3] = 255;
+  }
+  const blurred = boxBlurRGB(pack, w, h, r);
+  const k = amount * 1.1;
+  for (let i = 0, j = 0; j < n; i += 4, j += 1) {
+    const d = clampN((pack[i] - blurred[j * 3]) * k * (weight ? weight[j] : 1), -36, 36);
+    data[i] += d; data[i + 1] += d; data[i + 2] += d;
+  }
+  return data;
+}
+const clampN = (v, a, b) => (v < a ? a : v > b ? b : v);
+
+/**
  * Colour-noise reduction: blur only Cb/Cr (box blur) and keep the luminance exactly,
  * so hair, brows and skin texture stay sharp while colour speckles disappear.
  * @param {number} amount 0..1
@@ -166,6 +206,7 @@ export function applyAdjustments(data, w, h, params, opts = {}) {
     data[i] = r; data[i + 1] = g; data[i + 2] = b;
   }
   if (p.denoise > 0) chromaDenoise(data, w, h, p.denoise / 100, opts.scale || 1);
+  if (p.clarity > 0) localContrast(data, w, h, p.clarity / 100, opts.scale || 1, opts.detailWeight || null);
   if (p.sharpness > 0) {
     const radius = Math.max(1, Math.round(1 * (opts.scale || 1)));
     const blurred = boxBlurRGB(data, w, h, radius);
@@ -174,7 +215,7 @@ export function applyAdjustments(data, w, h, params, opts = {}) {
       for (let c = 0; c < 3; c += 1) {
         const v = data[i + c];
         const d = v - blurred[j + c];
-        if (Math.abs(d) > 2) data[i + c] = v + d * amount;
+        if (Math.abs(d) > 2) data[i + c] = v + d * amount * (opts.detailWeight ? opts.detailWeight[j / 3] : 1);
       }
     }
   }

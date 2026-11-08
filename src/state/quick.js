@@ -4,10 +4,12 @@
 import { getState, updateEdit, updateSheet, updateSettings, recordHistory, startTask, uid, setSection, openDialog, toast, logEvent } from './store.js';
 import { getPersonMask, hasMask, getFace, maskForegroundFraction, originalAvailable, getPreview, gatherAssets } from './media.js';
 import { renderPhoto } from '../render/renderPhoto.js';
-import { findQuickPreset, quickSheetPatch, presetCapacity, quickFields, normalizeQuickPreset, QUICK_PRESETS, presetAdjust, presetFaceParams } from '../core/quickpresets.js';
-import { autoExposureDelta, suggestCrop, QUALITY_THRESHOLDS } from '../core/idphoto.js';
+import { findQuickPreset, quickSheetPatch, presetCapacity, quickFields, normalizeQuickPreset, QUICK_PRESETS, presetAdjustFor, gradeStrength, detailStrength, presetFaceParams } from '../core/quickpresets.js';
+import { autoExposureDelta, exposureTowardTarget, suggestCrop, backgroundWhiteness, QUALITY_THRESHOLDS } from '../core/idphoto.js';
 import { isFrameInside } from '../core/crop.js';
 import { faceEllipse } from '../core/faceengine.js';
+import { makeCanvas } from '../platform/image.js';
+import { ADJUSTMENT_DEFAULTS } from '../core/adjust.js';
 import { aiAvailability } from '../platform/capabilities.js';
 import { formatNumber } from '../core/digits.js';
 
@@ -35,8 +37,23 @@ export function presetBgPatch(preset) {
   };
 }
 
+/** True when the photo's own background is already clean white (and the template wants white). */
+async function backgroundAlreadyWhite(photo) {
+  const pv = await getPreview(photo);
+  if (!pv) return false;
+  const w = 120; const h = Math.max(1, Math.round((120 * pv.height) / pv.width));
+  const c = makeCanvas(w, h); const cx = c.getContext('2d', { willReadFrequently: true });
+  cx.drawImage(pv.image, 0, 0, w, h);
+  return backgroundWhiteness(cx.getImageData(0, 0, w, h).data, w, h).white;
+}
+
 async function replaceBackground(photo, aiState, preset) {
   const color = preset.bgColor;
+  if (/^#f{6}$/i.test(color) && await backgroundAlreadyWhite(photo).catch(() => false)) {
+    // nothing to replace: keep every fine hair strand of the original
+    updateEdit(photo.id, (ed) => ({ ...ed, bg: { ...ed.bg, enabled: false, color: '#ffffff', whiteSnap: true } }), { history: false });
+    return 'white';
+  }
   // edge settings go in first: the plausibility check below measures the FINAL (refined) mask
   updateEdit(photo.id, (ed) => ({ ...ed, bg: { ...ed.bg, ...presetBgPatch(preset), refine: { ...ed.bg.refine, ...presetBgPatch(preset).refine }, shadow: { ...ed.bg.shadow, ...presetBgPatch(preset).shadow } } }), { history: false });
   const { segmentPhoto } = await import('../ai/segment.js');
@@ -57,7 +74,7 @@ async function replaceBackground(photo, aiState, preset) {
   }
   updateEdit(photo.id, (ed) => ({
     ...ed,
-    bg: { ...ed.bg, enabled: true, mode: 'color', color, modelId },
+    bg: { ...ed.bg, enabled: true, mode: 'color', color, modelId, whiteSnap: false },
     aiEdited: true,
   }), { history: false });
   return reused ? 'reused' : 'ok';
@@ -125,9 +142,9 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
       if (!originalAvailable(photo)) { r.error = 'NO_ORIGINAL'; continue; }
       recordHistory({ type: 'edit', photoId: id }); // one undo step per photo for the whole preset
       updateEdit(id, { widthMm: preset.widthMm, heightMm: preset.heightMm, sizeId: preset.photoId, profileId: preset.profileId }, { history: false });
-      // colour-grading engine values from the template (face & skin / lighting engines are armed after the face analysis)
-      const grade = presetAdjust(preset);
-      if (grade) updateEdit(id, (ed) => ({ ...ed, adjust: grade }), { history: false });
+      // the colour-grading values are applied after the face brightness is measured on the neutral photo
+      // (adaptive strength); until then the photo's own adjustments are cleared
+      if (preset.grade) updateEdit(id, (ed) => ({ ...ed, adjust: { ...ADJUSTMENT_DEFAULTS } }), { history: false });
       updateEdit(id, (ed) => ({ ...ed, face: { ...presetFaceParams(preset), skin: { ...presetFaceParams(preset).skin, enabled: false }, light: { ...presetFaceParams(preset).light, enabled: false }, ellipse: null } }), { history: false });
 
       step(0, 'تغییر پس‌زمینه');
@@ -141,6 +158,15 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
         try {
           const f = await analyzeFace(getState().photos[id]);
           r.faces = f.faceCount;
+          if (preset.grade) {
+            // measured on the neutral photo: strength 1 for a dark face, 0 for one as bright as the reference
+            const strength = f.faceCount ? gradeStrength(f.stats?.meanL) : 1;
+            const grade = presetAdjustFor(preset, f.faceCount ? f.stats?.meanL : null, f.faceCount ? f.stats?.sharpness : null);
+            updateEdit(id, (ed) => ({ ...ed, adjust: grade }), { history: false });
+            r.gradeStrength = preset.gradeAdaptive ? strength : 1;
+            r.detailStrength = preset.gradeAdaptive && f.faceCount ? detailStrength(f.stats?.sharpness) : 1;
+            if (f.faceCount) await analyzeFace(getState().photos[id]).catch(() => null); // stats now include the grade
+          }
           if (f.faceCount) {
             if (preset.autoCrop) {
               const crop = suggestionFor(getState().photos[id]);
@@ -150,7 +176,8 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
               const sh = await fitShoulders(id, getFace(id).metrics);
               r.shoulders = sh.status;
             }
-            const delta = preset.autoLight ? autoExposureDelta(getFace(id)?.stats?.meanL) : 0;
+            const meanNow = getFace(id)?.stats?.meanL;
+            const delta = preset.autoLight ? (autoExposureDelta(meanNow) || exposureTowardTarget(meanNow)) : 0;
             if (delta) {
               updateEdit(id, (ed) => ({ ...ed, adjust: { ...ed.adjust, exposure: Math.max(-100, Math.min(100, (ed.adjust.exposure || 0) + delta)) } }), { history: false });
               r.light = delta;
@@ -168,6 +195,12 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
             r.issues = q.filter((x) => x.level === 'warn' || x.level === 'error');
           } else if (preset.autoCrop) r.crop = 'noface';
         } catch (err) { console.error(err); r.crop = 'failed'; r.cropError = err?.code || 'FAILED'; }
+      }
+      // no face measurement (model unavailable, no face, or an error): the table's values apply in full
+      if (preset.grade && r.gradeStrength === undefined) {
+        const grade = presetAdjustFor(preset, null);
+        updateEdit(id, (ed) => ({ ...ed, adjust: grade }), { history: false });
+        r.gradeStrength = 1;
       }
     }
     const done = results.filter((r) => !r.error).map((r) => r.id);

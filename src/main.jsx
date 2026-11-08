@@ -63,7 +63,8 @@ async function boot() {
     // Opt-in hook for the automated end-to-end tests only (no network, no extra capability).
     const sheet = await import('./print/sheet.js');
     const db = await import('./storage/db.js');
-    window.__hoshmand = { getState, setState, sheet, db };
+    const [media, face, quick, render, segment] = await Promise.all([import('./state/media.js'), import('./ai/face.js'), import('./state/quick.js'), import('./render/renderPhoto.js'), import('./ai/segment.js')]);
+    window.__hoshmand = { getState, setState, sheet, db, media, face, quick, render, segment };
   }
 
   if (!settings.onboardingDone) {
