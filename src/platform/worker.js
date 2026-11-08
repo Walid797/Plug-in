@@ -43,6 +43,8 @@ function start() {
  * @param {{signal?: AbortSignal, onProgress?: (p:number)=>void}} [opts]
  */
 export function runTask(op, payload, transfer = [], opts = {}) {
+  // Keep inputs usable for a main-thread retry: copy instead of transferring.
+  transfer = [];
   const w = start();
   if (!w) {
     // main-thread fallback (same code)
@@ -64,6 +66,11 @@ export function runTask(op, payload, transfer = [], opts = {}) {
       }, { once: true });
     }
     w.postMessage({ id, op, payload }, transfer);
+  }).catch((err) => {
+    if (err?.code === 'CANCELLED' || opts.signal?.aborted) throw err;
+    // Worker crashed or ran out of memory: run the same pure code on the main thread.
+    console.warn(`worker task ${op} failed; retrying on main thread`, err);
+    return ops[op](payload, opts.onProgress || (() => {}));
   });
 }
 

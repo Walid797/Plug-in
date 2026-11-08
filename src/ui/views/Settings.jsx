@@ -80,8 +80,9 @@ function Models() {
         })}
       </div>
       <Segmented label="سخت‌افزار اجرای مدل" value={delegate} onChange={(v) => { updateSettings({ aiDelegate: v }); disposeAll(); }} options={[
-        { value: 'auto', label: 'خودکار' }, { value: 'gpu', label: 'کارت گرافیک (GPU)' }, { value: 'cpu', label: 'پردازنده (CPU)' },
+        { value: 'auto', label: 'خودکار (پایدار)' }, { value: 'gpu', label: 'کارت گرافیک (GPU)' }, { value: 'cpu', label: 'پردازنده (CPU)' },
       ]} />
+      <p class="hint">«خودکار» از پردازنده (WASM) استفاده می‌کند که روی همهٔ دستگاه‌ها نتیجهٔ یکسان می‌دهد. کارت گرافیک در بعضی موبایل‌ها نتیجهٔ خالی یا خطا می‌دهد؛ اگر آن را انتخاب کنید و خطا رخ دهد، برنامه خودکار با پردازنده دوباره امتحان می‌کند.</p>
       <p class="hint">راهنمای کامل نصب مدل‌ها: پوشهٔ docs، فایل «ai-models.md».</p>
     </section>
   );

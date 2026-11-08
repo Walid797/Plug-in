@@ -1,8 +1,9 @@
 // Person / clothing segmentation with local models.
-import { getSegmenter, getModnet } from './runtime.js';
+import { getSegmenter, getModnet, runWithFallback } from './runtime.js';
 import { getPreview, setRawMask } from '../state/media.js';
 import { getState } from '../state/store.js';
 import { makeCanvas } from '../platform/image.js';
+import { maskStats, plausibleMask } from '../core/mask.js';
 
 function toBytes(f32) {
   const out = new Uint8ClampedArray(f32.length);
@@ -10,9 +11,14 @@ function toBytes(f32) {
   return out;
 }
 
+export { maskStats, plausibleMask };
+
 /** MediaPipe selfie multiclass: background, hair, body-skin, face-skin, clothes, others. */
 async function runMulticlass(pv) {
-  const seg = await getSegmenter();
+  return runWithFallback('selfie-multiclass', getSegmenter, (seg) => multiclassOnce(seg, pv), (r) => plausibleMask(r.person));
+}
+
+function multiclassOnce(seg, pv) {
   const res = seg.segment(pv.image);
   try {
     const masks = res.confidenceMasks || [];
@@ -83,7 +89,11 @@ export async function segmentPhoto(photo, { modelId = chooseSegModel(), withClot
     person = r.person; w = r.w; h = r.h;
     clothes = { bytes: r.clothes, w: r.w, h: r.h };
   }
+  if (!plausibleMask(person)) {
+    // Never report success for an empty or all-foreground mask.
+    throw Object.assign(new Error('SEG_EMPTY'), { code: 'SEG_EMPTY', stats: maskStats(person) });
+  }
   await setRawMask(photo.id, 'person', person, w, h);
   if (clothes) await setRawMask(photo.id, 'clothes', clothes.bytes, clothes.w, clothes.h);
-  return { modelId, hasClothes: !!clothes };
+  return { modelId, hasClothes: !!clothes, stats: maskStats(person) };
 }

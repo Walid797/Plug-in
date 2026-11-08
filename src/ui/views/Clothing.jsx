@@ -4,7 +4,7 @@ import { PhotoCanvas } from '../PhotoCanvas.jsx';
 import { Queue, NeedPhotos } from '../Queue.jsx';
 import { Button, Group, Notice, Slider, Switch, Segmented, Badge, Icon, FilePick, Select } from '../kit.jsx';
 import { useCropHandlers, ViewSwitch } from './Editor.jsx';
-import { strokeHandlers } from './Background.jsx';
+import { strokeHandlers, segErrorText } from './Background.jsx';
 import { segmentPhoto } from '../../ai/segment.js';
 import { hasMask, getFace, getPreview, getClothesMask, setPatch, registerUserTemplate } from '../../state/media.js';
 import { BUILTIN_TEMPLATES, templatePreviewSvg } from '../../assets/suits.js';
@@ -68,7 +68,7 @@ export function ClothingView() {
       toast('ناحیهٔ لباس با مدل محلی تشخیص داده شد. با قلم‌مو می‌توانید آن را اصلاح کنید.', 'success');
     } catch (err) {
       console.error(err);
-      toast('تشخیص ناحیهٔ لباس ناموفق بود.', 'error');
+      toast(segErrorText(err), 'error', 10000);
     } finally { setBusy(false); }
   };
 

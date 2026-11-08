@@ -39,6 +39,7 @@ export function PhotoCanvas(props) {
   const [split, setSplit] = useState(0.5);
   const [busy, setBusy] = useState(false);
   const [missing, setMissing] = useState(false);
+  const [renderError, setRenderError] = useState(false);
   const rev = useStore((s) => s.rev[photo?.id] || 0);
   const pointers = useRef(new Map());
   const gesture = useRef(null);
@@ -84,9 +85,10 @@ export function PhotoCanvas(props) {
         const canvas = renderPhoto(photo.edit, assets, pv.width, pv.height, {
           crop: FULL_FRAME, pxPerMm: (c.cw * pv.width) / photo.edit.widthMm, frameWidthPx: c.cw * pv.width,
         });
-        if (alive) setProcessed(canvas);
+        if (alive) { setProcessed(canvas); setRenderError(false); }
       } catch (e) {
         console.error(e);
+        if (alive) setRenderError(true);
       } finally {
         if (alive) setBusy(false);
       }
@@ -347,6 +349,12 @@ export function PhotoCanvas(props) {
         onKeyDown={onKeyDown}
       />
       {busy ? <div class="stage-busy" role="status"><Icon name="loader-circle" class="spin" /> <span>در حال پردازش…</span></div> : null}
+      {renderError ? (
+        <div class="stage-error" role="alert">
+          <Icon name="triangle-alert" size={16} />
+          <span>پیش‌نمایش با تنظیمات تازه ساخته نشد (حافظه یا خطای پردازش). آنچه می‌بینید نتیجهٔ نهایی نیست؛ دوباره امتحان کنید یا صفحه را بارگذاری مجدد کنید.</span>
+        </div>
+      ) : null}
       {missing ? (
         <div class="stage-missing" role="alert">
           <Icon name="image" />

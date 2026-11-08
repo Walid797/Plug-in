@@ -217,3 +217,16 @@ test('shoulder coverage and head-top margin checks', async () => {
   assert.equal(q2.find((x) => x.code === 'TOP_MARGIN').level, 'warn');
   assert.equal(q2.find((x) => x.code === 'SHOULDERS').level, 'warn');
 });
+
+test('segmentation sanity check rejects empty, full and flat masks', async () => {
+  const { maskStats, plausibleMask } = await import('../../src/ai/segment.js');
+  const n = 256 * 256;
+  assert.equal(plausibleMask(new Uint8ClampedArray(n)), false); // all background
+  assert.equal(plausibleMask(new Uint8ClampedArray(n).fill(255)), false); // all person (the reported bug)
+  assert.equal(plausibleMask(new Uint8ClampedArray(n).fill(128)), false); // flat, no boundary
+  const real = new Uint8ClampedArray(n);
+  for (let i = 0; i < n; i += 1) real[i] = (i % 256) > 80 && (i % 256) < 180 && i > n / 4 ? 255 : 0;
+  assert.equal(plausibleMask(real), true);
+  const s = maskStats(real);
+  assert.ok(s.fgFrac > 0.2 && s.fgFrac < 0.5);
+});

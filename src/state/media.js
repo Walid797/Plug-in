@@ -9,6 +9,7 @@ import { importErrorText, storageErrorText } from '../i18n/fa.js';
 import { importedBaseName } from '../core/filenames.js';
 import { findPhoto } from '../core/presets.js';
 import { alphaCanvasFromBytes, applyStrokes, cloneCanvas } from '../render/renderPhoto.js';
+import { plausibleMask } from '../core/mask.js';
 import { runTask } from '../platform/worker.js';
 import { getTemplate } from '../assets/suits.js';
 
@@ -298,6 +299,15 @@ async function loadRaw(photo, kind) {
   const blob = await getBlob(key).catch(() => null);
   if (!blob) return null;
   m = { raw: await blobToBytes(blob), refined: null, refineKey: null, final: null, finalKey: null };
+  if (kind === 'person' && !plausibleMask(m.raw.bytes)) {
+    // A mask saved by an earlier, failed run (e.g. empty GPU output): discard it
+    // instead of silently showing the original photo as "background removed".
+    await deleteBlob(key).catch(() => {});
+    updatePhoto(photo.id, (p) => ({ ...p, maskKey: null, edit: { ...p.edit, bg: { ...p.edit.bg, enabled: false } } }));
+    bumpRev(photo.id);
+    toast(`ماسک پس‌زمینهٔ ذخیره‌شده برای «${photo.name}» نامعتبر بود و کنار گذاشته شد. دوباره «حذف پس‌زمینه» را بزنید.`, 'warn', 10000);
+    return null;
+  }
   store.set(photo.id, m);
   return m;
 }

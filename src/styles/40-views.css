@@ -21,6 +21,8 @@
 .stage-note { position: static; margin: 8px 10px; align-self: flex-start; border-radius: var(--radius); }
 .stage-note.ok { background: var(--ok-soft); color: var(--ok); }
 .stage-note.gold { background: var(--gold-soft); color: var(--gold); }
+.stage-error { position: absolute; inset-inline: 12px; top: 12px; display: flex; gap: 8px; align-items: flex-start; padding: 8px 12px; border-radius: var(--radius); background: var(--err-soft); color: var(--text); border: 1px solid color-mix(in srgb, var(--err) 50%, transparent); font-size: .82rem; line-height: 1.7; backdrop-filter: blur(6px); }
+.stage-error svg { color: var(--err); flex: none; margin-top: 3px; }
 .stage-missing { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; text-align: center; gap: 10px; padding: 24px; color: var(--text-2); background: var(--canvas); }
 .stage-missing svg { width: 34px; height: 34px; }
 .stage-missing p { max-width: 380px; }

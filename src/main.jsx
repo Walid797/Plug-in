@@ -62,7 +62,8 @@ async function boot() {
   if (/[?&]e2e=1\b/.test(location.search)) {
     // Opt-in hook for the automated end-to-end tests only (no network, no extra capability).
     const sheet = await import('./print/sheet.js');
-    window.__hoshmand = { getState, setState, sheet };
+    const db = await import('./storage/db.js');
+    window.__hoshmand = { getState, setState, sheet, db };
   }
 
   if (!settings.onboardingDone) {

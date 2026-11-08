@@ -1,5 +1,5 @@
 // Face analysis with the local Face Landmarker. Landmarks stay in memory only.
-import { getFaceLandmarker } from './runtime.js';
+import { getFaceLandmarker, runWithFallback } from './runtime.js';
 import { getPreview, getPersonMask, setFace, getFace } from '../state/media.js';
 import { faceMetrics, crownFromMask, faceRegionStats, assessQuality, evaluateCrop, suggestCrop, genericProfile, shoulderCoverage } from '../core/idphoto.js';
 import { findProfile } from '../core/presets.js';
@@ -24,8 +24,10 @@ function maskSampler(maskCanvas, srcW, srcH) {
 export async function analyzeFace(photo) {
   const pv = await getPreview(photo);
   if (!pv) throw Object.assign(new Error('NO_ORIGINAL'), { code: 'NO_ORIGINAL' });
-  const lmk = await getFaceLandmarker();
-  const res = lmk.detect(pv.image);
+  const valid = (r) => (r.faceLandmarks || []).length > 0
+    && r.faceLandmarks.every((lm) => lm.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y) && p.x > -0.5 && p.x < 1.5 && p.y > -0.5 && p.y < 1.5));
+  // A GPU run with no (or invalid) faces is re-checked on the CPU before we report "no face".
+  const res = await runWithFallback('face-landmarker', getFaceLandmarker, (lmk) => lmk.detect(pv.image), valid);
   const faces = res.faceLandmarks || [];
   if (!faces.length) {
     const r = { faceCount: 0, landmarks: null, metrics: null, at: Date.now() };

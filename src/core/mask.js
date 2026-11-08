@@ -183,3 +183,22 @@ export function recolorRegion(rgba, alpha, w, h, rgb, strength = 1) {
   }
   return rgba;
 }
+
+/** Foreground share and spread of a 0..255 mask — used to reject empty/garbage model output. */
+export function maskStats(bytes) {
+  const n = bytes.length || 1;
+  let fg = 0; let sum = 0; let sq = 0;
+  for (let i = 0; i < bytes.length; i += 1) {
+    const v = bytes[i] / 255;
+    if (v >= 0.5) fg += 1;
+    sum += v; sq += v * v;
+  }
+  const mean = sum / n;
+  return { fgFrac: fg / n, std: Math.sqrt(Math.max(0, sq / n - mean * mean)) };
+}
+
+/** A real portrait split has both person and background, with a clear boundary. */
+export function plausibleMask(bytes) {
+  const s = maskStats(bytes);
+  return s.fgFrac > 0.01 && s.fgFrac < 0.99 && s.std > 0.08;
+}

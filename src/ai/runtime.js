@@ -31,28 +31,36 @@ const FILESET = () => ({
   wasmBinaryPath: abs('vendor/mediapipe/wasm/vision_wasm_internal.wasm'),
 });
 
-const instances = new Map(); // id -> {instance, backend}
+const instances = new Map(); // id -> {instance, backend, delegate}
 const creating = new Map();
 
+/**
+ * Delegate order. "auto" uses the CPU (WASM/XNNPACK) path: for single-photo
+ * tasks it is fast enough everywhere and avoids mobile GPU driver problems
+ * (missing FP16 / float read-back) that can make the GPU path fail or return
+ * empty masks. The GPU path is used only when the user selects it, and any
+ * GPU failure is retried on the CPU (see runWithFallback).
+ */
 function delegateOrder() {
   const pref = getState().settings.aiDelegate;
-  if (pref === 'cpu') return ['CPU'];
-  if (pref === 'gpu') return ['GPU', 'CPU'];
-  return getState().caps?.webgl2 ? ['GPU', 'CPU'] : ['CPU'];
+  if (pref === 'gpu' && getState().caps?.webgl2) return ['GPU', 'CPU'];
+  return ['CPU'];
 }
 
-async function createMediapipe(id, factory) {
+async function createMediapipe(id, factory, order) {
   const V = await vision();
   const bytes = await loadModelBytes(id);
   let lastErr = null;
-  for (const delegate of delegateOrder()) {
+  for (const delegate of order) {
     try {
       const inst = await factory(V, { modelAssetBuffer: bytes, delegate });
-      return { instance: inst, backend: delegate === 'GPU' ? 'WebGL (GPU)' : 'WASM (CPU)' };
+      return { instance: inst, delegate, backend: delegate === 'GPU' ? 'WebGL (GPU)' : 'WASM (CPU)' };
     } catch (e) { lastErr = e; }
   }
   throw lastErr || new Error('CREATE_FAILED');
 }
+
+export const delegateOf = (id) => instances.get(id)?.delegate || null;
 
 async function getInstance(id, create) {
   if (instances.has(id)) return instances.get(id).instance;
@@ -75,17 +83,36 @@ async function getInstance(id, create) {
   return p;
 }
 
-export function getFaceLandmarker() {
+export function getFaceLandmarker({ cpuOnly = false } = {}) {
   return getInstance('face-landmarker', () => createMediapipe('face-landmarker', (V, baseOptions) => V.FaceLandmarker.createFromOptions(FILESET(), {
     baseOptions, runningMode: 'IMAGE', numFaces: 3, outputFaceBlendshapes: false, outputFacialTransformationMatrixes: false,
     minFaceDetectionConfidence: 0.5, minFacePresenceConfidence: 0.5,
-  })));
+  }), cpuOnly ? ['CPU'] : delegateOrder()));
 }
 
-export function getSegmenter() {
+export function getSegmenter({ cpuOnly = false } = {}) {
   return getInstance('selfie-multiclass', () => createMediapipe('selfie-multiclass', (V, baseOptions) => V.ImageSegmenter.createFromOptions(FILESET(), {
     baseOptions, runningMode: 'IMAGE', outputConfidenceMasks: true, outputCategoryMask: false,
-  })));
+  }), cpuOnly ? ['CPU'] : delegateOrder()));
+}
+
+/**
+ * Run an inference with a MediaPipe task. If the GPU path throws (e.g. "No full
+ * support of FP16 on this GPU") or returns a result that fails `validate`
+ * (e.g. an empty mask from a failed float read-back), the model is recreated
+ * on the CPU and the inference is retried once.
+ */
+export async function runWithFallback(id, getter, fn, validate = () => true) {
+  const inst = await getter();
+  if (delegateOf(id) !== 'GPU') return fn(inst);
+  try {
+    const r = await fn(inst);
+    if (validate(r)) return r;
+  } catch (e) {
+    console.warn(`GPU inference failed for ${id}; retrying on CPU`, e);
+  }
+  disposeModel(id);
+  return fn(await getter({ cpuOnly: true }));
 }
 
 /* -------------------------------------------------------------- ONNX */

@@ -5,12 +5,38 @@ import { Queue, NeedPhotos, ACCEPT } from '../Queue.jsx';
 import { Button, Group, Notice, Slider, Switch, Segmented, FilePick, Badge, Select } from '../kit.jsx';
 import { useCropHandlers, ViewSwitch } from './Editor.jsx';
 import { segmentPhoto, chooseSegModel } from '../../ai/segment.js';
-import { hasMask, clearMask, setBackgroundImage } from '../../state/media.js';
+import { hasMask, clearMask, setBackgroundImage, getPersonMask } from '../../state/media.js';
 import { BACKGROUND_PRESETS } from '../../core/presets.js';
 import { aiAvailability } from '../../platform/capabilities.js';
 import { formatNumber } from '../../core/digits.js';
 import { findModel } from '../../ai/registry.js';
 import { modelStatusText } from './Settings.jsx';
+
+/** Share of a mask canvas (alpha = person) that is foreground. */
+export function maskForegroundFraction(canvas) {
+  if (!canvas) return null;
+  const cx = canvas.getContext('2d', { willReadFrequently: true });
+  const d = cx.getImageData(0, 0, canvas.width, canvas.height).data;
+  let fg = 0;
+  for (let i = 3; i < d.length; i += 4) if (d[i] >= 128) fg += 1;
+  return fg / (d.length / 4);
+}
+
+export function segErrorText(err) {
+  switch (err?.code) {
+    case 'NO_ORIGINAL': return 'عکس اصلی در دسترس نیست؛ آن را دوباره انتخاب کنید.';
+    case 'SEG_EMPTY': return 'مدل هیچ مرز مشخصی بین شخص و پس‌زمینه پیدا نکرد، پس پس‌زمینه حذف نشد. عکس باید یک نفر را از روبه‌رو با پس‌زمینهٔ قابل‌تشخیص نشان دهد. اگر عکس درست است، در «تنظیمات ← سخت‌افزار اجرای مدل» گزینهٔ «پردازنده (CPU)» را انتخاب و دوباره امتحان کنید.';
+    case 'MODEL_MISSING': return 'فایل مدل پیدا نشد. از «تنظیمات و مدل‌های آفلاین» آن را نصب کنید.';
+    case 'HASH_MISMATCH': return 'فایل مدل خراب یا تغییر یافته است (چکسام نادرست).';
+    case 'FILE_PROTOCOL': return 'در حالت file:// مدل بارگذاری نمی‌شود؛ برنامه را با راه‌انداز محلی باز کنید.';
+    default: return 'جداسازی پس‌زمینه ناموفق بود (حافظهٔ دستگاه یا اجرای مدل). صفحه را دوباره بارگذاری کنید و دوباره امتحان کنید.';
+  }
+}
+
+function backendLabel(modelId) {
+  const m = getState().models[modelId];
+  return m?.backend || 'محلی';
+}
 
 export function strokeHandlers(photoId, path) {
   // path: ['bg','strokes'] or ['clothes','recolor','strokes']
@@ -51,27 +77,35 @@ export function BackgroundView() {
   const setRefine = (k, v, h) => setBg((b) => ({ refine: { ...b.refine, [k]: v } }), h);
   const setShadow = (k, v, h) => setBg((b) => ({ shadow: { ...b.shadow, [k]: v } }), h);
 
+  /**
+   * Segment, then build the final refined mask BEFORE enabling the new
+   * background, and measure it — success is only reported for a real split.
+   */
   const run = async (target = photo) => {
     const r = await segmentPhoto(target);
+    const fresh = getState().photos[target.id];
+    const mask = await getPersonMask(fresh);
+    const frac = maskForegroundFraction(mask);
+    if (frac == null || frac < 0.01 || frac > 0.99) throw Object.assign(new Error('SEG_EMPTY'), { code: 'SEG_EMPTY' });
     updateEdit(target.id, (ed) => ({ ...ed, bg: { ...ed.bg, enabled: true, modelId: r.modelId } }));
-    return r;
+    return { ...r, frac };
   };
 
   const onRun = async () => {
     setBusy(true);
     try {
-      await run();
-      toast(`پس‌زمینه با مدل محلی «${findModel(modelId)?.nameFa}» جدا شد. لبه‌ها را بررسی و در صورت نیاز با قلم‌مو اصلاح کنید.`, 'success', 8000);
+      const r = await run();
+      toast(`پس‌زمینه جدا شد: حدود ${formatNumber(r.frac * 100, { maxFraction: 0 })}٪ عکس «شخص» و بقیه «پس‌زمینه» تشخیص داده شد (مدل محلی، ${backendLabel(r.modelId)}). لبه‌ها را بررسی و در صورت نیاز با قلم‌مو اصلاح کنید.`, 'success', 9000);
     } catch (err) {
       console.error(err);
-      toast(err.code === 'NO_ORIGINAL' ? 'عکس اصلی در دسترس نیست.' : 'جداسازی پس‌زمینه ناموفق بود (حافظه یا مدل).', 'error');
+      toast(segErrorText(err), 'error', 10000);
     } finally { setBusy(false); }
   };
 
   const onBatch = async () => {
     const list = orderedPhotos(getState()).filter((p) => p.id !== photo.id || !masked);
     const task = startTask('حذف گروهی پس‌زمینه…', { cancellable: true });
-    let ok = 0;
+    let ok = 0; let failed = 0;
     try {
       for (let i = 0; i < list.length; i += 1) {
         if (task.signal.aborted) break;
@@ -80,9 +114,9 @@ export function BackgroundView() {
           await run(list[i]);
           updateEdit(list[i].id, (ed) => ({ ...ed, bg: { ...ed.bg, mode: bg.mode, color: bg.color, imageKey: bg.imageKey, shadow: bg.shadow, refine: bg.refine } }), { history: false });
           ok += 1;
-        } catch (err) { console.error(err); }
+        } catch (err) { console.error(err); failed += 1; }
       }
-      toast(`پس‌زمینهٔ ${formatNumber(ok)} عکس جدا شد.`, 'success');
+      toast(`پس‌زمینهٔ ${formatNumber(ok)} عکس جدا شد${failed ? `؛ ${formatNumber(failed)} عکس ناموفق بود (بدون مرز مشخص شخص/پس‌زمینه یا خطای مدل)` : ''}.`, failed ? 'warn' : 'success', 9000);
     } finally { task.done(); }
   };
 
