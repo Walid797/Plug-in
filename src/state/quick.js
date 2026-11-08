@@ -102,6 +102,10 @@ async function fitShoulders(id, metrics) {
 }
 
 /** What the face & skin / lighting engines really did for a photo (a small render with a report). */
+/** Skin brightness (0..255) the reference portrait ends at; a face brighter than this is trimmed back. */
+const SKIN_TARGET_Y = 186;
+const srgbToLinear = (v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+
 async function engineReport(id) {
   const photo = getState().photos[id];
   const pv = await getPreview(photo);
@@ -190,6 +194,19 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
               const fp = presetFaceParams(preset);
               updateEdit(id, (ed) => ({ ...ed, face: { ...fp, fixes: ed.face?.fixes, ellipse: faceEllipse(getFace(id).metrics, photo.width, photo.height), protect: faceProtectZones(getFace(id).landmarks, photo.width, photo.height) } }), { history: false });
               r.engine = await engineReport(id).catch(() => null);
+              // the brightening is steered by the whole-face mean, which a beard, glasses or dark hair pull down: so a face with
+              // dark parts can end up too bright. The skin itself is measured after the engines and trimmed back to the reference level.
+              for (let k = 0; k < 2 && r.engine?.lumaAfter > SKIN_TARGET_Y + 5; k += 1) {
+                const ev = Math.log2(srgbToLinear(SKIN_TARGET_Y / 255) / srgbToLinear(r.engine.lumaAfter / 255));
+                const trim = Math.round((ev / 2) * 100); // negative slider units
+                updateEdit(id, (ed) => {
+                  const lift = ed.adjust.lift || 0;
+                  const fromLift = Math.min(lift, -trim);
+                  return { ...ed, adjust: { ...ed.adjust, lift: lift - fromLift, exposure: Math.max(-100, (ed.adjust.exposure || 0) + (trim + fromLift)) } };
+                }, { history: false });
+                r.trimmed = (r.trimmed || 0) + trim;
+                r.engine = await engineReport(id).catch(() => r.engine);
+              }
             }
             const { shoulderStatsFor } = await import('../ai/face.js');
             const stats = await shoulderStatsFor(getState().photos[id]).catch(() => null);
