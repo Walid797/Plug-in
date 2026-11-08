@@ -13,11 +13,39 @@ const ORIGIN = `http://127.0.0.1:${PORT}`;
 let win = null;
 let srv = null;
 
+// The AI models (MediaPipe) need WebGL even on their CPU path. Since Chromium 137 (Electron 37) a blocklisted or
+// crashing GPU driver no longer falls back to software WebGL automatically, so on such Windows PCs background removal
+// and face analysis failed ("reading 'activeTexture'"). This switch restores the software (SwiftShader) fallback. The
+// window only ever shows this app's own local files, so the "unsafe" part (untrusted web content on SwiftShader) does
+// not apply here.
+app.commandLine.appendSwitch('enable-unsafe-swiftshader');
+
+// Permissions the app may use: the camera (taking a photo inside the app) and persistent storage (so projects and
+// photos are never evicted when the disk is nearly full). Everything else is denied.
+const ALLOWED_PERMISSIONS = new Set(['media', 'persistent-storage']);
+
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
 
 function readSettings() {
   try { return JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'desktop-settings.json'), 'utf8')); } catch { return {}; }
+}
+
+/**
+ * After an update the service worker of the previous version would keep serving the old app code from its cache
+ * until the user reloads twice. When the installed version changes, drop only the service worker and its Cache
+ * Storage for this origin. Projects, photos, settings and installed models (IndexedDB, localStorage) are kept.
+ */
+async function dropStaleAppCache() {
+  const file = path.join(app.getPath('userData'), 'desktop-state.json');
+  let state = {};
+  try { state = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* first run */ }
+  const version = app.getVersion();
+  if (state.appVersion === version) return;
+  try {
+    await session.defaultSession.clearStorageData({ origin: ORIGIN, storages: ['serviceworkers', 'cachestorage'] });
+  } catch { /* nothing cached yet */ }
+  try { fs.writeFileSync(file, JSON.stringify({ ...state, appVersion: version })); } catch { /* read-only profile */ }
 }
 
 function setupUpdates() {
@@ -44,9 +72,9 @@ async function createWindow() {
     app.quit();
     return;
   }
-  // only the camera (for taking a photo inside the app) may be requested; everything else is denied
-  session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(permission === 'media'));
-  session.defaultSession.setPermissionCheckHandler((_wc, permission) => permission === 'media');
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(ALLOWED_PERMISSIONS.has(permission)));
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) => ALLOWED_PERMISSIONS.has(permission));
+  await dropStaleAppCache();
   Menu.setApplicationMenu(null);
   win = new BrowserWindow({
     width: 1360, height: 900, minWidth: 900, minHeight: 600, show: false, autoHideMenuBar: true, title: 'Hoshmand Photo Studio',
