@@ -246,13 +246,16 @@ button:disabled { cursor: not-allowed; }
   height: 100%;
   display: grid;
   grid-template-columns: var(--queue) minmax(0, 1fr) var(--panel);
+  grid-template-rows: minmax(0, 1fr);
   grid-template-areas: "queue stage panel";
   min-height: 0;
+  overflow: hidden;
 }
+.view:has(> .workspace) { overflow: hidden; }
 .workspace.no-queue { grid-template-columns: minmax(0, 1fr) var(--panel); grid-template-areas: "stage panel"; }
 .queue-pane { grid-area: queue; border-inline-end: 1px solid var(--line); background: var(--surface-1); min-height: 0; display: flex; flex-direction: column; }
 .stage { grid-area: stage; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--canvas); position: relative; }
-.panel { grid-area: panel; border-inline-start: 1px solid var(--line); background: var(--surface-1); overflow-y: auto; overflow-x: hidden; min-height: 0; }
+.panel { position: relative; grid-area: panel; border-inline-start: 1px solid var(--line); background: var(--surface-1); overflow-y: auto; overflow-x: hidden; min-height: 0; }
 .panel-inner { padding: 16px; display: grid; gap: 14px; align-content: start; }
 
 /* mobile */
@@ -283,8 +286,9 @@ button:disabled { cursor: not-allowed; }
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(52vh, 1fr) auto;
     grid-template-areas: "queue" "stage" "panel";
-    height: auto; min-height: 100%;
+    height: auto; min-height: 100%; overflow: visible;
   }
+  .view:has(> .workspace) { overflow: visible; }
   .workspace.no-queue { grid-template-rows: minmax(52vh, 1fr) auto; grid-template-areas: "stage" "panel"; }
   .queue-pane { border: 0; border-bottom: 1px solid var(--line); }
   .panel { border: 0; border-top: 1px solid var(--line); overflow: visible; }
@@ -413,7 +417,7 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: var(--focu
 .segmented button:disabled { opacity: .4; }
 
 /* switch */
-.switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; font-size: .88rem; min-height: 36px; }
+.switch { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; font-size: .88rem; min-height: 36px; }
 .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .switch .track { width: 40px; height: 22px; border-radius: 22px; background: var(--surface-4); position: relative; flex: none; transition: background var(--t-fast); }
 .switch .track::after { content: ""; position: absolute; top: 3px; inset-inline-start: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: inset-inline-start var(--t-fast); box-shadow: var(--shadow-s); }
@@ -659,13 +663,13 @@ dialog.modal::backdrop { background: rgba(5, 6, 8, .6); backdrop-filter: blur(3p
 .print-summary { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; padding: 8px 14px; font-size: .86rem; color: var(--text-2); background: var(--surface-2); border-bottom: 1px solid var(--line); }
 .print-summary b { color: var(--text); }
 .print-errors { padding: 12px; display: grid; gap: 8px; }
-.sheets { flex: 1; overflow: auto; padding: 22px; display: grid; gap: 26px; justify-items: center; align-content: start; }
+.sheets { flex: 1; min-height: 0; overflow: auto; padding: 22px; display: grid; gap: 26px; justify-items: center; align-content: start; }
 .sheet-figure { margin: 0; display: grid; gap: 8px; justify-items: center; }
 .sheet-figure figcaption { font-size: .8rem; color: var(--text-2); }
 .sheet-frame { position: relative; box-shadow: 0 14px 40px rgba(0, 0, 0, .4), 0 0 0 1px rgba(0, 0, 0, .25); background: #fff; overflow: hidden; }
 .print-sheet.is-preview { position: absolute; top: 0; left: 0; background: #fff; }
 .hard-margin { position: absolute; inset: 0; border-style: solid; border-color: rgba(229, 89, 79, .10); pointer-events: none; background: none;
-  border-image: repeating-linear-gradient(45deg, rgba(229, 89, 79, .25) 0 2px, transparent 2px 6px) 1; }
+  border-image: repeating-linear-gradient(45deg, rgba(229, 89, 79, .16) 0 1px, transparent 1px 5px) 1; }
 .analysis { display: grid; gap: 8px; }
 .orient { padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--surface-2); }
 .orient.chosen { border-color: var(--accent); background: var(--accent-soft); }

@@ -1,7 +1,7 @@
 // Face analysis with the local Face Landmarker. Landmarks stay in memory only.
 import { getFaceLandmarker } from './runtime.js';
 import { getPreview, getPersonMask, setFace, getFace } from '../state/media.js';
-import { faceMetrics, crownFromMask, faceRegionStats, assessQuality, evaluateCrop, suggestCrop, genericProfile } from '../core/idphoto.js';
+import { faceMetrics, crownFromMask, faceRegionStats, assessQuality, evaluateCrop, suggestCrop, genericProfile, shoulderCoverage } from '../core/idphoto.js';
 import { findProfile } from '../core/presets.js';
 import { applyAdjustments } from '../core/adjust.js';
 import { defaultCrop } from '../core/crop.js';
@@ -58,6 +58,19 @@ export async function analyzeFace(photo) {
   return r;
 }
 
+/** Re-derive the crown from a person mask using the stored landmarks (no model run). */
+export async function refineCrownWithMask(photo) {
+  const f = getFace(photo.id);
+  if (!f?.landmarks || f.crownSource === 'mask' || !photo.maskKey) return false;
+  const mask = await getPersonMask(photo).catch(() => null);
+  if (!mask) return false;
+  const base = faceMetrics(f.landmarks, photo.width, photo.height);
+  const crownV = crownFromMask(base, maskSampler(mask, photo.width, photo.height), photo.width, photo.height);
+  if (crownV == null || crownV >= base.foreheadV) return false;
+  setFace(photo.id, { ...f, metrics: faceMetrics(f.landmarks, photo.width, photo.height, { crownV }), crownSource: 'mask' });
+  return true;
+}
+
 function regionStats(pv, m, photo) {
   const k = pv.width / photo.width;
   const b = m.bbox;
@@ -82,8 +95,18 @@ export function profileFor(photo) {
   return genericProfile(e.widthMm, e.heightMm);
 }
 
+/** Shoulder coverage for the current crop, or null when no person mask exists. */
+export async function shoulderFracFor(photo) {
+  if (!photo.maskKey) return null;
+  const mask = await getPersonMask(photo).catch(() => null);
+  if (!mask) return null;
+  const e = photo.edit;
+  const crop = e.crop || defaultCrop(photo.width, photo.height, e.widthMm / e.heightMm);
+  return shoulderCoverage(crop, e.widthMm, e.heightMm, photo.width, photo.height, maskSampler(mask, photo.width, photo.height));
+}
+
 /** Quality checklist for the photo's current crop. */
-export function currentQuality(photo) {
+export function currentQuality(photo, extras = {}) {
   const f = getFace(photo.id);
   if (!f) return null;
   if (!f.faceCount) return assessQuality({ faceCount: 0 });
@@ -92,7 +115,7 @@ export function currentQuality(photo) {
   const crop = e.crop || defaultCrop(photo.width, photo.height, e.widthMm / e.heightMm);
   const evaluation = evaluateCrop(f.metrics, crop, e.widthMm, e.heightMm, photo.width, photo.height);
   const info = outputInfo(photo, getState().project?.sheet?.dpi || getState().settings.defaultDpi);
-  return assessQuality({ metrics: f.metrics, evaluation, profile, stats: f.stats, faceCount: f.faceCount, effectiveDpi: info.effectiveDpi });
+  return assessQuality({ metrics: f.metrics, evaluation, profile, stats: f.stats, faceCount: f.faceCount, effectiveDpi: info.effectiveDpi, shoulderFrac: extras.shoulderFrac ?? null });
 }
 
 export function suggestionFor(photo) {

@@ -188,16 +188,30 @@ export function releaseAssets(assets) {
 
 /* --------------------------------------------------------------- printing */
 
-let pageStyleEl = null;
+// The page-size rule must survive a strict CSP (no inline <style>): use a
+// constructable stylesheet, or a blob: stylesheet on older browsers.
+let pageSheet = null;
+let pageLink = null;
 function setPageSize(W, H) {
-  if (!pageStyleEl) {
-    pageStyleEl = document.createElement('style');
-    pageStyleEl.id = 'hoshmand-page-size';
-    document.head.appendChild(pageStyleEl);
-  }
-  const sheet = pageStyleEl.sheet;
-  while (sheet.cssRules.length) sheet.deleteRule(0);
-  sheet.insertRule(`@page { size: ${W}mm ${H}mm; margin: 0; }`, 0);
+  const css = `@page { size: ${W}mm ${H}mm; margin: 0; }`;
+  try {
+    if ('adoptedStyleSheets' in document && typeof CSSStyleSheet === 'function' && 'replaceSync' in CSSStyleSheet.prototype) {
+      if (!pageSheet) {
+        pageSheet = new CSSStyleSheet();
+        document.adoptedStyleSheets = [...document.adoptedStyleSheets, pageSheet];
+      }
+      pageSheet.replaceSync(css);
+      return;
+    }
+  } catch { /* fall back below */ }
+  const url = URL.createObjectURL(new Blob([css], { type: 'text/css' }));
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = url;
+  link.onload = () => URL.revokeObjectURL(url);
+  if (pageLink) pageLink.remove();
+  document.head.appendChild(link);
+  pageLink = link;
 }
 
 /** Fill #print-root with sheets and open the browser print dialog. */

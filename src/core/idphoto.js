@@ -2,7 +2,7 @@
 // suggestions for a rule profile and quality checks. Pure math — the model that
 // produces landmarks lives in src/ai. No biometric template is ever computed.
 
-import { cropMatrix, applyMatrix, isFrameInside } from './crop.js';
+import { cropMatrix, applyMatrix, invertMatrix, isFrameInside } from './crop.js';
 
 // MediaPipe Face Mesh landmark indices.
 export const LM = Object.freeze({
@@ -138,6 +138,22 @@ export function evaluateCrop(m, crop, widthMm, heightMm, srcW, srcH) {
   };
 }
 
+/**
+ * Fraction of the frame's lower edge (at 94% height) covered by the person mask —
+ * a proxy for "both shoulders visible". Needs a foreground mask.
+ * @param {(x:number,y:number)=>number} sample alpha at source px
+ */
+export function shoulderCoverage(crop, widthMm, heightMm, srcW, srcH, sample) {
+  const M = cropMatrix(crop, srcW, srcH, widthMm, heightMm);
+  const inv = invertMatrix(M);
+  let hit = 0; const n = 41;
+  for (let i = 0; i < n; i += 1) {
+    const p = applyMatrix(inv, (widthMm * (i + 0.5)) / n, heightMm * 0.94);
+    if (p.x >= 0 && p.y >= 0 && p.x < srcW && p.y < srcH && sample(p.x, p.y) >= 0.5) hit += 1;
+  }
+  return hit / n;
+}
+
 /** Luma statistics of a face crop: brightness, left/right balance, sharpness. */
 export function faceRegionStats(rgba, w, h) {
   const L = new Float32Array(w * h);
@@ -167,10 +183,11 @@ export const QUALITY_THRESHOLDS = Object.freeze({
   rollWarnDeg: 2, rollErrorDeg: 8, yawWarn: 0.08, centreWarnFrac: 0.05,
   darkL: 0.28, brightL: 0.86, balanceWarn: 0.16, sharpnessWarn: 40,
   dpiWarn: 250, dpiError: 150,
+  topMarginMinMm: 1.5, topMarginMaxFrac: 0.18, shoulderMinFrac: 0.55,
 });
 
 /** Assemble the human-facing checklist (levels: ok | warn | error | info). */
-export function assessQuality({ metrics, evaluation, profile, stats, faceCount, effectiveDpi }) {
+export function assessQuality({ metrics, evaluation, profile, stats, faceCount, effectiveDpi, shoulderFrac = null }) {
   const T = QUALITY_THRESHOLDS;
   const out = [];
   if (!faceCount) return [{ code: 'FACE_NOT_FOUND', level: 'error' }];
@@ -191,11 +208,17 @@ export function assessQuality({ metrics, evaluation, profile, stats, faceCount, 
     const cut = evaluation.crownTopMm < 0 || evaluation.chinBottomMm < 0 || evaluation.faceLeftMm < 0 || evaluation.faceRightMm > profile.widthMm;
     out.push({ code: 'FACE_CROPPED', level: cut ? 'error' : 'ok' });
     if (!evaluation.insideImage) out.push({ code: 'FRAME_OUTSIDE', level: 'warn' });
+    const top = evaluation.crownTopMm;
+    const maxTop = profile.heightMm * T.topMarginMaxFrac;
+    out.push({ code: 'TOP_MARGIN', level: top < T.topMarginMinMm || top > maxTop ? 'warn' : 'ok', value: top, min: T.topMarginMinMm, max: maxTop, estimated: metrics.crownEstimated });
   }
   if (stats) {
     out.push({ code: 'LIGHTING', level: stats.meanL < T.darkL || stats.meanL > T.brightL ? 'warn' : 'ok', value: stats.meanL, dark: stats.meanL < T.darkL });
     out.push({ code: 'LIGHT_BALANCE', level: Math.abs(stats.balance) > T.balanceWarn ? 'warn' : 'ok', value: stats.balance });
     out.push({ code: 'SHARPNESS', level: stats.sharpness < T.sharpnessWarn ? 'warn' : 'ok', value: stats.sharpness });
+  }
+  if (shoulderFrac != null) {
+    out.push({ code: 'SHOULDERS', level: shoulderFrac < T.shoulderMinFrac ? 'warn' : 'ok', value: shoulderFrac });
   }
   if (effectiveDpi != null) {
     out.push({ code: 'RESOLUTION', level: effectiveDpi < T.dpiError ? 'error' : effectiveDpi < T.dpiWarn ? 'warn' : 'ok', value: effectiveDpi });

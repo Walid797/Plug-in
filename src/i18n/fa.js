@@ -72,6 +72,8 @@ export function qualityText(q) {
     case 'EYE_LINE': return { title: 'ارتفاع خط چشم', body: `خط چشم ${d(q.value)} ملی‌متر از پایین (مجاز: ${d(q.min)} تا ${d(q.max)}).` };
     case 'CENTRED': return { title: 'وسط بودن', body: q.level === 'ok' ? 'چهره در وسط کادر است.' : `چهره ${d(Math.abs(q.value))} ملی‌متر به ${q.value > 0 ? 'راست' : 'چپ'} جابجا است.` };
     case 'FACE_CROPPED': return { title: 'بریده‌شدن سر یا چانه', body: q.level === 'ok' ? 'سر و چانه کامل داخل کادر است.' : 'بخشی از سر، چانه یا صورت بیرون از کادر است.' };
+    case 'TOP_MARGIN': return { title: 'فاصلهٔ بالای سر', body: `فاصلهٔ بالای سر تا لبهٔ عکس ${d(Math.max(0, q.value))} ملی‌متر${q.level === 'ok' ? '' : q.value < q.min ? ' — خیلی کم است (سر به لبه چسبیده)' : ' — فضای خالی بالای سر زیاد است'}${q.estimated ? ' (تخمینی)' : ''}.` };
+    case 'SHOULDERS': return { title: 'دیده شدن شانه‌ها', body: q.level === 'ok' ? 'شانه‌ها در پایین کادر دیده می‌شوند.' : 'شانه‌ها کامل در پایین کادر دیده نمی‌شوند؛ کادر را کوچک‌تر یا پایین‌تر کنید.' };
     case 'FRAME_OUTSIDE': return { title: 'کادر بیرون از عکس', body: 'بخشی از کادر بیرون از عکس اصلی است و با رنگ پس‌زمینه پر می‌شود.' };
     case 'LIGHTING': return { title: 'نور', body: q.level === 'ok' ? 'نور چهره مناسب است.' : q.dark ? 'چهره تاریک است؛ نوردهی یا روشنایی را بیشتر کنید.' : 'چهره بیش از حد روشن است.' };
     case 'LIGHT_BALANCE': return { title: 'یکنواختی نور', body: q.level === 'ok' ? 'نور دو طرف صورت یکسان است.' : 'یک طرف صورت تاریک‌تر است (سایهٔ تند).' };

@@ -1,8 +1,8 @@
 import path from 'node:path';
-import { chromium, startServer, newPage, dismissOnboarding, root, outDir } from './helpers.mjs';
+import { chromium, launchBrowser, startServer, newPage, dismissOnboarding, root, outDir } from './helpers.mjs';
 
 const srv = await startServer(8791);
-const browser = await chromium.launch();
+const browser = await launchBrowser();
 try {
   const { page, log } = await newPage(browser);
   await page.goto(srv.url);

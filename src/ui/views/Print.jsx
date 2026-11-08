@@ -41,12 +41,15 @@ function SheetPreview({ layout, project, photos, zoom }) {
   const hostRef = useRef(null);
   const rev = useStore((s) => s.rev);
   const [urls, setUrls] = useState({});
-  const [width, setWidth] = useState(600);
+  const [box, setBox] = useState({ w: 600, h: 600 });
 
   useEffect(() => {
     const el = hostRef.current;
     if (!el) return undefined;
-    const ro = new ResizeObserver(() => setWidth(el.clientWidth));
+    const ro = new ResizeObserver(() => {
+      const w = el.clientWidth; const h = el.clientHeight;
+      setBox((b) => (Math.abs(b.w - w) > 2 || Math.abs(b.h - h) > 2 ? { w, h } : b));
+    });
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
@@ -72,8 +75,10 @@ function SheetPreview({ layout, project, photos, zoom }) {
     if (!layout?.ok) return;
     const W = layout.sheet.widthMm; const H = layout.sheet.heightMm;
     const pxW = W * CSS_PX_PER_MM;
-    const avail = Math.max(120, width - 8);
-    const scale = zoom === 'actual' ? 1 : Math.min(2.5, avail / pxW);
+    const availW = Math.max(120, box.w - 48);
+    const availH = Math.max(160, box.h - 70);
+    const pxH = H * CSS_PX_PER_MM;
+    const scale = zoom === 'actual' ? 1 : Math.min(2, availW / pxW, availH / pxH);
     for (const page of layout.pages) {
       const fig = document.createElement('figure');
       fig.className = 'sheet-figure';
@@ -104,7 +109,7 @@ function SheetPreview({ layout, project, photos, zoom }) {
       fig.appendChild(cap);
       host.appendChild(fig);
     }
-  }, [layout, urls, width, zoom, project.sheet.marks, project.sheet.printer]);
+  }, [layout, urls, box, zoom, project.sheet.marks, project.sheet.printer]);
 
   return <div class="sheets" ref={hostRef} aria-label="پیش‌نمایش برگه‌ها" />;
 }

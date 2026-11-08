@@ -1,9 +1,9 @@
 // AI E2E: local face landmarks + segmentation on a public-domain portrait.
 import path from 'node:path';
-import { chromium, startServer, newPage, dismissOnboarding, root, outDir, assert, gotoSection } from './helpers.mjs';
+import { chromium, launchBrowser, startServer, newPage, dismissOnboarding, root, outDir, assert, gotoSection } from './helpers.mjs';
 
 const srv = await startServer(8793);
-const browser = await chromium.launch();
+const browser = await launchBrowser();
 const results = {};
 try {
   const { page, log } = await newPage(browser);
@@ -46,6 +46,13 @@ try {
   await page.getByRole('button', { name: 'ماسک', exact: true }).click();
   await page.waitForTimeout(800);
   await page.screenshot({ path: path.join(outDir, 'ai-mask.png') });
+  // Smart ID again: with a person mask the shoulder check becomes available
+  await gotoSection(page, 'smart');
+  await page.waitForSelector('.quality li:has-text("دیده شدن شانه‌ها")', { timeout: 20000 });
+  results.shoulders = await page.locator('.quality li:has-text("دیده شدن شانه‌ها")').getAttribute('class');
+  await page.waitForSelector('.hint:has-text("از ماسک پس‌زمینه")', { timeout: 10000 });
+  results.crownSource = await page.locator('.hint:has-text("بالای سر")').first().textContent();
+  results.qualityWithMask = await page.locator('.quality li').evaluateAll((els) => els.map((e) => `${e.className}:${e.querySelector('b').textContent}`));
   // Settings: backend reported
   await gotoSection(page, 'settings');
   await page.waitForTimeout(500);

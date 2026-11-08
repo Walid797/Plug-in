@@ -80,3 +80,8 @@ export async function importAndRetain(page, files, keep = true) {
   }
   await page.waitForSelector('.queue-item, .sheet-figure, .toast', { timeout: 20000 }).catch(() => {});
 }
+
+/** Chromium with a UTF-8 locale (otherwise Linux Chrome renames non-ASCII downloads to "download"). */
+export function launchBrowser(opts = {}) {
+  return chromium.launch({ ...opts, env: { ...process.env, LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8', ...(opts.env || {}) } });
+}

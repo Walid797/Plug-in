@@ -71,7 +71,7 @@ export async function loadModelBytes(id) {
 export async function installModelFromFile(id, file) {
   const m = findModel(id);
   if (!m) return false;
-  if (file.size < 1024 || file.size > 600 * 1024 * 1024) { toast('اندازهٔ فایل مدل غیرعادی است.', 'error'); return false; }
+  if (file.size < 64 || file.size > 600 * 1024 * 1024) { toast('اندازهٔ فایل مدل غیرعادی است.', 'error'); return false; }
   const bytes = new Uint8Array(await file.arrayBuffer());
   const hash = await sha256Hex(bytes);
   if (m.sha256 && hash !== m.sha256) {

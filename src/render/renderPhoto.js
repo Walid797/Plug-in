@@ -23,6 +23,21 @@ function ctx2d(c) {
   return c.getContext('2d', { willReadFrequently: true });
 }
 
+/**
+ * Intermediate sizes for stepwise 2× downscaling of a rw×rh region so that the
+ * final draw scales by ≥ 0.5 (good quality, no aliasing). Always terminates.
+ * @returns {Array<[number, number]>}
+ */
+export function halvingPlan(scale, rw, rh) {
+  const steps = [];
+  let cw = rw; let ch = rh;
+  while (scale * (rw / cw) < 0.5 && cw > 2 && ch > 2 && steps.length < 24) {
+    cw = Math.max(1, Math.round(cw / 2)); ch = Math.max(1, Math.round(ch / 2));
+    steps.push([cw, ch]);
+  }
+  return steps;
+}
+
 /** Draw `image` (srcW×srcH) through matrix M with stepwise downscaling for quality. */
 export function drawThrough(ctx, image, srcW, srcH, M, outW, outH) {
   const scale = Math.hypot(M[0], M[1]);
@@ -42,17 +57,23 @@ export function drawThrough(ctx, image, srcW, srcH, M, outW, outH) {
   const ry1 = Math.min(srcH, Math.ceil(Math.max(...pts.map((p) => p.y)) + 2));
   const rw = rx1 - rx0; const rh = ry1 - ry0;
   if (rw <= 0 || rh <= 0) return;
-  let cur = image; let cw = rw; let ch = rh; let first = true;
+  const plan = halvingPlan(scale, rw, rh);
+  if (!plan.length) {
+    ctx.setTransform(M[0], M[1], M[2], M[3], M[4], M[5]);
+    ctx.drawImage(image, 0, 0, srcW, srcH);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    return;
+  }
+  let cur = image; let first = true;
   let kx = 1; let ky = 1;
-  while (kx * scale < 0.5) {
-    const nw = Math.max(1, Math.round(cw / 2)); const nh = Math.max(1, Math.round(ch / 2));
+  for (const [nw, nh] of plan) {
     const c = makeCanvas(nw, nh);
     const cx = c.getContext('2d');
     cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = 'high';
     if (first) cx.drawImage(cur, rx0, ry0, rw, rh, 0, 0, nw, nh);
-    else cx.drawImage(cur, 0, 0, cw, ch, 0, 0, nw, nh);
+    else cx.drawImage(cur, 0, 0, cur.width, cur.height, 0, 0, nw, nh);
     first = false;
-    cur = c; cw = nw; ch = nh; kx = nw / rw; ky = nh / rh;
+    cur = c; kx = nw / rw; ky = nh / rh;
   }
   const T = multiplyMatrix(M, [1 / kx, 0, 0, 1 / ky, rx0, ry0]);
   ctx.setTransform(T[0], T[1], T[2], T[3], T[4], T[5]);

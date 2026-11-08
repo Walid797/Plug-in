@@ -9,6 +9,7 @@
     "start": "node server/serve.mjs",
     "test": "node --test tests/unit/*.test.mjs",
     "test:e2e": "node tests/e2e/run-all.mjs",
+    "test:onnx-fixture": "python3 tools/make-test-onnx.py tests/fixtures/test-only-matting-signature.onnx",
     "check": "npm run build && npm test && npm run test:e2e"
   },
   "devDependencies": {

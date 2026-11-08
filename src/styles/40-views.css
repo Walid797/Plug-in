@@ -142,13 +142,13 @@
 .print-summary { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; padding: 8px 14px; font-size: .86rem; color: var(--text-2); background: var(--surface-2); border-bottom: 1px solid var(--line); }
 .print-summary b { color: var(--text); }
 .print-errors { padding: 12px; display: grid; gap: 8px; }
-.sheets { flex: 1; overflow: auto; padding: 22px; display: grid; gap: 26px; justify-items: center; align-content: start; }
+.sheets { flex: 1; min-height: 0; overflow: auto; padding: 22px; display: grid; gap: 26px; justify-items: center; align-content: start; }
 .sheet-figure { margin: 0; display: grid; gap: 8px; justify-items: center; }
 .sheet-figure figcaption { font-size: .8rem; color: var(--text-2); }
 .sheet-frame { position: relative; box-shadow: 0 14px 40px rgba(0, 0, 0, .4), 0 0 0 1px rgba(0, 0, 0, .25); background: #fff; overflow: hidden; }
 .print-sheet.is-preview { position: absolute; top: 0; left: 0; background: #fff; }
 .hard-margin { position: absolute; inset: 0; border-style: solid; border-color: rgba(229, 89, 79, .10); pointer-events: none; background: none;
-  border-image: repeating-linear-gradient(45deg, rgba(229, 89, 79, .25) 0 2px, transparent 2px 6px) 1; }
+  border-image: repeating-linear-gradient(45deg, rgba(229, 89, 79, .16) 0 1px, transparent 1px 5px) 1; }
 .analysis { display: grid; gap: 8px; }
 .orient { padding: 10px 12px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--surface-2); }
 .orient.chosen { border-color: var(--accent); background: var(--accent-soft); }

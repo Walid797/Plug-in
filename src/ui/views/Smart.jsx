@@ -4,7 +4,7 @@ import { PhotoCanvas } from '../PhotoCanvas.jsx';
 import { Queue, NeedPhotos } from '../Queue.jsx';
 import { Icon, Button, Group, Notice, Badge, Select, Switch } from '../kit.jsx';
 import { useCropHandlers, ViewSwitch } from './Editor.jsx';
-import { analyzeFace, currentQuality, suggestionFor, profileFor } from '../../ai/face.js';
+import { analyzeFace, currentQuality, suggestionFor, profileFor, shoulderFracFor, refineCrownWithMask } from '../../ai/face.js';
 import { getFace } from '../../state/media.js';
 import { RULE_PROFILES, findPhoto } from '../../core/presets.js';
 import { qualityText, LEVEL_FA } from '../../i18n/fa.js';
@@ -36,7 +36,22 @@ export function SmartView() {
   const [batch, setBatch] = useState(null); // {photoId: crop}
   const handlers = useCropHandlers(photo || { id: null });
 
+  const [shoulderFrac, setShoulderFrac] = useState(null);
   useEffect(() => { setSuggestion(batch?.[photo?.id] || null); }, [photo?.id]);
+  useEffect(() => {
+    let alive = true;
+    if (!photo) return undefined;
+    const t = setTimeout(() => {
+      refineCrownWithMask(photo).then((changed) => {
+        if (changed && alive) {
+          setSuggestion(suggestionFor(getState().photos[photo.id]));
+          toast('بالای سر با ماسک پس‌زمینه دقیق‌تر شد؛ پیشنهاد کادر تازه نمایش داده شد.', 'info');
+        }
+      }).catch(() => {});
+      shoulderFracFor(photo).then((v) => { if (alive) setShoulderFrac(v); });
+    }, 150);
+    return () => { alive = false; clearTimeout(t); };
+  }, [photo?.id, photo?.maskKey, photo?.edit.crop, photo?.edit.widthMm, photo?.edit.heightMm, rev]);
 
   if (!photo) return <div class="view"><NeedPhotos /></div>;
   const ai = caps ? aiAvailability(caps) : { ok: false, reason: '' };
@@ -45,7 +60,7 @@ export function SmartView() {
   const disabledReason = !ai.ok ? ai.reason : !modelOk ? `مدل تشخیص چهره: ${modelStatusText(model)}` : '';
   const face = getFace(photo.id);
   void rev;
-  const quality = face ? currentQuality(photo) : null;
+  const quality = face ? currentQuality(photo, { shoulderFrac }) : null;
   const profile = profileFor(photo);
   const e = photo.edit;
   const profiles = [...RULE_PROFILES, ...customProfiles];
@@ -154,6 +169,7 @@ export function SmartView() {
                   })}
                 </ul>
               )}
+              {face?.metrics && !photo.maskKey ? <p class="hint">بررسی شانه‌ها به ماسک پس‌زمینه نیاز دارد (بخش پس‌زمینه).</p> : null}
               {face?.metrics ? <p class="hint">بالای سر: {face.crownSource === 'mask' ? 'از ماسک پس‌زمینه (دقیق‌تر)' : 'تخمینی از نسبت چهره — برای دقت بیشتر ابتدا پس‌زمینه را جدا کنید'}.</p> : null}
             </Group>
             <Group title="پردازش گروهی">

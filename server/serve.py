@@ -88,6 +88,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_HEAD(self):
         self._serve(False)
 
+    def _not_allowed(self):
+        self.send_response(405)
+        self._headers()
+        self.send_header('Allow', 'GET, HEAD')
+        self.send_header('Content-Length', '0')
+        self.end_headers()
+
+    do_POST = do_PUT = do_DELETE = do_PATCH = do_OPTIONS = _not_allowed
+
     def log_message(self, fmt, *args):  # keep the console quiet
         pass
 

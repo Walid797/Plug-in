@@ -166,6 +166,7 @@ async function saveNow() {
         const rec = { ...projectRecord(s.project), updatedAt: Date.now(), thumb: firstThumb };
         await put('projects', rec);
         lastSaved.project = s.project;
+        refreshProjectsIndex();
       }
       setState((st) => ({ ...st, saveStatus: st.storage.mode === 'memory' ? 'memory' : 'saved' }));
     }

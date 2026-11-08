@@ -179,3 +179,41 @@ test('quality flags: no face, multiple faces, tilt, low resolution, dark image',
   const flat = new Uint8ClampedArray(16 * 16 * 4).fill(128);
   assert.ok(faceRegionStats(flat, 16, 16).sharpness < 1);
 });
+
+test('stepwise downscale plan always terminates and ends with a final scale ≥ 0.5 (regression)', async () => {
+  const { halvingPlan } = await import('../../src/render/renderPhoto.js');
+  for (const [scale, w, h] of [[0.118, 3000, 4000], [0.34, 1050, 1400], [0.01, 8000, 6000], [0.49, 10, 10], [0.2, 3, 3], [0.001, 2, 2]]) {
+    const plan = halvingPlan(scale, w, h);
+    assert.ok(plan.length < 24, 'bounded');
+    if (plan.length) {
+      const [cw] = plan.at(-1);
+      const remaining = scale * (w / cw);
+      assert.ok(remaining >= 0.5 || cw <= 2, `remaining scale ${remaining}`);
+      assert.ok(remaining <= 1.01 || cw <= 2, `not over-shrunk ${remaining}`);
+    }
+  }
+  assert.deepEqual(halvingPlan(0.6, 1000, 1000), []);
+});
+
+test('shoulder coverage and head-top margin checks', async () => {
+  const { shoulderCoverage, assessQuality, faceMetrics: fm, evaluateCrop: ev, suggestCrop: sc } = await import('../../src/core/idphoto.js');
+  const crop = { cx: 0.5, cy: 0.5, cw: 0.5, rotation: 0 };
+  // person fills the lower half of a 1000×1000 image
+  const full = shoulderCoverage(crop, 30, 40, 1000, 1000, (x, y) => (y > 500 ? 1 : 0));
+  assert.equal(full, 1);
+  const narrow = shoulderCoverage(crop, 30, 40, 1000, 1000, (x, y) => (y > 500 && Math.abs(x - 500) < 60 ? 1 : 0));
+  assert.ok(narrow < 0.55);
+  const lm = Array.from({ length: 478 }, () => ({ x: 0.5, y: 0.45 }));
+  const set = (i, x, y) => { lm[i] = { x, y }; };
+  set(468, 0.45, 0.45); set(473, 0.55, 0.45); set(152, 0.5, 0.62); set(10, 0.5, 0.36); set(1, 0.5, 0.51); set(234, 0.395, 0.48); set(454, 0.605, 0.48);
+  const m = fm(lm, 1000, 1000);
+  const profile = RULE_PROFILES[0];
+  const good = sc(m, profile, 1000, 1000);
+  const q = assessQuality({ metrics: m, evaluation: ev(m, good, 30, 40, 1000, 1000), profile, faceCount: 1, shoulderFrac: 0.9 });
+  assert.equal(q.find((x) => x.code === 'TOP_MARGIN').level, 'ok');
+  assert.equal(q.find((x) => x.code === 'SHOULDERS').level, 'ok');
+  const tight = { ...good, cy: good.cy + 0.12 };
+  const q2 = assessQuality({ metrics: m, evaluation: ev(m, tight, 30, 40, 1000, 1000), profile, faceCount: 1, shoulderFrac: 0.2 });
+  assert.equal(q2.find((x) => x.code === 'TOP_MARGIN').level, 'warn');
+  assert.equal(q2.find((x) => x.code === 'SHOULDERS').level, 'warn');
+});

@@ -18,9 +18,11 @@ function req(r) {
 function openDb() {
   if (dbPromise) return dbPromise;
   dbPromise = new Promise((resolve, reject) => {
-    if (typeof indexedDB === 'undefined') { reject(new Error('IDB_UNAVAILABLE')); return; }
     let r;
-    try { r = indexedDB.open(DB_NAME, DB_VERSION); } catch (e) { reject(e); return; }
+    try {
+      if (typeof indexedDB === 'undefined' || !indexedDB) { reject(new Error('IDB_UNAVAILABLE')); return; }
+      r = indexedDB.open(DB_NAME, DB_VERSION);
+    } catch (e) { reject(e); return; }
     r.onupgradeneeded = () => {
       const db = r.result;
       if (!db.objectStoreNames.contains('projects')) db.createObjectStore('projects', { keyPath: 'id' });

@@ -18,7 +18,7 @@ export async function detectCapabilities() {
     secureContext: !!window.isSecureContext,
     crossOriginIsolated: !!window.crossOriginIsolated,
     serviceWorker: 'serviceWorker' in navigator && window.isSecureContext && !isFileProtocol(),
-    indexedDB: typeof indexedDB !== 'undefined',
+    indexedDB: (() => { try { return typeof indexedDB !== 'undefined' && !!indexedDB; } catch { return false; } })(),
     opfs: false,
     wasm: typeof WebAssembly === 'object',
     wasmSimd: false,
