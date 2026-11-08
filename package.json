@@ -1,0 +1,22 @@
+{
+  "name": "hoshmand-photo-studio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Hoshmand Photo Studio — offline-first Persian (Dari) ID/passport photo editor and print studio",
+  "type": "module",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "start": "node server/serve.mjs",
+    "test": "node --test tests/unit/*.test.mjs",
+    "test:e2e": "node tests/e2e/run-all.mjs",
+    "check": "npm run build && npm test && npm run test:e2e"
+  },
+  "devDependencies": {
+    "@mediapipe/tasks-vision": "1.2.2",
+    "esbuild": "0.28.2",
+    "lucide-static": "1.70.0",
+    "onnxruntime-web": "1.31.1",
+    "preact": "11.2.0",
+    "vazirmatn": "33.0.3"
+  }
+}

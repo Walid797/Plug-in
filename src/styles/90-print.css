@@ -1,0 +1,20 @@
+/* Print sheet geometry — shared by preview and print (all sizes in mm). */
+.print-sheet { position: relative; overflow: hidden; background: #fff; direction: ltr; color: #000; }
+.print-content { position: absolute; top: 0; left: 0; }
+.print-photo { position: absolute; display: block; max-width: none; image-rendering: auto; }
+.print-label { position: absolute; text-align: center; color: #000; font-family: var(--font); direction: rtl; white-space: nowrap; overflow: hidden; }
+.marks { position: absolute; top: 0; left: 0; overflow: visible; }
+
+#print-root { display: none; }
+
+@media print {
+  html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; height: auto !important; overflow: visible !important; }
+  body > *:not(#print-root) { display: none !important; }
+  #print-root { display: block !important; }
+  #print-root .print-sheet {
+    margin: 0; padding: 0;
+    break-after: page; page-break-after: always; break-inside: avoid; page-break-inside: avoid;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  #print-root .print-sheet:last-child { break-after: auto; page-break-after: auto; }
+}

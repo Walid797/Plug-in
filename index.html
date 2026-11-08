@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="fa-AF" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob: data:; font-src 'self' data:; connect-src 'self' blob: data: http://127.0.0.1:* http://localhost:*; worker-src 'self' blob:; media-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#1f3fbf">
+  <meta name="description" content="هوشمند فوتو استودیو — ویرایش و چاپ آفلاین عکس پرسنلی؛ عکس‌ها روی همین دستگاه می‌ماند.">
+  <title>هوشمند فوتو استودیو</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="app/app.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">رفتن به محتوای اصلی</a>
+  <div id="app">
+    <div class="boot" role="status">
+      <div class="boot-mark" aria-hidden="true"></div>
+      <p>هوشمند فوتو استودیو در حال بارگذاری…</p>
+      <noscript><p>برای کار با این برنامه باید جاوااسکریپت در مرورگر فعال باشد.</p></noscript>
+    </div>
+  </div>
+  <div id="print-root" aria-hidden="true"></div>
+  <script src="app/app.js"></script>
+</body>
+</html>
