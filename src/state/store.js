@@ -70,6 +70,8 @@ export function defaultEdit(widthMm = 30, heightMm = 40, sizeId = '3x4') {
       overlay: { enabled: false, templateId: null, x: 0.5, y: 0.8, width: 0.6, rotation: 0 },
       patch: null,
     },
+    // face & skin + lighting engines (core/faceengine.js); the ellipse is set by the face analysis
+    face: { skin: { enabled: false, redness: 40, balance: 30 }, light: { enabled: false, fill: 35, even: true, protect: true }, ellipse: null },
     aiEdited: false,
     profileId: null,
   };

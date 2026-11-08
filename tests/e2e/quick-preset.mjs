@@ -34,12 +34,16 @@ try {
   assert(readyText.includes('کادر و اندازهٔ سر تنظیم شد'), 'face-based crop applied');
   assert(readyText.includes('۴ عکس') && readyText.includes('۱ برگهٔ'), `4 photos on 1 sheet (${readyText.slice(0, 200)})`);
   assert(readyText.includes('روشن‌سازی چاپ: متوسط'), 'print brightening shown');
+  assert(readyText.includes('تنظیم رنگ قالب اعمال شد'), 'colour grading engine ran');
+  assert(/قرمزی بیش‌ازحد پوست کم شد|رنگ پوست طبیعی بود/.test(readyText), `skin engine reported (${readyText.slice(0, 600)})`);
+  assert(/نور صورت/.test(readyText), 'lighting engine reported');
+  assert(/هر دو شانه دیده می‌شود|کادر برای دیدن شانه‌ها بازتر شد|شانه‌ها کامل دیده نمی‌شوند/.test(readyText), 'shoulders reported');
 
   const st = await page.evaluate(() => {
     const h = window.__hoshmand; const s = h.getState(); const ph = Object.values(s.photos)[0];
     const l = h.sheet.computeSheetLayout(s);
     return {
-      size: ph.edit.sizeId, profile: ph.edit.profileId, bg: ph.edit.bg, refine: ph.edit.bg.refine, crop: !!ph.edit.crop, exposure: ph.edit.adjust.exposure,
+      adjust: ph.edit.adjust, face: ph.edit.face, size: ph.edit.sizeId, profile: ph.edit.profileId, bg: ph.edit.bg, refine: ph.edit.bg.refine, crop: !!ph.edit.crop, exposure: ph.edit.adjust.exposure,
       sheet: { marks: s.project.sheet.marks, paperId: s.project.sheet.paperId, printBoost: s.project.sheet.printBoost, mode: s.project.sheet.mode, items: s.project.sheet.items.map((i) => i.copies), fill: s.project.sheet.fillOrder },
       layout: { ok: l.ok, cap: l.capacity, orient: l.orientation, w: l.sheet.widthMm, h: l.sheet.heightMm, sheets: l.totals.sheets, placed: l.totals.placed },
     };
@@ -47,6 +51,12 @@ try {
   assert(st.size === '3x4' && st.profile === 'generic-3x4', 'size + profile');
   assert(st.bg.enabled && st.bg.mode === 'color' && st.bg.color === '#ffffff', 'white colour background enabled');
   assert(st.crop, 'crop set');
+  const A = st.adjust;
+  assert(A.exposure === 7.5 || Math.abs(A.exposure - 7.5) < 40, 'exposure near +0.15 EV (auto light may add on top)');
+  assert(A.brightness === 8 && A.contrast === 5 && A.saturation === 3 && A.temperature === 2 && A.tint === 0 && A.highlights === -10 && A.shadows === 12 && A.whites === 8 && A.blacks === -3, `grading table applied ${JSON.stringify(A)}`);
+  assert(A.sharpness === 14 && A.denoise === 30, 'slight sharpness and colour denoise');
+  assert(st.face.ellipse && st.face.skin.enabled && st.face.light.enabled, `face engines armed on the analysed face ${JSON.stringify(st.face)}`);
+  assert(st.face.ellipse.cx > 0.2 && st.face.ellipse.cx < 0.8 && st.face.ellipse.rx > 0.05, 'face ellipse sane');
   assert(st.sheet.marks.borders === true && st.sheet.marks.borderWidth === 0.1, `border on in the built-in template (${JSON.stringify(st.sheet.marks)})`);
   assert(st.refine.feather === 1 && st.refine.edgeAware === true && st.refine.shift === 0 && Math.abs(st.refine.softness - 0.4) < 1e-9, `edge feather 1 px by default (${JSON.stringify(st.refine)})`);
   assert(st.sheet.paperId === '4x6in' && st.sheet.printBoost === 'medium' && st.sheet.mode === 'exact' && st.sheet.fill === 'col-ltr', `sheet ${JSON.stringify(st.sheet)}`);

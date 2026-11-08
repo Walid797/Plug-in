@@ -2,9 +2,12 @@
 // validated) → face-based crop → conservative light fix → print sheet. Every
 // step reports what really happened; nothing is marked done unless it worked.
 import { getState, updateEdit, updateSheet, updateSettings, recordHistory, startTask, uid, setSection, openDialog, toast, logEvent } from './store.js';
-import { getPersonMask, hasMask, getFace, maskForegroundFraction, originalAvailable } from './media.js';
-import { findQuickPreset, quickSheetPatch, presetCapacity, quickFields, normalizeQuickPreset, QUICK_PRESETS } from '../core/quickpresets.js';
-import { autoExposureDelta } from '../core/idphoto.js';
+import { getPersonMask, hasMask, getFace, maskForegroundFraction, originalAvailable, getPreview, gatherAssets } from './media.js';
+import { renderPhoto } from '../render/renderPhoto.js';
+import { findQuickPreset, quickSheetPatch, presetCapacity, quickFields, normalizeQuickPreset, QUICK_PRESETS, presetAdjust, presetFaceParams } from '../core/quickpresets.js';
+import { autoExposureDelta, suggestCrop, QUALITY_THRESHOLDS } from '../core/idphoto.js';
+import { isFrameInside } from '../core/crop.js';
+import { faceEllipse } from '../core/faceengine.js';
 import { aiAvailability } from '../platform/capabilities.js';
 import { formatNumber } from '../core/digits.js';
 
@@ -61,6 +64,39 @@ async function replaceBackground(photo, aiState, preset) {
 }
 
 /**
+ * Crop engine, shoulders: when the person's shoulders are cut off at the bottom, widen the frame
+ * as far as the head-size rule allows (head at its minimum), and keep that only if it really shows more.
+ */
+async function fitShoulders(id, metrics) {
+  const { shoulderStatsFor, profileFor } = await import('../ai/face.js');
+  const photo = getState().photos[id];
+  const before = await shoulderStatsFor(photo);
+  if (!before) return { status: 'nomask', before: null, after: null };
+  if (before.frac >= QUALITY_THRESHOLDS.shoulderMinFrac) return { status: 'ok', before, after: before };
+  const profile = profileFor(photo);
+  const cand = suggestCrop(metrics, { ...profile, headHeight: { ...profile.headHeight, target: profile.headHeight.min } }, photo.width, photo.height);
+  if (!isFrameInside(cand, photo.width, photo.height, photo.edit.widthMm / photo.edit.heightMm)) return { status: 'limited', before, after: before };
+  const after = await shoulderStatsFor(photo, cand);
+  if (after && after.frac > before.frac + 0.03) {
+    updateEdit(id, { crop: cand }, { history: false });
+    return { status: 'widened', before, after };
+  }
+  return { status: 'limited', before, after: before };
+}
+
+/** What the face & skin / lighting engines really did for a photo (a small render with a report). */
+async function engineReport(id) {
+  const photo = getState().photos[id];
+  const pv = await getPreview(photo);
+  if (!pv) return null;
+  const assets = await gatherAssets(photo, pv);
+  const e = photo.edit; const w = 240; const h = Math.round((w * e.heightMm) / e.widthMm);
+  const rep = {};
+  renderPhoto(e, assets, w, h, { faceReport: rep, pxPerMm: w / e.widthMm, frameWidthPx: w });
+  return rep;
+}
+
+/**
  * Run a quick preset on photos and prepare the print sheet.
  * @returns {Promise<{results:object[], cancelled:boolean}|null>}
  */
@@ -89,6 +125,10 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
       if (!originalAvailable(photo)) { r.error = 'NO_ORIGINAL'; continue; }
       recordHistory({ type: 'edit', photoId: id }); // one undo step per photo for the whole preset
       updateEdit(id, { widthMm: preset.widthMm, heightMm: preset.heightMm, sizeId: preset.photoId, profileId: preset.profileId }, { history: false });
+      // colour-grading engine values from the template (face & skin / lighting engines are armed after the face analysis)
+      const grade = presetAdjust(preset);
+      if (grade) updateEdit(id, (ed) => ({ ...ed, adjust: grade }), { history: false });
+      updateEdit(id, (ed) => ({ ...ed, face: { ...presetFaceParams(preset), skin: { ...presetFaceParams(preset).skin, enabled: false }, light: { ...presetFaceParams(preset).light, enabled: false }, ellipse: null } }), { history: false });
 
       step(0, 'تغییر پس‌زمینه');
       if (preset.whiteBg && aiState.segOk) {
@@ -97,7 +137,7 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
       if (task.signal.aborted) { cancelled = true; r.cancelled = true; break; }
 
       step(2, 'تحلیل چهره و کادر');
-      if (aiState.faceOk && (preset.autoCrop || preset.autoLight)) {
+      if (aiState.faceOk && (preset.autoCrop || preset.autoLight || preset.skinOn || preset.lightOn)) {
         try {
           const f = await analyzeFace(getState().photos[id]);
           r.faces = f.faceCount;
@@ -106,13 +146,25 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
               const crop = suggestionFor(getState().photos[id]);
               if (crop) { updateEdit(id, { crop }, { history: false }); r.crop = 'ok'; } else r.crop = 'failed';
             }
+            if (preset.autoCrop && preset.cropShoulders) {
+              const sh = await fitShoulders(id, getFace(id).metrics);
+              r.shoulders = sh.status;
+            }
             const delta = preset.autoLight ? autoExposureDelta(getFace(id)?.stats?.meanL) : 0;
             if (delta) {
               updateEdit(id, (ed) => ({ ...ed, adjust: { ...ed.adjust, exposure: Math.max(-100, Math.min(100, (ed.adjust.exposure || 0) + delta)) } }), { history: false });
               r.light = delta;
               await analyzeFace(getState().photos[id]).catch(() => null); // refresh stats for the checklist
             }
-            const q = currentQuality(getState().photos[id]) || [];
+            // arm the face & skin / lighting engines on this face
+            if (preset.skinOn || preset.lightOn) {
+              const fp = presetFaceParams(preset);
+              updateEdit(id, (ed) => ({ ...ed, face: { ...fp, ellipse: faceEllipse(getFace(id).metrics, photo.width, photo.height) } }), { history: false });
+              r.engine = await engineReport(id).catch(() => null);
+            }
+            const { shoulderStatsFor } = await import('../ai/face.js');
+            const stats = await shoulderStatsFor(getState().photos[id]).catch(() => null);
+            const q = currentQuality(getState().photos[id], stats ? { shoulderFrac: stats.frac, shoulderSides: stats } : {}) || [];
             r.issues = q.filter((x) => x.level === 'warn' || x.level === 'error');
           } else if (preset.autoCrop) r.crop = 'noface';
         } catch (err) { console.error(err); r.crop = 'failed'; r.cropError = err?.code || 'FAILED'; }

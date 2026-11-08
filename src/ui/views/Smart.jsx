@@ -2,7 +2,8 @@ import { useEffect, useState } from 'preact/hooks';
 import { useStore, updateEdit, toast, setSection, startTask, orderedPhotos, getState, recordHistory } from '../../state/store.js';
 import { PhotoCanvas } from '../PhotoCanvas.jsx';
 import { Queue, NeedPhotos } from '../Queue.jsx';
-import { Icon, Button, Group, Notice, Badge, Select, Switch } from '../kit.jsx';
+import { Icon, Button, Group, Notice, Badge, Select, Switch, Slider } from '../kit.jsx';
+import { faceEllipse } from '../../core/faceengine.js';
 import { useCropHandlers, ViewSwitch } from './Editor.jsx';
 import { analyzeFace, currentQuality, suggestionFor, profileFor, shoulderFracFor, refineCrownWithMask } from '../../ai/face.js';
 import { getFace } from '../../state/media.js';
@@ -114,6 +115,20 @@ export function SmartView() {
     } finally { task.done(); }
   };
 
+  const faceCfg = { skin: { enabled: false, redness: 40, balance: 30, ...(e.face?.skin || {}) }, light: { enabled: false, fill: 35, even: true, protect: true, ...(e.face?.light || {}) } };
+  const setFaceEngine = (patch, history = true) => {
+    const f = getState().photos[photo.id].edit.face;
+    const metrics = getFace(photo.id)?.metrics;
+    const ellipse = f?.ellipse || (metrics ? faceEllipse(metrics, photo.width, photo.height) : null);
+    if (!ellipse) return;
+    updateEdit(photo.id, (ed) => ({ ...ed, face: { ...faceCfg, ...(ed.face || {}), ...patch, ellipse } }), { history });
+  };
+
+  const engineSlider = (grp, key) => ({
+    onInput: (v) => setFaceEngine({ [grp]: { ...faceCfg[grp], [key]: v } }, false),
+    onCommit: (v, start) => { setFaceEngine({ [grp]: { ...faceCfg[grp], [key]: start } }, false); setFaceEngine({ [grp]: { ...faceCfg[grp], [key]: v } }, true); },
+  });
+
   const setProfile = (id) => {
     if (id === 'generic') { updateEdit(photo.id, { profileId: null }); return; }
     const p = profiles.find((x) => x.id === id);
@@ -171,6 +186,30 @@ export function SmartView() {
               )}
               {face?.metrics && !photo.maskKey ? <p class="hint">بررسی شانه‌ها به ماسک پس‌زمینه نیاز دارد (بخش پس‌زمینه).</p> : null}
               {face?.metrics ? <p class="hint">بالای سر: {face.crownSource === 'mask' ? 'از ماسک پس‌زمینه (دقیق‌تر)' : 'تخمینی از نسبت چهره — برای دقت بیشتر ابتدا پس‌زمینه را جدا کنید'}.</p> : null}
+            </Group>
+            <Group title="پوست و نور چهره (موتور چهره)">
+              {!face ? <p class="hint">ابتدا «تحلیل چهره» را بزنید تا ناحیهٔ صورت مشخص شود.</p> : (
+                <>
+                  <Switch label="اصلاح پوست (قرمزی بیش‌ازحد، توازن رنگ)" checked={!!e.face?.skin?.enabled && !!e.face?.ellipse}
+                    onChange={(v) => setFaceEngine({ skin: { ...faceCfg.skin, enabled: v } })} />
+                  {e.face?.skin?.enabled ? (
+                    <>
+                      <Slider label="کاهش قرمزی" min={0} max={100} value={faceCfg.skin.redness} defaultValue={40} format={(v) => formatNumber(v)} {...engineSlider('skin', 'redness')} />
+                      <Slider label="توازن رنگ" min={0} max={100} value={faceCfg.skin.balance} defaultValue={30} format={(v) => formatNumber(v)} {...engineSlider('skin', 'balance')} />
+                    </>
+                  ) : null}
+                  <Switch label="نور نرم و یکنواخت (سایه‌ها، چپ/راست، نور سوخته)" checked={!!e.face?.light?.enabled && !!e.face?.ellipse}
+                    onChange={(v) => setFaceEngine({ light: { ...faceCfg.light, enabled: v } })} />
+                  {e.face?.light?.enabled ? (
+                    <>
+                      <Slider label="روشن‌کردن سایه‌ها" min={0} max={100} value={faceCfg.light.fill} defaultValue={35} format={(v) => formatNumber(v)} {...engineSlider('light', 'fill')} />
+                      <Switch label="متعادل‌کردن نور چپ و راست" checked={faceCfg.light.even} onChange={(v) => setFaceEngine({ light: { ...faceCfg.light, even: v } })} />
+                      <Switch label="جلوگیری از نور سوخته" checked={faceCfg.light.protect} onChange={(v) => setFaceEngine({ light: { ...faceCfg.light, protect: v } })} />
+                    </>
+                  ) : null}
+                  <p class="hint">فقط پوست صورت اصلاح می‌شود؛ لب، چشم، ابرو، ریش و مو دست نمی‌خورند و شکل صورت، بافت پوست، سن و هویت تغییر نمی‌کند.</p>
+                </>
+              )}
             </Group>
             <Group title="پردازش گروهی">
               <p class="hint">برای همهٔ عکس‌های پروژه پیشنهاد کادر ساخته می‌شود؛ هیچ تغییری بدون تأیید شما اعمال نمی‌شود.</p>

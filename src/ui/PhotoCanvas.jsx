@@ -20,7 +20,7 @@ function editRenderKey(edit, rev) {
   const { crop, ...rest } = edit;
   const bg = { ...rest.bg, strokes: rest.bg.strokes.length, lastLen: rest.bg.strokes.at(-1)?.points.length || 0 };
   const rc = { ...rest.clothes.recolor, strokes: rest.clothes.recolor.strokes.length, lastLen: rest.clothes.recolor.strokes.at(-1)?.points.length || 0 };
-  return JSON.stringify([rest.adjust, bg, rc, rest.clothes.overlay, rest.clothes.patch, rev, rest.widthMm, rest.heightMm]);
+  return JSON.stringify([rest.adjust, rest.face, bg, rc, rest.clothes.overlay, rest.clothes.patch, rev, rest.widthMm, rest.heightMm]);
 }
 
 /**

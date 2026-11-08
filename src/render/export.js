@@ -4,7 +4,7 @@ import { getWorking, gatherAssets } from '../state/media.js';
 import { renderPhoto } from './renderPhoto.js';
 import { mmToPx } from '../core/units.js';
 import { defaultCrop, sourcePixelsPerOutputPixel } from '../core/crop.js';
-import { setJpegDpi, setPngDpi } from '../core/binary.js';
+import { setJpegDpi, setPngDpi, setPngSrgb } from '../core/binary.js';
 import { canvasToBlob, releaseDrawable } from '../platform/image.js';
 import { safeFileName } from '../core/filenames.js';
 import { dateStampFa } from '../core/dates.js';
@@ -46,7 +46,7 @@ export async function encodeCanvas(canvas, format, dpi, quality) {
   const type = format === 'png' ? 'image/png' : 'image/jpeg';
   const blob = await canvasToBlob(canvas, type, quality);
   const bytes = new Uint8Array(await blob.arrayBuffer());
-  const patched = format === 'png' ? setPngDpi(bytes, dpi) : setJpegDpi(bytes, dpi);
+  const patched = format === 'png' ? setPngSrgb(setPngDpi(bytes, dpi)) : setJpegDpi(bytes, dpi);
   return new Blob([patched], { type });
 }
 

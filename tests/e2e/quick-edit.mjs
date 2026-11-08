@@ -57,7 +57,10 @@ try {
   await nd.getByRole('button', { name: 'تعداد ثابت' }).click();
   await setNumber(nd, 'تعداد عکس برای هر نفر', '۴');
   await nd.locator('button.swatch[aria-label="آبی روشن"]').click();
-  await nd.getByRole('switch', { name: /اصلاح نور/ }).setChecked(false, { force: true });
+  await nd.getByRole('switch', { name: /اصلاح خودکار صورت/ }).setChecked(false, { force: true });
+  // engines are part of the template: skin engine and colour grading switched off here
+  await nd.getByRole('switch', { name: /اصلاح پوست/ }).setChecked(false, { force: true });
+  await nd.getByRole('switch', { name: /اعمال مقادیر تنظیم رنگ/ }).setChecked(false, { force: true });
   // edge group is part of the template: feather starts at 1 px; set 3 and enable a shadow
   assert((await nd.getByRole('slider', { name: /محو لبه/ }).inputValue()) === '1', 'feather defaults to 1 px in a new template');
   await nd.getByRole('slider', { name: /محو لبه/ }).fill('3');
@@ -94,9 +97,11 @@ try {
   assert(rt.includes('برای هر نفر ۴ عکس'), 'four copies per person');
   const st = await page.evaluate(() => {
     const h = window.__hoshmand; const s = h.getState(); const ph = Object.values(s.photos)[0]; const l = h.sheet.computeSheetLayout(s);
-    return { color: ph.edit.bg.color, enabled: ph.edit.bg.enabled, refine: ph.edit.bg.refine, shadow: ph.edit.bg.shadow, marks: s.project.sheet.marks, exposure: ph.edit.adjust.exposure, items: s.project.sheet.items.map((i) => i.copies), mode: s.project.sheet.mode, paper: s.project.sheet.paperId, margins: s.project.sheet.margins.top, placed: l.totals.placed, cap: l.capacity, boost: s.project.sheet.printBoost };
+    return { color: ph.edit.bg.color, enabled: ph.edit.bg.enabled, adjust: ph.edit.adjust, face: ph.edit.face, refine: ph.edit.bg.refine, shadow: ph.edit.bg.shadow, marks: s.project.sheet.marks, exposure: ph.edit.adjust.exposure, items: s.project.sheet.items.map((i) => i.copies), mode: s.project.sheet.mode, paper: s.project.sheet.paperId, margins: s.project.sheet.margins.top, placed: l.totals.placed, cap: l.capacity, boost: s.project.sheet.printBoost };
   });
   assert(st.enabled && st.color === '#cfe3f5', `bg ${st.color}`);
+  assert(st.adjust.brightness === 0 && st.adjust.whites === 0 && st.adjust.exposure === 0, `grading off → neutral adjustments (${JSON.stringify(st.adjust)})`);
+  assert(st.face.skin.enabled === false && st.face.light.enabled === true, `skin engine off, lighting on (${JSON.stringify(st.face)})`);
   assert(st.marks.borders === true && st.marks.borderWidth === 0.5 && st.marks.borderColor === '#404040', `border applied from the template ${JSON.stringify(st.marks)}`);
   assert(st.refine.feather === 3 && st.shadow.enabled === true, `own edge settings applied (${JSON.stringify(st.refine)} ${JSON.stringify(st.shadow)})`);
   assert(JSON.stringify(st.items) === '[4]' && st.mode === 'exact' && st.placed === 4 && st.cap === 8, `sheet ${JSON.stringify(st)}`);

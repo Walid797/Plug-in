@@ -83,6 +83,25 @@ function cropStatus(r) {
   return { kind: 'warn', text: 'کادر خودکار انجام نشد (مدل چهره در دسترس نیست)' };
 }
 
+function engineStatus(r, preset) {
+  const out = [];
+  const e = r.engine;
+  if (preset?.skinOn || preset?.lightOn) {
+    if (!r.faces) out.push({ kind: 'warn', icon: 'triangle-alert', text: 'موتور پوست و نور اجرا نشد (چهره پیدا نشد)' });
+    else if (!e) out.push({ kind: 'warn', icon: 'triangle-alert', text: 'موتور پوست و نور اجرا نشد (خطا)' });
+    else if (!e.applied) out.push({ kind: 'warn', icon: 'triangle-alert', text: e.reason === 'NO_SKIN' ? 'پوست در عکس به‌اندازهٔ کافی تشخیص داده نشد؛ موتور پوست و نور اعمال نشد' : 'موتور پوست و نور اعمال نشد' });
+    else {
+      if (preset.skinOn) out.push(e.redShift > 0.3 ? { kind: 'ok', icon: 'check', text: 'قرمزی بیش‌ازحد پوست کم شد' } : { kind: 'ok', icon: 'check', text: 'رنگ پوست طبیعی بود؛ تغییر نکرد' });
+      if (preset.lightOn) out.push(e.lift > 0.5 || e.protectedFrac > 0.02 ? { kind: 'ok', icon: 'check', text: `نور صورت یکنواخت‌تر شد${e.protectedFrac > 0.02 ? ' (نور سوخته مهار شد)' : ''}` } : { kind: 'ok', icon: 'check', text: 'نور صورت از قبل یکنواخت بود' });
+    }
+  }
+  if (preset?.grade) out.push({ kind: 'ok', icon: 'check', text: 'تنظیم رنگ قالب اعمال شد' });
+  if (r.shoulders === 'ok') out.push({ kind: 'ok', icon: 'check', text: 'هر دو شانه دیده می‌شود' });
+  else if (r.shoulders === 'widened') out.push({ kind: 'ok', icon: 'check', text: 'کادر برای دیدن شانه‌ها بازتر شد' });
+  else if (r.shoulders === 'limited') out.push({ kind: 'warn', icon: 'triangle-alert', text: 'شانه‌ها کامل دیده نمی‌شوند و کادر بازتر نمی‌شود (قاعدهٔ اندازهٔ سر یا لبهٔ عکس)' });
+  return out;
+}
+
 /** Result of a one-click preset: what really happened, then one Print button. */
 function QuickReadyDialog({ presetId, results, cancelled, aiState }) {
   const st = getState();
@@ -118,6 +137,7 @@ function QuickReadyDialog({ presetId, results, cancelled, aiState }) {
                 <Badge kind="ok" icon="check">اندازهٔ {sizeName}</Badge>
                 <Badge kind={b.kind} icon={b.kind === 'ok' ? 'check' : b.kind ? 'triangle-alert' : 'info'}>{b.text}</Badge>
                 <Badge kind={c.kind} icon={c.kind === 'ok' ? 'check' : c.kind ? 'triangle-alert' : 'info'}>{c.text}</Badge>
+                {engineStatus(r, preset).map((b) => <Badge key={b.text} kind={b.kind} icon={b.icon}>{b.text}</Badge>)}
                 {r.light ? <Badge kind="gold" icon="sun">نور چهره اصلاح شد ({r.light > 0 ? 'روشن‌تر' : 'تیره‌تر'})</Badge> : r.crop === 'ok' ? <Badge kind="ok" icon="check">نور چهره مناسب</Badge> : null}
               </span>
               {b.detail ? <p class="tiny muted">{b.detail}</p> : null}

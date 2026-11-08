@@ -1,7 +1,7 @@
 // Face analysis with the local Face Landmarker. Landmarks stay in memory only.
 import { getFaceLandmarker, runWithFallback } from './runtime.js';
 import { getPreview, getPersonMask, setFace, getFace } from '../state/media.js';
-import { faceMetrics, crownFromMask, faceRegionStats, assessQuality, evaluateCrop, suggestCrop, genericProfile, shoulderCoverage } from '../core/idphoto.js';
+import { faceMetrics, crownFromMask, faceRegionStats, assessQuality, evaluateCrop, suggestCrop, genericProfile, shoulderCoverage, shoulderSides } from '../core/idphoto.js';
 import { findProfile } from '../core/presets.js';
 import { applyAdjustments } from '../core/adjust.js';
 import { defaultCrop } from '../core/crop.js';
@@ -107,6 +107,16 @@ export async function shoulderFracFor(photo) {
   return shoulderCoverage(crop, e.widthMm, e.heightMm, photo.width, photo.height, maskSampler(mask, photo.width, photo.height));
 }
 
+/** Shoulder coverage and left/right symmetry for a crop (default: the photo's crop), or null without a person mask. */
+export async function shoulderStatsFor(photo, crop = null) {
+  if (!photo.maskKey) return null;
+  const mask = await getPersonMask(photo).catch(() => null);
+  if (!mask) return null;
+  const e = photo.edit;
+  const c = crop || e.crop || defaultCrop(photo.width, photo.height, e.widthMm / e.heightMm);
+  return shoulderSides(c, e.widthMm, e.heightMm, photo.width, photo.height, maskSampler(mask, photo.width, photo.height));
+}
+
 /** Quality checklist for the photo's current crop. */
 export function currentQuality(photo, extras = {}) {
   const f = getFace(photo.id);
@@ -117,7 +127,7 @@ export function currentQuality(photo, extras = {}) {
   const crop = e.crop || defaultCrop(photo.width, photo.height, e.widthMm / e.heightMm);
   const evaluation = evaluateCrop(f.metrics, crop, e.widthMm, e.heightMm, photo.width, photo.height);
   const info = outputInfo(photo, getState().project?.sheet?.dpi || getState().settings.defaultDpi);
-  return assessQuality({ metrics: f.metrics, evaluation, profile, stats: f.stats, faceCount: f.faceCount, effectiveDpi: info.effectiveDpi, shoulderFrac: extras.shoulderFrac ?? null });
+  return assessQuality({ metrics: f.metrics, evaluation, profile, stats: f.stats, faceCount: f.faceCount, effectiveDpi: info.effectiveDpi, shoulderFrac: extras.shoulderFrac ?? null, shoulderSides: extras.shoulderSides ?? null });
 }
 
 export function suggestionFor(photo) {

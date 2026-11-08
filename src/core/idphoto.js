@@ -111,7 +111,8 @@ export function suggestCrop(m, profile, srcW, srcH) {
   // Keep at least a small gap above the head if the eye rule would cut it.
   const crownTopMm = H / 2 + (m.crownV - vc) / k;
   if (crownTopMm < 1) vc += (crownTopMm - 1) * k;
-  const uc = (m.faceCenterU + 0) / 2;
+  // the face centre (cheek to cheek) is placed exactly on the vertical centre line of the frame
+  const uc = m.faceCenterU;
   const c = faceToSource(m, uc, vc);
   return { cx: c.x / srcW, cy: c.y / srcH, cw: (W * k) / srcW, rotation: m.rollDeg };
 }
@@ -154,6 +155,22 @@ export function shoulderCoverage(crop, widthMm, heightMm, srcW, srcH, sample) {
   return hit / n;
 }
 
+/**
+ * Like shoulderCoverage, but also reports the left and right halves separately
+ * (each as the share of its own samples inside the person), for a symmetry check.
+ */
+export function shoulderSides(crop, widthMm, heightMm, srcW, srcH, sample) {
+  const M = cropMatrix(crop, srcW, srcH, widthMm, heightMm);
+  const inv = invertMatrix(M);
+  const n = 40; let l = 0; let r = 0;
+  for (let i = 0; i < n; i += 1) {
+    const p = applyMatrix(inv, (widthMm * (i + 0.5)) / n, heightMm * 0.94);
+    const hit = p.x >= 0 && p.y >= 0 && p.x < srcW && p.y < srcH && sample(p.x, p.y) >= 0.5 ? 1 : 0;
+    if (i < n / 2) l += hit; else r += hit;
+  }
+  return { left: l / (n / 2), right: r / (n / 2), frac: (l + r) / n };
+}
+
 /** Luma statistics of a face crop: brightness, left/right balance, sharpness. */
 export function faceRegionStats(rgba, w, h) {
   const L = new Float32Array(w * h);
@@ -183,11 +200,11 @@ export const QUALITY_THRESHOLDS = Object.freeze({
   rollWarnDeg: 2, rollErrorDeg: 8, yawWarn: 0.08, centreWarnFrac: 0.05,
   darkL: 0.28, brightL: 0.86, balanceWarn: 0.16, sharpnessWarn: 40,
   dpiWarn: 250, dpiError: 150,
-  topMarginMinMm: 1.5, topMarginMaxFrac: 0.18, shoulderMinFrac: 0.55,
+  topMarginMinMm: 1.5, topMarginMaxFrac: 0.18, shoulderMinFrac: 0.55, shoulderSymmetryWarn: 0.25,
 });
 
 /** Assemble the human-facing checklist (levels: ok | warn | error | info). */
-export function assessQuality({ metrics, evaluation, profile, stats, faceCount, effectiveDpi, shoulderFrac = null }) {
+export function assessQuality({ metrics, evaluation, profile, stats, faceCount, effectiveDpi, shoulderFrac = null, shoulderSides: sides = null }) {
   const T = QUALITY_THRESHOLDS;
   const out = [];
   if (!faceCount) return [{ code: 'FACE_NOT_FOUND', level: 'error' }];
@@ -219,6 +236,9 @@ export function assessQuality({ metrics, evaluation, profile, stats, faceCount, 
   }
   if (shoulderFrac != null) {
     out.push({ code: 'SHOULDERS', level: shoulderFrac < T.shoulderMinFrac ? 'warn' : 'ok', value: shoulderFrac });
+  }
+  if (sides && shoulderFrac != null) {
+    out.push({ code: 'SHOULDER_SYMMETRY', level: Math.abs(sides.left - sides.right) > QUALITY_THRESHOLDS.shoulderSymmetryWarn ? 'warn' : 'ok', value: sides.left - sides.right });
   }
   if (effectiveDpi != null) {
     out.push({ code: 'RESOLUTION', level: effectiveDpi < T.dpiError ? 'error' : effectiveDpi < T.dpiWarn ? 'warn' : 'ok', value: effectiveDpi });

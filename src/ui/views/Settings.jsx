@@ -241,7 +241,7 @@ export function SettingsView() {
               { value: 'ask', label: 'هر بار بپرس' }, { value: 'always', label: 'همیشه روی این دستگاه ذخیره شود' }, { value: 'never', label: 'هرگز (فقط در همین جلسه)' },
             ]} />
             <Select label="DPI پیش‌فرض خروجی" value={String(s.defaultDpi)} onChange={(v) => updateSettings({ defaultDpi: Number(v) })} options={[300, 350, 400, 600].map((d) => ({ value: String(d), label: `${formatNumber(d)} DPI` }))} />
-            <Select label="کیفیت JPEG" value={String(s.jpegQuality)} onChange={(v) => updateSettings({ jpegQuality: Number(v) })} options={[{ value: '0.9', label: 'بالا (۹۰)' }, { value: '0.95', label: 'خیلی بالا (۹۵)' }, { value: '0.98', label: 'تقریباً بدون افت (۹۸)' }]} />
+            <Select label="کیفیت JPEG" value={String(s.jpegQuality)} onChange={(v) => updateSettings({ jpegQuality: Number(v) })} options={[{ value: '0.9', label: 'بالا (۹۰)' }, { value: '0.95', label: 'خیلی بالا (۹۵)' }, { value: '0.98', label: 'تقریباً بدون افت (۹۸)' }, { value: '1', label: 'حداکثر (۱۰۰)' }]} />
           </div>
           <Switch label="نمایش دوبارهٔ راهنمای شروع" checked={!s.onboardingDone} onChange={(v) => { updateSettings({ onboardingDone: !v }); if (v) openDialog('onboarding').then(() => updateSettings({ onboardingDone: true })); }} />
         </section>

@@ -7,11 +7,17 @@ import { formatNumber, toFaDigits } from '../core/digits.js';
 import { orientationName, layoutErrorText } from '../i18n/fa.js';
 import { PAPER_PRESETS, PHOTO_PRESETS, RULE_PROFILES, BACKGROUND_PRESETS, DPI_PRESETS, BORDER_COLORS } from '../core/presets.js';
 import { PRINT_BOOST_IDS } from '../core/adjust.js';
-import { findQuickPreset, normalizeQuickPreset, presetCapacity, quickPaper, quickWarnings, copiesPerPerson, QUICK_DEFAULTS, QUICK_PRESETS } from '../core/quickpresets.js';
+import { findQuickPreset, normalizeQuickPreset, presetCapacity, quickPaper, quickWarnings, copiesPerPerson, QUICK_DEFAULTS, QUICK_PRESETS, GRADE_RANGES } from '../core/quickpresets.js';
 import { saveQuickPreset, saveQuickPresetAsNew, resetQuickPreset, deleteQuickPreset } from '../state/quick.js';
 import { PRINT_BOOST_FA } from '../print/sheet.js';
 
 const sameSize = (a, w, h) => Math.abs(a.widthMm - w) < 0.01 && Math.abs(a.heightMm - h) < 0.01;
+
+const GRADE_LABELS = {
+  gExposure: 'نوردهی (Exposure؛ ۷٫۵ = ‎+۰٫۱۵ EV)', gBrightness: 'روشنایی (Brightness)', gContrast: 'کنتراست (Contrast)', gSaturation: 'اشباع رنگ (Saturation)',
+  gTemperature: 'دمای رنگ (Temperature)', gTint: 'ته‌رنگ (Tint)', gHighlights: 'روشنی‌ها (Highlights)', gShadows: 'سایه‌ها (Shadows)',
+  gWhites: 'سفیدها (Whites)', gBlacks: 'سیاه‌ها (Blacks)', gSharpness: 'وضوح / تیزی جزئی (Sharpness)', gDenoise: 'کاهش نویز رنگی',
+};
 
 export function bgColorName(color) {
   return BACKGROUND_PRESETS.find((b) => b.color === color)?.nameFa || 'رنگ دلخواه';
@@ -110,7 +116,7 @@ export function QuickPresetEditorDialog({ presetId, mode = 'edit' }) {
             ]} />
           </Group>
 
-          <Group title="مراحل خودکار">
+          <Group title="موتور پس‌زمینه و کادر">
             <Switch label="تغییر پس‌زمینه با هوش مصنوعی محلی" checked={d.whiteBg} onChange={(v) => set({ whiteBg: v })} />
             {d.whiteBg ? (
               <div class="swatches" role="group" aria-label="رنگ پس‌زمینه">
@@ -123,12 +129,43 @@ export function QuickPresetEditorDialog({ presetId, mode = 'edit' }) {
                 <span class="small muted">{bgColorName(d.bgColor)}</span>
               </div>
             ) : null}
-            <Switch label="کادر و اندازهٔ سر از روی چهره" checked={d.autoCrop} onChange={(v) => set({ autoCrop: v })} />
-            <Switch label="اصلاح نور چهرهٔ خیلی تاریک یا خیلی روشن" checked={d.autoLight} onChange={(v) => set({ autoLight: v })} hint="فقط چهره‌ای که بررسی کیفیت آن را تاریک/پرنور می‌داند؛ رنگ طبیعی پوست عوض نمی‌شود." />
+            <Switch label="کادر و اندازهٔ سر از روی چهره (چهره دقیقاً وسط، فضای بالای سر، خط چشم)" checked={d.autoCrop} onChange={(v) => set({ autoCrop: v })} />
+            {d.autoCrop ? <Switch label="دیده‌شدن هر دو شانه (در صورت لزوم کادر تا حد قاعدهٔ اندازهٔ سر باز می‌شود)" checked={d.cropShoulders} onChange={(v) => set({ cropShoulders: v })} /> : null}
+          </Group>
+
+          <Group title="موتور چهره و پوست">
+            <Switch label="اصلاح پوست (فقط روی پوست؛ لب، چشم، ابرو و ریش دست نمی‌خورد)" checked={d.skinOn} onChange={(v) => set({ skinOn: v })} />
+            {d.skinOn ? (
+              <>
+                <Slider label="کاهش قرمزی بیش‌ازحد پوست" min={0} max={100} value={d.skinRedness} defaultValue={40} format={(v) => formatNumber(v)} onInput={(v) => set({ skinRedness: v })} />
+                <Slider label="توازن رنگ پوست (یکنواخت‌کردن لکه‌های رنگی بزرگ)" min={0} max={100} value={d.skinBalance} defaultValue={30} format={(v) => formatNumber(v)} onInput={(v) => set({ skinBalance: v })} />
+              </>
+            ) : null}
+            <p class="hint">رنگ پوست از خود صورت اندازه‌گیری می‌شود، پس برای هر رنگ پوستی کار می‌کند. فقط قرمزیِ بالاتر از حد طبیعی کم می‌شود؛ بافت پوست، رنگ لب و چشم و شکل و اندازهٔ اعضای صورت، سن و هویت هرگز تغییر نمی‌کند.</p>
+          </Group>
+
+          <Group title="موتور نور">
+            <Switch label="نور نرم و یکنواخت روی صورت" checked={d.lightOn} onChange={(v) => set({ lightOn: v })} />
+            {d.lightOn ? (
+              <>
+                <Slider label="روشن‌کردن سایه‌ها (زیر چشم، کنار بینی، زیر چانه، پیشانی)" min={0} max={100} value={d.lightFill} defaultValue={35} format={(v) => formatNumber(v)} onInput={(v) => set({ lightFill: v })} />
+                <Switch label="متعادل‌کردن نور چپ و راست صورت" checked={d.lightEven} onChange={(v) => set({ lightEven: v })} />
+                <Switch label="جلوگیری از نور سوخته (Overexposure)" checked={d.lightProtect} onChange={(v) => set({ lightProtect: v })} />
+              </>
+            ) : null}
+            <Switch label="اصلاح خودکار صورت خیلی تاریک یا خیلی روشن (نوردهی)" checked={d.autoLight} onChange={(v) => set({ autoLight: v })} />
+            <p class="hint">سایه‌ها فقط تا سقف مشخصی روشن می‌شوند تا صورت «سفید» نشود.</p>
+          </Group>
+
+          <Group title="موتور تنظیم رنگ (Color Grading)">
+            <Switch label="اعمال مقادیر تنظیم رنگ این قالب روی عکس" checked={d.grade} onChange={(v) => set({ grade: v })} hint="مقادیر پیشنهادی برای ظاهر طبیعی عکس پرسنلی‌اند، نه مقادیر ثبت‌شده از یک پردازش؛ روی عکس خودتان بررسی کنید. اجرای قالب، تنظیمات نور و رنگ قبلی آن عکس را با این مقادیر جایگزین می‌کند (با واگرد برمی‌گردد)." />
+            {d.grade ? GRADE_RANGES.map(([k, lo, hi]) => (
+              <Slider key={k} label={GRADE_LABELS[k]} min={lo} max={hi} step={k === 'gExposure' ? 0.5 : 1} value={d[k]} defaultValue={QUICK_DEFAULTS[k]} format={(v) => formatNumber(v, { maxFraction: 1 })} onInput={(v) => set({ [k]: v })} />
+            )) : null}
           </Group>
 
           {d.whiteBg ? (
-            <Group title="اصلاح لبه‌ها و سایه">
+            <Group title="موتور پس‌زمینه: اصلاح لبه‌ها و سایه">
               <Switch label="چسباندن لبه به جزئیات عکس (فیلتر هدایت‌شده)" checked={d.edgeAware} onChange={(v) => set({ edgeAware: v })} />
               <Slider label="جمع/گسترش لبه" min={-100} max={100} value={d.edgeShift} defaultValue={0} format={(v) => formatNumber(v)} onInput={(v) => set({ edgeShift: v })} />
               <Slider label="نرمی لبه" min={0} max={100} value={d.edgeSoftness} defaultValue={40} format={(v) => formatNumber(v)} onInput={(v) => set({ edgeSoftness: v })} />

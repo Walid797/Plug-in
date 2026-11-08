@@ -6,7 +6,7 @@ import { PAPER_PRESETS } from '../core/presets.js';
 import { printBoostLut, applyLut, PRINT_BOOST_IDS } from '../core/adjust.js';
 import { mmToPx, mmToPt } from '../core/units.js';
 import { layoutToPdfPages, buildPdf } from '../core/pdf.js';
-import { parseJpegInfo, setJpegDpi, setPngDpi } from '../core/binary.js';
+import { parseJpegInfo, setJpegDpi, setPngDpi, setPngSrgb } from '../core/binary.js';
 import { renderForOutput } from '../render/export.js';
 import { canvasToBlob, makeDomCanvas } from '../platform/image.js';
 import { runTask } from '../platform/worker.js';
@@ -527,7 +527,7 @@ export async function runSheetImageExport(format = 'jpeg') {
       const c = await renderSheetCanvas(state, layout, page, assets, dpi);
       const blob = await canvasToBlob(c, format === 'png' ? 'image/png' : 'image/jpeg', state.settings.jpegQuality);
       const raw = new Uint8Array(await blob.arrayBuffer());
-      const data = format === 'png' ? setPngDpi(raw, dpi) : setJpegDpi(raw, dpi);
+      const data = format === 'png' ? setPngSrgb(setPngDpi(raw, dpi)) : setJpegDpi(raw, dpi);
       files.push({ name: safeFileName(`${state.project.name}-برگه-${toFaDigits(page.index + 1)}`, format === 'png' ? 'png' : 'jpg'), data });
       c.width = 0; c.height = 0;
     }

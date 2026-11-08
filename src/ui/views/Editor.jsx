@@ -44,7 +44,10 @@ const ADJ = [
   { key: 'saturation', label: 'اشباع رنگ', min: -100, max: 100 },
   { key: 'temperature', label: 'دمای رنگ (سرد ↔ گرم)', min: -100, max: 100 },
   { key: 'tint', label: 'ته‌رنگ (سبز ↔ ارغوانی)', min: -100, max: 100 },
+  { key: 'whites', label: 'سفیدها (Whites)', min: -100, max: 100 },
+  { key: 'blacks', label: 'سیاه‌ها (Blacks)', min: -100, max: 100 },
   { key: 'sharpness', label: 'وضوح (تیزی)', min: 0, max: 100 },
+  { key: 'denoise', label: 'کاهش نویز رنگی', min: 0, max: 100 },
 ];
 
 export function SizePicker({ photo }) {
@@ -140,7 +143,7 @@ export function EditorView() {
             </Group>
             <Group title="نور و رنگ" actions={<Button size="sm" variant="ghost" icon="rotate-ccw" disabled={JSON.stringify(e.adjust) === JSON.stringify(ADJUSTMENT_DEFAULTS)} onClick={() => updateEdit(photo.id, { adjust: { ...ADJUSTMENT_DEFAULTS } })}>بازنشانی همه</Button>}>
               {ADJ.map((a) => (
-                <Slider key={a.key} label={a.label} min={a.min} max={a.max} value={e.adjust[a.key]} defaultValue={ADJUSTMENT_DEFAULTS[a.key]}
+                <Slider key={a.key} label={a.label} min={a.min} max={a.max} value={e.adjust[a.key] ?? 0} defaultValue={ADJUSTMENT_DEFAULTS[a.key]}
                   format={(v) => formatNumber(v)}
                   onInput={(v) => setAdj(a.key, v, false)}
                   onCommit={(v, start) => { setAdj(a.key, start, false); setAdj(a.key, v, true); }} />

@@ -8,6 +8,7 @@
 import { cropMatrix, invertMatrix, applyMatrix, multiplyMatrix, defaultCrop } from '../core/crop.js';
 import { applyAdjustments, isNeutral } from '../core/adjust.js';
 import { decontaminate, recolorRegion, boxFilter } from '../core/mask.js';
+import { applyFaceEngine, ellipseToOutput } from '../core/faceengine.js';
 import { makeCanvas } from '../platform/image.js';
 
 export const FULL_FRAME = Object.freeze({ cx: 0.5, cy: 0.5, cw: 1, rotation: 0 });
@@ -132,10 +133,12 @@ export function renderPhoto(edit, assets, outW, outH, opts = {}) {
   const recolorOn = !before && clothes.recolor?.enabled && assets.clothesMask;
   const bgOn = !before && edit.bg?.enabled && assets.mask;
   const adjustOn = !before && !isNeutral(edit.adjust);
+  const face = edit.face;
+  const faceOn = !before && !!(face?.ellipse && (face.skin?.enabled || face.light?.enabled));
   const frameWidthPx = opts.frameWidthPx || outW;
   const pxPerMm = opts.pxPerMm || outW / (edit.widthMm || 30);
 
-  if (recolorOn || bgOn || adjustOn) {
+  if (recolorOn || bgOn || adjustOn || faceOn) {
     const img = fctx.getImageData(0, 0, outW, outH);
     const data = img.data;
     if (recolorOn) {
@@ -143,6 +146,10 @@ export function renderPhoto(edit, assets, outW, outH, opts = {}) {
       recolorRegion(data, a, outW, outH, hexToRgb(clothes.recolor.color), (clothes.recolor.strength ?? 100) / 100);
     }
     if (adjustOn) applyAdjustments(data, outW, outH, edit.adjust, { scale: Math.max(1, frameWidthPx / 350) });
+    if (faceOn) {
+      const rep = applyFaceEngine(data, outW, outH, ellipseToOutput(face.ellipse, src.width, src.height, M), face);
+      if (opts.faceReport) Object.assign(opts.faceReport, rep);
+    }
     let alpha = null;
     if (bgOn) {
       alpha = maskInOutput(assets.mask, src.width, src.height, M, outW, outH);

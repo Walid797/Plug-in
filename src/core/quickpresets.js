@@ -5,7 +5,7 @@
 
 import { computeLayout } from './layout.js';
 import { PAPER_PRESETS, PHOTO_PRESETS, DPI_PRESETS, RULE_PROFILES, findPaper, findPhoto } from './presets.js';
-import { PRINT_BOOST_IDS } from './adjust.js';
+import { PRINT_BOOST_IDS, ADJUSTMENT_DEFAULTS } from './adjust.js';
 import { formatNumber } from './digits.js';
 
 export const FILL_ORDERS = Object.freeze(['col-ltr', 'col-rtl', 'rtl', 'ltr']);
@@ -27,6 +27,17 @@ export const QUICK_DEFAULTS = Object.freeze({
   align: 'top-left', // where the photo grid sits on the sheet: top-left | center | top-right
   perPerson: 'sheet', copies: 8,
   whiteBg: true, bgColor: '#ffffff', autoCrop: true, autoLight: true,
+  // colour-grading engine: suggested starting values for a natural personnel look (not measured data)
+  // exposure 7.5 on the slider = +0.15 EV (the slider spans ±2 EV over ±100)
+  grade: true,
+  gExposure: 7.5, gBrightness: 8, gContrast: 5, gSaturation: 3, gTemperature: 2, gTint: 0,
+  gHighlights: -10, gShadows: 12, gWhites: 8, gBlacks: -3, gSharpness: 14, gDenoise: 30,
+  // face & skin engine (never reshapes the face): excess redness, colour evenness
+  skinOn: true, skinRedness: 40, skinBalance: 30,
+  // lighting engine: fill light for shadows (eyes, nose, chin, forehead), L/R balance, burnt-highlight protection
+  lightOn: true, lightFill: 35, lightEven: true, lightProtect: true,
+  // crop engine: widen the frame (within the head-size rule) when the shoulders are cut off
+  cropShoulders: true,
   // background edge clean-up (same meaning as the Background section; feather in mask pixels)
   edgeAware: true, edgeShift: 0, edgeSoftness: 40, edgeFeather: 1, decontaminate: true,
   shadow: false, shadowOpacity: 25, shadowBlur: 1.5, shadowX: 0, shadowY: 0.8,
@@ -40,6 +51,33 @@ export const QUICK_DEFAULTS = Object.freeze({
 });
 
 export const QUICK_FIELDS = Object.freeze(Object.keys(QUICK_DEFAULTS));
+
+/** Grading fields with their slider limits and the adjustment each one drives. */
+export const GRADE_RANGES = Object.freeze([
+  ['gExposure', -100, 100], ['gBrightness', -100, 100], ['gContrast', -100, 100], ['gSaturation', -100, 100],
+  ['gTemperature', -100, 100], ['gTint', -100, 100], ['gHighlights', -100, 100], ['gShadows', -100, 100],
+  ['gWhites', -100, 100], ['gBlacks', -100, 100], ['gSharpness', 0, 100], ['gDenoise', 0, 100],
+]);
+const GRADE_KEYS = Object.freeze({
+  gExposure: 'exposure', gBrightness: 'brightness', gContrast: 'contrast', gSaturation: 'saturation', gTemperature: 'temperature',
+  gTint: 'tint', gHighlights: 'highlights', gShadows: 'shadows', gWhites: 'whites', gBlacks: 'blacks', gSharpness: 'sharpness', gDenoise: 'denoise',
+});
+
+/** Photo adjustments a preset applies (all neutral defaults + the grading values), or null when grading is off. */
+export function presetAdjust(p) {
+  if (!p.grade) return null;
+  const a = { ...ADJUSTMENT_DEFAULTS };
+  for (const [k, adj] of Object.entries(GRADE_KEYS)) a[adj] = p[k];
+  return a;
+}
+
+/** Face & skin + lighting parameters a preset writes to the photo edit (ellipse added by the analysis). */
+export function presetFaceParams(p) {
+  return {
+    skin: { enabled: p.skinOn, redness: p.skinRedness, balance: p.skinBalance },
+    light: { enabled: p.lightOn, fill: p.lightFill, even: p.lightEven, protect: p.lightProtect },
+  };
+}
 
 const BUILTIN = [
   // 4 photos per person (the left two columns); the rest of the 8-slot sheet stays in one piece
@@ -87,6 +125,16 @@ export function normalizeQuickPreset(raw = {}) {
   p.bgColor = typeof raw.bgColor === 'string' && /^#[0-9a-f]{6}$/i.test(raw.bgColor) ? raw.bgColor.toLowerCase() : D.bgColor;
   p.autoCrop = bool(raw.autoCrop, D.autoCrop);
   p.autoLight = bool(raw.autoLight, D.autoLight);
+  p.grade = bool(raw.grade, D.grade);
+  for (const [k, lo, hi] of GRADE_RANGES) p[k] = Math.round(num(raw[k], lo, hi, D[k]) * 10) / 10;
+  p.skinOn = bool(raw.skinOn, D.skinOn);
+  p.skinRedness = Math.round(num(raw.skinRedness, 0, 100, D.skinRedness));
+  p.skinBalance = Math.round(num(raw.skinBalance, 0, 100, D.skinBalance));
+  p.lightOn = bool(raw.lightOn, D.lightOn);
+  p.lightFill = Math.round(num(raw.lightFill, 0, 100, D.lightFill));
+  p.lightEven = bool(raw.lightEven, D.lightEven);
+  p.lightProtect = bool(raw.lightProtect, D.lightProtect);
+  p.cropShoulders = bool(raw.cropShoulders, D.cropShoulders);
   p.edgeAware = bool(raw.edgeAware, D.edgeAware);
   p.edgeShift = Math.round(num(raw.edgeShift, -100, 100, D.edgeShift));
   p.edgeSoftness = Math.round(num(raw.edgeSoftness, 0, 100, D.edgeSoftness));

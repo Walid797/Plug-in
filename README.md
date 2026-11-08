@@ -117,6 +117,8 @@ Chrome و Edge جدید (پیشنهادی)، Firefox جدید، Chrome اندر�
 
 راهنمای کامل: [docs/print-calibration.md](docs/print-calibration.md)
 
+پنج موتور ویرایش عکس پرسنلی (پس‌زمینه، چهره و پوست، نور، تنظیم رنگ، کادر و چاپ) و اینکه هر مورد چطور پیاده شده یا نشده: [docs/personnel-engines.md](docs/personnel-engines.md)
+
 ---
 
 ## حریم خصوصی و داده‌ها

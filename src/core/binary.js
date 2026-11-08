@@ -83,6 +83,26 @@ function pngChunk(type, data) {
   return out;
 }
 
+/** Insert an sRGB chunk (rendering intent 0, perceptual) right after IHDR so viewers treat the colours as sRGB. */
+export function setPngSrgb(b) {
+  for (let i = 0; i < 8; i += 1) if (b[i] !== PNG_SIG[i]) throw new Error('not a PNG');
+  const chunk = pngChunk('sRGB', new Uint8Array([0]));
+  const parts = [b.subarray(0, 8)];
+  let o = 8; let inserted = false;
+  while (o < b.length) {
+    const len = u32(b, o);
+    const type = String.fromCharCode(b[o + 4], b[o + 5], b[o + 6], b[o + 7]);
+    const end = o + 12 + len;
+    if (type !== 'sRGB' && type !== 'iCCP') parts.push(b.subarray(o, end));
+    if (type === 'IHDR' && !inserted) { parts.push(chunk); inserted = true; }
+    o = end;
+  }
+  const out = new Uint8Array(parts.reduce((s, p) => s + p.length, 0));
+  let p = 0;
+  for (const part of parts) { out.set(part, p); p += part.length; }
+  return out;
+}
+
 /** Insert/replace pHYs (pixels per metre) so viewers know the intended print size. */
 export function setPngDpi(b, dpi) {
   for (let i = 0; i < 8; i += 1) if (b[i] !== PNG_SIG[i]) throw new Error('not a PNG');

@@ -11,6 +11,9 @@ export const ADJUSTMENT_DEFAULTS = Object.freeze({
   temperature: 0, // -100..100 (cool ↔ warm)
   tint: 0, // -100..100 (green ↔ magenta)
   sharpness: 0, // 0..100
+  whites: 0, // -100..100: moves the white point (brightens/dims the lightest tones)
+  blacks: 0, // -100..100: moves the black point (negative = deeper blacks)
+  denoise: 0, // 0..100: colour-noise reduction (chrominance only; luminance detail untouched)
   grayscale: false,
 });
 
@@ -38,6 +41,12 @@ export function whiteBalance(temperature, tint) {
 }
 
 function toneCurve(s, p) {
+  // white / black point first: whites>0 lowers the white point (lights get lighter),
+  // blacks<0 raises the black point (deeper blacks). 0 and 1 stay mapped to themselves
+  // when both sliders are 0; whites>0 clips the very top by design.
+  const wp = 1 - 0.16 * ((p.whites || 0) / 100);
+  const bp = -0.12 * ((p.blacks || 0) / 100);
+  if (wp !== 1 || bp !== 0) s = clamp01((s - bp) / Math.max(0.2, wp - bp));
   const br = p.brightness / 100;
   if (br) s = s ** (2 ** (-0.85 * br));
   const hl = p.highlights / 100;
@@ -107,6 +116,36 @@ export function boxBlurRGB(src, w, h, r) {
 }
 
 /**
+ * Colour-noise reduction: blur only Cb/Cr (box blur) and keep the luminance exactly,
+ * so hair, brows and skin texture stay sharp while colour speckles disappear.
+ * @param {number} amount 0..1
+ */
+export function chromaDenoise(data, w, h, amount, scale = 1) {
+  const r = Math.max(1, Math.round((1 + amount * 2) * Math.max(1, scale)));
+  const n = w * h;
+  const Y = new Float32Array(n);
+  // pack Cb and Cr as "RGB-like" planes so boxBlurRGB (3 channels) can be reused
+  const pack = new Uint8ClampedArray(n * 4);
+  for (let i = 0, j = 0; j < n; i += 4, j += 1) {
+    const R = data[i]; const G = data[i + 1]; const B = data[i + 2];
+    Y[j] = 0.299 * R + 0.587 * G + 0.114 * B;
+    pack[i] = clamp01((-0.168736 * R - 0.331264 * G + 0.5 * B) / 255 + 0.5) * 255;
+    pack[i + 1] = clamp01((0.5 * R - 0.418688 * G - 0.081312 * B) / 255 + 0.5) * 255;
+    pack[i + 3] = 255;
+  }
+  const blurred = boxBlurRGB(pack, w, h, r);
+  for (let i = 0, j = 0; j < n; i += 4, j += 1) {
+    const dCb = (pack[i] + (blurred[j * 3] - pack[i]) * amount - 127.5);
+    const dCr = (pack[i + 1] + (blurred[j * 3 + 1] - pack[i + 1]) * amount - 127.5);
+    const y = Y[j];
+    data[i] = y + 1.402 * dCr;
+    data[i + 1] = y - 0.344136 * dCb - 0.714136 * dCr;
+    data[i + 2] = y + 1.772 * dCb;
+  }
+  return data;
+}
+
+/**
  * Apply adjustments in place on an RGBA Uint8ClampedArray.
  * @param {{scale?: number}} opts scale = output pixels per reference pixel
  *   (used so sharpening radius tracks the output resolution).
@@ -126,6 +165,7 @@ export function applyAdjustments(data, w, h, params, opts = {}) {
     }
     data[i] = r; data[i + 1] = g; data[i + 2] = b;
   }
+  if (p.denoise > 0) chromaDenoise(data, w, h, p.denoise / 100, opts.scale || 1);
   if (p.sharpness > 0) {
     const radius = Math.max(1, Math.round(1 * (opts.scale || 1)));
     const blurred = boxBlurRGB(data, w, h, radius);
