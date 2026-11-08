@@ -66,7 +66,7 @@ try {
   assert(st.refine.feather === 1 && st.refine.edgeAware === true && st.refine.shift === 0 && Math.abs(st.refine.softness - 0.4) < 1e-9, `edge feather 1 px by default (${JSON.stringify(st.refine)})`);
   assert(st.sheet.paperId === '4x6in' && st.sheet.printBoost === 'medium' && st.sheet.mode === 'exact' && st.sheet.fill === 'col-ltr', `sheet ${JSON.stringify(st.sheet)}`);
   assert(JSON.stringify(st.sheet.items) === '[4]', '4 photos for the person');
-  assert(st.layout.ok && st.layout.cap === 8 && st.layout.placed === 4 && st.layout.orient === 'landscape' && st.layout.w === 152.4 && st.layout.h === 101.6, `layout ${JSON.stringify(st.layout)}`);
+  assert(st.layout.ok && st.layout.cap === 9 && st.layout.placed === 4 && st.layout.orient === 'portrait' && st.layout.w === 101.6 && st.layout.h === 152.4, `layout ${JSON.stringify(st.layout)}`);
 
   // Print output: brightening lifts the face but the white background stays pure white
   const tone = await page.evaluate(async () => {
@@ -95,7 +95,7 @@ try {
   assert(tone.boosted.corner.every((v) => v >= 252) && tone.off.corner.every((v) => v >= 252), `white background corner stays white ${tone.boosted.corner} / ${tone.off.corner}`);
   assert(tone.boosted.face > tone.off.face + 4, `face brighter for print (${tone.off.face.toFixed(1)} → ${tone.boosted.face.toFixed(1)})`);
 
-  // One click: «چاپ» opens the print dialog with exactly one 4R landscape page of 8 photos
+  // One click: «چاپ» opens the print dialog with exactly one 4R portrait page (9 slots, 4 photos)
   await page.evaluate(() => { window.__printed = 0; window.print = () => { window.__printed += 1; }; });
   await ready.getByRole('button', { name: 'چاپ', exact: true }).click();
   await page.waitForFunction(() => window.__printed > 0, null, { timeout: 60000 });
@@ -107,17 +107,17 @@ try {
   assert(printed.sheets === 1 && printed.imgs === 4, `print DOM ${JSON.stringify(printed)}`);
   // crop marks sit 0.5 mm outside the photos (in the white gap), not on the photo edge
   const guides = await page.evaluate(() => [...document.querySelectorAll('#print-root .marks-under line')].filter((l) => l.getAttribute('stroke') !== '#999' && l.getAttribute('x1') === l.getAttribute('x2')).map((l) => Number(l.getAttribute('x1'))));
-  assert(guides.some((x) => Math.abs(x - 4) < 1e-6) && guides.some((x) => Math.abs(x - 36) < 1e-6) && guides.some((x) => Math.abs(x - 68) < 1e-6) && !guides.some((x) => Math.abs(x - 5) < 1e-6), `outer guides 1 mm out, same as the mid-gap line (36), photos at top-left (${guides})`);
+  assert(guides.some((x) => Math.abs(x - 3) < 1e-6) && guides.some((x) => Math.abs(x - 34.7) < 1e-6) && guides.some((x) => Math.abs(x - 66.7) < 1e-6) && !guides.some((x) => Math.abs(x - 3.7) < 1e-6), `outer guide kept inside the printable area (3 mm), mid-gap line 1 mm from both photos (34.7), photos at top-left (${guides})`);
   const horiz = await page.evaluate(() => [...document.querySelectorAll('#print-root .marks-under line')].filter((l) => l.getAttribute('stroke') !== '#999' && l.getAttribute('y1') === l.getAttribute('y2')).flatMap((l) => [Number(l.getAttribute('x1')), Number(l.getAttribute('x2'))]));
   assert(horiz.length > 0 && Math.max(...horiz) <= 4, `no horizontal crop marks toward the free paper on the right (max x ${Math.max(...horiz)})`);
-  assert(/size:\s*152\.4mm 101\.6mm/.test(printed.size), `@page size is 4R landscape (${printed.size})`);
+  assert(/size:\s*101\.6mm 152\.4mm/.test(printed.size), `@page size is 4R portrait (${printed.size})`);
   await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
   await page.waitForTimeout(500);
   // full cut lines are on in the template: they surround only the 4 printed photos, the right half of the paper stays white
   assert((await page.evaluate(() => window.__hoshmand.getState().project.sheet.marks.cutLines)) === true, 'full cut lines enabled by the template');
   await page.waitForTimeout(300);
   const cutX = await page.evaluate(() => [...document.querySelectorAll('.sheets .marks-under line')].filter((l) => l.getAttribute('stroke') === '#999').flatMap((l) => [Number(l.getAttribute('x1')), Number(l.getAttribute('x2'))]));
-  assert(cutX.length > 0 && Math.max(...cutX) <= 69 && Math.min(...cutX) >= 3, `cut lines stay around the printed photos (x ${Math.min(...cutX)}..${Math.max(...cutX)} mm of 152.4)`);
+  assert(cutX.length > 0 && Math.max(...cutX) <= 68 && Math.min(...cutX) >= 3, `cut lines stay around the printed photos (x ${Math.min(...cutX)}..${Math.max(...cutX)} mm of 101.6)`);
   await page.screenshot({ path: path.join(outDir, 'quick-print-studio.png') });
 
   // Brightness test sheet: the same photo at off / low / medium / high, labelled
@@ -145,7 +145,7 @@ try {
   await page.screenshot({ path: path.join(outDir, 'quick-home-mobile.png') });
 
   assert(log.external.length === 0, `no external requests ${log.external}`);
-  report.push(`PASS One-click 3×4 preset in ${secs}s — white background, face crop, 4 photos on 4R landscape (152.4×101.6 mm), print brightening medium (face ${tone.off.face.toFixed(1)} → ${tone.boosted.face.toFixed(1)}, white corner ${tone.boosted.corner.join(',')}), single print page (4 photos in the left two columns); brightness test sheet with 4 labelled levels`);
+  report.push(`PASS One-click 3×4 preset in ${secs}s — white background, face crop, 4 photos on 4R portrait (101.6×152.4 mm, 9 slots), print brightening medium (face ${tone.off.face.toFixed(1)} → ${tone.boosted.face.toFixed(1)}, white corner ${tone.boosted.corner.join(',')}), single print page (4 photos at the top-left); brightness test sheet with 4 labelled levels`);
 } finally {
   console.log(report.join('\n'));
   await browser.close();

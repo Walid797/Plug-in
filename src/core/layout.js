@@ -603,6 +603,7 @@ export function computeLayout(input) {
   const result = {
     ok: true, errors: [], warnings, analysis,
     orientation: res.orientation, sheet: res.sheet, pages: res.pages,
+    hardMargins: cfg.printer.borderless ? { top: 0, right: 0, bottom: 0, left: 0 } : { ...cfg.printer.hardMargins },
     capacity: res.capacity, kind: res.kind, grid: res.grid, block: res.block, compacted: res.compacted,
     margins: { ...cfg.margins }, gap: { ...cfg.gap }, label: { ...cfg.label },
   };
@@ -659,8 +660,10 @@ export function computeMarks(layout, page, opts = {}) {
   // middle of the gap) and the outer guides (top, bottom, left, right) are equally far from the photos.
   const gapX = layout.gap?.x ?? 0; const gapY = layout.gap?.y ?? 0;
   const offX = Math.min(want, gapX / 2); const offY = Math.min(want, gapY / 2);
-  const xs = uniq(rects.flatMap((r) => [r.x - offX, r.x + r.w + offX]), 0, W);
-  const ys = uniq(rects.flatMap((r) => [r.y - offY, r.y + r.h + offY]), 0, H);
+  // guides never run into the printer's non-printable edge (they would simply not be printed)
+  const hm = layout.hardMargins || { top: 0, right: 0, bottom: 0, left: 0 };
+  const xs = uniq(rects.flatMap((r) => [r.x - offX, r.x + r.w + offX]), Math.min(hm.left, W / 2), Math.max(W - hm.right, W / 2));
+  const ys = uniq(rects.flatMap((r) => [r.y - offY, r.y + r.h + offY]), Math.min(hm.top, H / 2), Math.max(H - hm.bottom, H / 2));
   const minX = Math.min(...rects.map((r) => r.x)); const maxX = Math.max(...rects.map((r) => r.x + r.w));
   const minY = Math.min(...rects.map((r) => r.y)); const maxY = Math.max(...rects.map((r) => r.y + r.h));
   if (cutLines) {

@@ -19,18 +19,18 @@ try {
   await page.waitForSelector('.shell');
   await dismissOnboarding(page);
 
-  // 1) adjust the built-in 3×4 preset: 3 mm margin, portrait → 9 per sheet
+  // 1) adjust the built-in 3×4 preset: 3 mm margin, portrait (already the default) → 10 per sheet with turned photos
   const card = page.locator('.quick-card[data-preset="q-3x4-4r"]');
   await card.locator('.quick-edit').click();
   const dlg = editor(page);
   await dlg.waitFor();
-  assert((await dlg.locator('.qp-cap .num').innerText()) === '۸', 'editor starts with the factory capacity 8');
+  assert((await dlg.locator('.qp-cap .num').innerText()) === '۹', 'editor starts with the factory capacity 9');
   await setNumber(dlg, 'حاشیهٔ بیرونی', '۳');
   await dlg.getByRole('group', { name: 'جهت کاغذ' }).getByRole('button', { name: 'عمودی' }).click();
   await page.waitForTimeout(150);
   const cap9 = await dlg.locator('.qp-cap .num').innerText();
-  assert(cap9 === '۹', `live preview shows 9 (${cap9})`);
-  assert((await dlg.locator('svg.qp-diagram > g').count()) === 9, '9 slots drawn in the diagram');
+  assert(cap9 === '۱۰', `live preview shows 10 (3 mm margin, some photos turned 90°) (${cap9})`);
+  assert((await dlg.locator('svg.qp-diagram > g').count()) === 10, '10 slots drawn in the diagram');
   await page.screenshot({ path: path.join(outDir, 'quick-edit-dialog.png') });
   await dlg.getByRole('button', { name: 'ذخیره', exact: true }).click();
   await dlg.waitFor({ state: 'detached' });
@@ -45,7 +45,7 @@ try {
   assert(after.includes('تنظیم‌شده') && after.includes('عمودی'), `adjustment kept after reload (${after})`);
   await page.locator('.quick-card[data-preset="q-3x4-4r"] .quick-edit').click();
   await editor(page).waitFor();
-  assert((await editor(page).locator('.qp-cap .num').innerText()) === '۹', 'reopened editor shows 9 slots');
+  assert((await editor(page).locator('.qp-cap .num').innerText()) === '۱۰', 'reopened editor shows 10 slots');
   await page.keyboard.press('Escape');
   await editor(page).waitFor({ state: 'detached' });
 
@@ -104,8 +104,8 @@ try {
   assert(st.face.skin.enabled === false && st.face.light.enabled === true, `skin engine off, lighting on (${JSON.stringify(st.face)})`);
   assert(st.marks.borders === true && st.marks.borderWidth === 0.5 && st.marks.borderColor === '#404040', `border applied from the template ${JSON.stringify(st.marks)}`);
   assert(st.refine.feather === 3 && st.shadow.enabled === true, `own edge settings applied (${JSON.stringify(st.refine)} ${JSON.stringify(st.shadow)})`);
-  assert(JSON.stringify(st.items) === '[4]' && st.mode === 'exact' && st.placed === 4 && st.cap === 8, `sheet ${JSON.stringify(st)}`);
-  assert(st.paper === '4x6in' && st.margins === 5 && st.boost === 'medium', 'paper/margins/boost from the preset');
+  assert(JSON.stringify(st.items) === '[4]' && st.mode === 'exact' && st.placed === 4 && st.cap === 9, `sheet ${JSON.stringify(st)}`);
+  assert(st.paper === '4x6in' && st.margins === 3.7 && st.boost === 'medium', 'paper/margins/boost from the preset');
   await ready.getByRole('button', { name: 'اول پیش‌نمایش را ببینم' }).click();
   await page.waitForTimeout(500);
   const frames = await page.evaluate(() => [...document.querySelectorAll('.sheets .marks-over rect')].map((r) => [r.getAttribute('stroke'), r.getAttribute('stroke-width')]));

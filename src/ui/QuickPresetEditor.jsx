@@ -201,8 +201,9 @@ export function QuickPresetEditorDialog({ presetId, mode = 'edit' }) {
             <Segmented label="جهت کاغذ" value={d.orientation} onChange={(v) => set({ orientation: v })} options={[
               { value: 'auto', label: 'خودکار (بهترین)' }, { value: 'portrait', label: 'عمودی' }, { value: 'landscape', label: 'افقی' },
             ]} />
+            <Switch label="چرخاندن ۹۰ درجهٔ عکس‌ها فقط وقتی تعداد بیشتری جا شود" checked={d.allowRotation} onChange={(v) => set({ allowRotation: v })} />
             <div class="grid-2">
-              <NumberInput label="حاشیهٔ بیرونی" unit="ملی‌متر" value={d.margin} min={0} max={100} step={0.5} onChange={(v) => set({ margin: v })} />
+              <NumberInput label="حاشیهٔ بیرونی" unit="ملی‌متر" value={d.margin} min={0} max={100} step={0.1} onChange={(v) => set({ margin: v })} />
               <NumberInput label="فاصلهٔ بین عکس‌ها" unit="ملی‌متر" value={d.gap} min={0} max={50} step={0.5} onChange={(v) => set({ gap: v })} />
             </div>
             <Select label="جای عکس‌ها روی برگه" value={d.align} onChange={(v) => set({ align: v })} options={[

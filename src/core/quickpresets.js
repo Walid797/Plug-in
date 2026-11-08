@@ -23,7 +23,9 @@ export const QUICK_DEFAULTS = Object.freeze({
   nameFa: 'قالب تازه',
   photoId: '3x4', widthMm: 30, heightMm: 40, profileId: 'generic-3x4',
   paperId: '4x6in', paperWidthMm: 101.6, paperHeightMm: 152.4,
-  orientation: 'auto', margin: 5, gap: 2, fillOrder: 'col-ltr',
+  // portrait sheet by default; photos may turn 90° where that fits more (3×4 on 10×15: 9 photos with 3.7 mm margins,
+  // still clear of the printer's 3 mm non-printable edge)
+  orientation: 'portrait', allowRotation: true, margin: 3.7, gap: 2, fillOrder: 'col-ltr',
   align: 'top-left', // where the photo grid sits on the sheet: top-left | center | top-right
   perPerson: 'sheet', copies: 8,
   whiteBg: true, bgColor: '#ffffff', autoCrop: true, autoLight: true,
@@ -188,6 +190,7 @@ export function normalizeQuickPreset(raw = {}) {
   p.paperWidthMm = num(raw.paperWidthMm, 10, 2000, D.paperWidthMm);
   p.paperHeightMm = num(raw.paperHeightMm, 10, 2000, D.paperHeightMm);
   p.orientation = pick(raw.orientation, ['auto', 'portrait', 'landscape'], D.orientation);
+  p.allowRotation = bool(raw.allowRotation, D.allowRotation);
   p.margin = num(raw.margin, 0, 100, D.margin);
   p.gap = num(raw.gap, 0, 50, D.gap);
   p.fillOrder = pick(raw.fillOrder, FILL_ORDERS, D.fillOrder);
@@ -277,7 +280,7 @@ export function quickLayoutInput(preset, items, mode = 'fill', papers = []) {
     gap: { x: preset.gap, y: preset.gap },
     items: items.map((it) => ({ id: it.id, widthMm: preset.widthMm, heightMm: preset.heightMm, copies: it.copies ?? 1 })),
     mode,
-    allowRotation: false,
+    allowRotation: preset.allowRotation,
     grid: { cols: null, rows: null, rotated: false },
     align: { mode: preset.align, offsetX: 0, offsetY: 0 },
     fillOrder: preset.fillOrder,
@@ -326,7 +329,7 @@ export function quickSheetPatch(preset, photoIds, makeId, papers = []) {
     marginsLinked: true,
     gap: { x: preset.gap, y: preset.gap },
     gapLinked: true,
-    allowRotation: false,
+    allowRotation: preset.allowRotation,
     grid: { cols: null, rows: null, rotated: false },
     align: { mode: preset.align, offsetX: 0, offsetY: 0 },
     fillOrder: preset.fillOrder,
