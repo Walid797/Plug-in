@@ -33,8 +33,10 @@ export const QUICK_DEFAULTS = Object.freeze({
   // scale the brightening values of the table (exposure, brightness, shadows, whites) by how dark the face really is
   // and the detail values (sharpness, clarity) by how soft it is, so a photo that is already well lit and crisp is not edited twice
   gradeAdaptive: true,
-  gExposure: 7.5, gBrightness: 8, gContrast: 5, gSaturation: 3, gTemperature: 2, gTint: 0,
-  gHighlights: -10, gShadows: 12, gWhites: 8, gBlacks: -3, gSharpness: 22, gClarity: 55, gDenoise: 30,
+  gExposure: 7.5, gBrightness: 8, gContrast: 8, gSaturation: 3, gTemperature: 2, gTint: 0,
+  // contrast 8 and blacks -8 (suggested table: 5 / -3) were tuned on the studio's before/after pair: they give the
+  // reference's deep hair, jacket and eye-socket shading instead of a flat look
+  gHighlights: -10, gShadows: 12, gWhites: 8, gBlacks: -8, gSharpness: 22, gClarity: 55, gDenoise: 30,
   // face & skin engine (never reshapes the face): excess redness, colour evenness
   skinOn: true, skinRedness: 40, skinBalance: 40,
   // lighting engine: fill light for shadows (eyes, nose, chin, forehead), L/R balance, burnt-highlight protection

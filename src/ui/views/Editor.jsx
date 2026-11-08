@@ -38,6 +38,7 @@ export function ViewSwitch({ view, setView, extra = [] }) {
 const ADJ = [
   { key: 'exposure', label: 'نوردهی', min: -100, max: 100 },
   { key: 'brightness', label: 'روشنایی', min: -100, max: 100 },
+  { key: 'lift', label: 'روشن‌کردن میانه و روشن‌ها (بدون روشن‌کردن تیره‌ها)', min: 0, max: 100 },
   { key: 'contrast', label: 'کنتراست', min: -100, max: 100 },
   { key: 'highlights', label: 'روشنی‌ها', min: -100, max: 100 },
   { key: 'shadows', label: 'سایه‌ها', min: -100, max: 100 },

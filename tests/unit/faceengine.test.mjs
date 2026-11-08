@@ -314,3 +314,15 @@ test('white snap: neutral near-white becomes pure white; skin, blue shirt and mi
   assert.equal(px[24], 255);
   assert.deepEqual([...px.filter((_, i) => i % 4 === 3)], Array(7).fill(255), 'alpha untouched');
 });
+
+test('lift: brightens mid-tones and lights but spares the darks; identity at 0; monotonic', () => {
+  const id = buildLuts({})[0]; const l0 = buildLuts({ lift: 0 })[0];
+  for (let v = 0; v < 256; v += 1) assert.equal(l0[v], id[v], 'lift 0 is the identity');
+  const lift = buildLuts({ lift: 25 })[0]; const exposure = buildLuts({ exposure: 25 })[0];
+  for (let v = 1; v < 256; v += 1) assert.ok(lift[v] >= lift[v - 1], `monotonic at ${v}`);
+  assert.ok(lift[40] - 40 <= 3, `dark hair tones barely move (${lift[40]})`);
+  assert.ok(lift[40] - 40 < (exposure[40] - 40) * 0.25, 'much less than an ordinary exposure on the darks');
+  assert.ok(lift[190] - 190 > 12, `skin/shirt tones are lifted (${lift[190]})`);
+  assert.ok(Math.abs(lift[190] - exposure[190]) <= 4, 'on the lights it equals the exposure');
+  assert.equal(lift[255], 255); assert.equal(lift[0], 0);
+});

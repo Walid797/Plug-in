@@ -11,6 +11,7 @@ export const ADJUSTMENT_DEFAULTS = Object.freeze({
   temperature: 0, // -100..100 (cool ↔ warm)
   tint: 0, // -100..100 (green ↔ magenta)
   sharpness: 0, // 0..100
+  lift: 0, // 0..100: brightens mid-tones and lights (skin, white shirt) but spares the darks (hair, jacket); 100 = +2 EV on the lights
   whites: 0, // -100..100: moves the white point (brightens/dims the lightest tones)
   blacks: 0, // -100..100: moves the black point (negative = deeper blacks)
   denoise: 0, // 0..100: colour-noise reduction (chrominance only; luminance detail untouched)
@@ -79,6 +80,7 @@ export function buildLuts(params) {
     for (let v = 0; v < 256; v += 1) {
       let s = v / 255;
       if (mult !== 1) s = linearToSrgb(clamp01(srgbToLinear(s) * mult));
+      if (p.lift) s = linearToSrgb(clamp01(srgbToLinear(s) * 2 ** ((p.lift / 100) * 2 * smoothstep(0.18, 0.62, s))));
       s = toneCurve(s, p);
       luts[c][v] = Math.round(s * 255);
     }

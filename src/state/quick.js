@@ -179,7 +179,9 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
             const meanNow = getFace(id)?.stats?.meanL;
             const delta = preset.autoLight ? (autoExposureDelta(meanNow) || exposureTowardTarget(meanNow)) : 0;
             if (delta) {
-              updateEdit(id, (ed) => ({ ...ed, adjust: { ...ed.adjust, exposure: Math.max(-100, Math.min(100, (ed.adjust.exposure || 0) + delta)) } }), { history: false });
+              // brightening goes to the mid-tones and lights (skin, shirt), sparing the darks (hair, jacket, brows);
+              // a face that is too bright is toned down with the ordinary exposure
+              updateEdit(id, (ed) => ({ ...ed, adjust: delta > 0 ? { ...ed.adjust, lift: Math.min(100, (ed.adjust.lift || 0) + delta) } : { ...ed.adjust, exposure: Math.max(-100, (ed.adjust.exposure || 0) + delta) } }), { history: false });
               r.light = delta;
               await analyzeFace(getState().photos[id]).catch(() => null); // refresh stats for the checklist
             }

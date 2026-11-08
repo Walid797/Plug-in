@@ -54,7 +54,7 @@ try {
   const A = st.adjust;
   assert(A.exposure === 7.5 || Math.abs(A.exposure - 7.5) < 40, 'exposure near +0.15 EV (auto light may add on top)');
   // adaptive grading: the subtle values are always in full, the brightening values are scaled between 0 and the table
-  assert(A.contrast === 5 && A.saturation === 3 && A.temperature === 2 && A.tint === 0 && A.highlights === -10 && A.blacks === -3 && A.denoise === 30, `subtle grading values in full ${JSON.stringify(A)}`);
+  assert(A.contrast === 8 && A.saturation === 3 && A.temperature === 2 && A.tint === 0 && A.highlights === -10 && A.blacks === -8 && A.denoise === 30, `subtle grading values in full ${JSON.stringify(A)}`);
   assert(A.brightness >= 0 && A.brightness <= 8 && A.shadows >= 0 && A.shadows <= 12 && A.whites >= 0 && A.whites <= 8, `brightening values within the table ${JSON.stringify(A)}`);
   assert(A.sharpness >= 0 && A.sharpness <= 22 && A.clarity >= 0 && A.clarity <= 55, 'detail values within the table');
   assert(st.face.ellipse && st.face.skin.enabled && st.face.light.enabled, `face engines armed on the analysed face ${JSON.stringify(st.face)}`);

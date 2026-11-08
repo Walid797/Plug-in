@@ -92,7 +92,20 @@ export function measureSkinCluster(data, w, h, ell) {
  * clothes) and `skinFactor` on skin, so crisp hair does not turn into crunchy skin. Whole image, smooth.
  * @returns {Float32Array|null} null when the skin colour cannot be measured (then detail applies evenly)
  */
-export function skinDetailWeight(data, w, h, ell, skinFactor = 0.35) {
+export function skinDetailWeight(data, w, h, ell, skinFactor = 0.3) {
+  const ps = skinProbability(data, w, h, ell);
+  if (!ps) return null;
+  const out = new Float32Array(ps.length);
+  for (let j = 0; j < ps.length; j += 1) out[j] = 1 - (1 - skinFactor) * ps[j];
+  return out;
+}
+
+/**
+ * Whole-image skin probability (0..1, smooth): face, ears, neck and hands, from this face's own skin
+ * colour. Hair, brows, clothes and the background stay near 0.
+ * @returns {Float32Array|null} null when the skin colour cannot be measured
+ */
+export function skinProbability(data, w, h, ell) {
   const cl = measureSkinCluster(data, w, h, ell);
   if (!cl) return null;
   const n = w * h;
@@ -104,7 +117,7 @@ export function skinDetailWeight(data, w, h, ell, skinFactor = 0.35) {
     p[j] = Math.exp(-0.5 * (dCb * dCb + dCr * dCr)) * smooth(35, 75, Yv) * (1 - smooth(238, 252, Yv));
   }
   const ps = boxFilter(p, w, h, Math.max(1, Math.round(Math.min(w, h) / 300)));
-  for (let j = 0; j < n; j += 1) ps[j] = 1 - (1 - skinFactor) * clamp(ps[j], 0, 1);
+  for (let j = 0; j < n; j += 1) ps[j] = clamp(ps[j], 0, 1);
   return ps;
 }
 

@@ -8,7 +8,7 @@
 import { cropMatrix, invertMatrix, applyMatrix, multiplyMatrix, defaultCrop } from '../core/crop.js';
 import { applyAdjustments, isNeutral, snapNearWhite } from '../core/adjust.js';
 import { decontaminate, recolorRegion, boxFilter } from '../core/mask.js';
-import { applyFaceEngine, ellipseToOutput, skinDetailWeight } from '../core/faceengine.js';
+import { applyFaceEngine, ellipseToOutput, skinProbability } from '../core/faceengine.js';
 import { makeCanvas } from '../platform/image.js';
 
 export const FULL_FRAME = Object.freeze({ cx: 0.5, cy: 0.5, cw: 1, rotation: 0 });
@@ -146,10 +146,15 @@ export function renderPhoto(edit, assets, outW, outH, opts = {}) {
       const a = maskInOutput(assets.clothesMask, src.width, src.height, M, outW, outH);
       recolorRegion(data, a, outW, outH, hexToRgb(clothes.recolor.color), (clothes.recolor.strength ?? 100) / 100);
     }
+    // skin probability from this face's own skin colour, measured before any tone change
+    let skinP = null;
+    const wantDetail = adjustOn && (edit.adjust.clarity > 0 || edit.adjust.sharpness > 0);
+    if (face?.ellipse && wantDetail) skinP = skinProbability(data, outW, outH, ellipseToOutput(face.ellipse, src.width, src.height, M));
     let detailWeight = null;
-    if (adjustOn && face?.ellipse && (edit.adjust.clarity > 0 || edit.adjust.sharpness > 0)) {
-      // crisp hair/brows/stubble/clothes, calmer skin (measured per photo)
-      detailWeight = skinDetailWeight(data, outW, outH, ellipseToOutput(face.ellipse, src.width, src.height, M));
+    if (wantDetail && skinP) {
+      // crisp hair/brows/stubble/clothes, calmer skin
+      detailWeight = new Float32Array(skinP.length);
+      for (let j = 0; j < skinP.length; j += 1) detailWeight[j] = 1 - 0.9 * skinP[j];
     }
     if (adjustOn) applyAdjustments(data, outW, outH, edit.adjust, { scale: Math.max(1, frameWidthPx / 350), detailWeight });
     if (faceOn) {
