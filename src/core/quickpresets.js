@@ -89,6 +89,18 @@ export function upgradeSavedQuickFields(p) {
   return o;
 }
 
+/**
+ * Studio request: every template follows the quality reference only. Saved adjustments of built-in templates
+ * and the user's own templates are removed; what was removed is returned as a backup so it can be downloaded.
+ * @returns {{quickPresets:[], quickOverrides:{}, backup:null|{at:number, quickPresets:object[], quickOverrides:object}}}
+ */
+export function resetSavedQuick(settings, now = Date.now()) {
+  const presets = Array.isArray(settings?.quickPresets) ? settings.quickPresets : [];
+  const overrides = settings?.quickOverrides && typeof settings.quickOverrides === 'object' ? settings.quickOverrides : {};
+  const had = presets.length > 0 || Object.keys(overrides).length > 0;
+  return { quickPresets: [], quickOverrides: {}, backup: had ? { at: now, quickPresets: presets, quickOverrides: overrides } : null };
+}
+
 /** Face brightness (mean luma 0..1) of the studio's quality reference portrait: nothing to brighten at or above it. */
 export const GRADE_REFERENCE_L = 0.66;
 /** Face brightness at (and below) which the table's brightening values apply in full. */

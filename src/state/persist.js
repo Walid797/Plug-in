@@ -1,5 +1,5 @@
 // Project persistence: create/open/save/delete, debounced autosave.
-import { upgradeSavedQuickFields } from '../core/quickpresets.js';
+import { upgradeSavedQuickFields, resetSavedQuick } from '../core/quickpresets.js';
 import { getState, setState, subscribe, uid, DEFAULT_SHEET, DEFAULT_SETTINGS, clearHistory, toast, logEvent } from './store.js';
 import { put, get, del, getAll, getByIndex, kvGet, kvSet, deleteBlob } from '../storage/db.js';
 import { releaseAllMedia, restoreThumbs } from './media.js';
@@ -23,6 +23,7 @@ function photoRecord(ph) {
 export async function loadSettings() {
   const s = await kvGet('settings', null);
   const settings = { ...DEFAULT_SETTINGS, ...(s || {}) };
+  const schema0 = s?.quickSchema || 1; // the stored value (the merged default would hide old data)
   if ((settings.quickSchema || 1) < 2) {
     // v2: the default border became thinner (0.2 → 0.1 mm); saved values equal to the old default follow
     const thin = (p) => (p && p.borderWidth === 0.2 ? { ...p, borderWidth: 0.1 } : p);
@@ -56,6 +57,15 @@ export async function loadSettings() {
     settings.quickPresets = (settings.quickPresets || []).map(upgradeSavedQuickFields);
     settings.quickOverrides = Object.fromEntries(Object.entries(settings.quickOverrides || {}).map(([k, v]) => [k, upgradeSavedQuickFields(v)]));
     settings.quickSchema = 6;
+  }
+  if (schema0 < 7) {
+    // v7: studio request — all templates use the quality-reference values only; saved adjustments and own
+    // templates are removed (a backup of what was removed is kept until the user deletes it)
+    const r = resetSavedQuick(s || {});
+    settings.quickPresets = r.quickPresets;
+    settings.quickOverrides = r.quickOverrides;
+    if (r.backup) settings.quickBackup = r.backup;
+    settings.quickSchema = 7;
   }
   setState((st) => ({ ...st, settings }));
   lastSaved.settings = settings;

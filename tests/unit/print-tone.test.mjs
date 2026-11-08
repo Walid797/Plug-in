@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { printBoostLut, printBoostValue, applyLut, PRINT_BOOST_IDS, PRINT_BOOST_LEVELS, isPrintBoost } from '../../src/core/adjust.js';
 import { autoExposureDelta, AUTO_LIGHT, QUALITY_THRESHOLDS } from '../../src/core/idphoto.js';
-import { upgradeSavedQuickFields, gradeStrength, detailStrength, presetAdjustFor, presetAdjust, GRADE_FULL_BELOW_L, DETAIL_FULL_BELOW_SHARPNESS, QUICK_PRESETS, QUICK_DEFAULTS, presetCapacity, quickSheetPatch, quickLayoutInput, findQuickPreset, normalizeQuickPreset, allQuickPresets, quickFields, quickWarnings, copiesPerPerson, quickPaper } from '../../src/core/quickpresets.js';
+import { resetSavedQuick, upgradeSavedQuickFields, gradeStrength, detailStrength, presetAdjustFor, presetAdjust, GRADE_FULL_BELOW_L, DETAIL_FULL_BELOW_SHARPNESS, QUICK_PRESETS, QUICK_DEFAULTS, presetCapacity, quickSheetPatch, quickLayoutInput, findQuickPreset, normalizeQuickPreset, allQuickPresets, quickFields, quickWarnings, copiesPerPerson, quickPaper } from '../../src/core/quickpresets.js';
 import { computeLayout, computeMarks } from '../../src/core/layout.js';
 import { layoutToPdfPages } from '../../src/core/pdf.js';
 import { findPaper, findPhoto, findProfile } from '../../src/core/presets.js';
@@ -391,4 +391,19 @@ test('every ready-made template carries the quality-reference engine settings; s
   const list = allQuickPresets({ quickOverrides: { 'q-3x4-4r': up } });
   assert.equal(list[0].gClarity, 55); assert.equal(list[0].gradeAdaptive, true); assert.equal(list[0].margin, 3); assert.equal(list[0].edited, true);
   assert.equal(upgradeSavedQuickFields(null), null);
+});
+
+test('reset to the reference: saved adjustments and own templates are removed, a backup keeps them; 4x6 follows the reference proportions', () => {
+  const saved = { quickPresets: [{ id: 'qp_a', nameFa: 'من' }], quickOverrides: { 'q-3x4-4r': { margin: 3, gSharpness: 30 } } };
+  const r = resetSavedQuick(saved, 123);
+  assert.deepEqual(r.quickPresets, []); assert.deepEqual(r.quickOverrides, {});
+  assert.deepEqual(r.backup, { at: 123, quickPresets: saved.quickPresets, quickOverrides: saved.quickOverrides }, 'nothing is lost: backup holds exactly what was removed');
+  assert.equal(resetSavedQuick({ quickPresets: [], quickOverrides: {} }).backup, null, 'nothing saved → no backup');
+  assert.equal(resetSavedQuick(null).backup, null); assert.equal(resetSavedQuick({ quickPresets: 'x', quickOverrides: 5 }).backup, null);
+  const list = allQuickPresets(resetSavedQuick(saved));
+  assert.equal(list.length, 4); assert.ok(list.every((p) => p.builtin && !p.edited), 'only factory templates remain');
+  const p46 = findProfile('generic-4x6');
+  assert.ok(Math.abs(p46.headHeight.target / 60 - 25.5 / 40) < 0.005, 'head proportion = reference');
+  assert.ok(Math.abs(p46.eyeFromBottom.target / 60 - 26 / 40) < 0.005, 'eye-line proportion = reference');
+  assert.equal(findProfile('icao-35x45').headHeight.target, 34, 'passport rule untouched (ICAO)');
 });

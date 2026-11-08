@@ -1,5 +1,5 @@
-// Templates saved by the previous version (old engine values stored) must pick up the quality-reference
-// tuning once after the app loads, keep what the user chose, and show the new engine values in the editor.
+// Studio request: all templates use the quality-reference values only. Templates and adjustments saved by the
+// previous version are removed once on load (a backup is kept and can be downloaded or deleted).
 import { launchBrowser, startServer, newPage, dismissOnboarding, assert } from './helpers.mjs';
 
 const srv = await startServer(8875);
@@ -23,27 +23,33 @@ try {
   await page.waitForTimeout(2500); // autosave
   await page.reload();
   await page.waitForSelector('.quick-card[data-preset="q-3x4-4r"]');
-  const st = await page.evaluate(() => { const s = window.__hoshmand.getState().settings; return { v: s.quickSchema, o: s.quickOverrides['q-3x4-4r'], own: s.quickPresets[0] }; });
-  assert(st.v === 6, `settings schema upgraded (${st.v})`);
-  assert(st.o.gSharpness === 22 && st.o.lightFill === 45 && st.o.skinBalance === 40, `old defaults upgraded ${JSON.stringify(st.o)}`);
-  assert(st.o.margin === 3, 'the user\'s own margin kept');
-  assert(st.own.gSharpness === 30 && st.own.lightFill === 45 && st.own.skinBalance === 40, `own template: custom 30 kept, old defaults upgraded ${JSON.stringify(st.own)}`);
-  // the editor of the adjusted built-in shows the new engines (clarity and adaptive strength come from the new defaults)
+  const st = await page.evaluate(() => { const s = window.__hoshmand.getState().settings; return { v: s.quickSchema, o: s.quickOverrides, own: s.quickPresets, backup: s.quickBackup }; });
+  assert(st.v === 7, `settings schema ${st.v}`);
+  assert(Object.keys(st.o).length === 0 && st.own.length === 0, `saved templates and adjustments removed ${JSON.stringify([st.o, st.own])}`);
+  assert(st.backup && st.backup.quickPresets.length === 1 && st.backup.quickOverrides['q-3x4-4r'].margin === 3 && st.backup.quickPresets[0].gSharpness === 30, 'backup holds exactly what was removed');
+  // only the four factory templates, none marked as adjusted, carrying the reference values
+  assert((await page.locator('.quick-card[data-preset]').count()) === 4, 'four ready-made templates');
+  assert((await page.locator('.quick-card .quick-tag').count()) === 0, 'no adjusted / own tags');
   await page.locator('.quick-card[data-preset="q-3x4-4r"] .quick-edit').click();
   const dlg = page.locator('dialog.qp-modal');
   await dlg.waitFor();
-  assert((await dlg.getByRole('slider', { name: /وضوح موضعی/ }).inputValue()) === '55', 'clarity 55 in the adjusted built-in');
-  assert(await dlg.getByRole('switch', { name: /تطبیق روشن‌سازی با روشنایی واقعی چهره/ }).isChecked(), 'adaptive strength on');
+  assert((await dlg.getByRole('slider', { name: /وضوح موضعی/ }).inputValue()) === '55', 'clarity 55');
   assert((await dlg.getByRole('slider', { name: /روشن‌کردن سایه‌ها/ }).inputValue()) === '45', 'fill light 45');
+  assert((await dlg.getByLabel('حاشیهٔ بیرونی', { exact: true }).inputValue()) === '۵', 'the old margin 3 is gone: factory margin 5');
   await page.keyboard.press('Escape');
-  // the other three built-ins carry the same engine values
-  const all = await page.evaluate(async () => {
-    const q = window.__hoshmand.quick;
-    return Object.keys(q).length;
-  });
-  assert(all > 0);
+  // Templates view: the notice with the backup, which can be downloaded and deleted
+  await page.locator('nav.rail .rail-item[title="قالب‌های ذخیره‌شده"]').click();
+  await page.waitForSelector('#quick-presets');
+  const notice = page.locator('#quick-presets .notice', { hasText: 'مقدارهای مرجع کیفیت' });
+  await notice.waitFor();
+  const [dl] = await Promise.all([page.waitForEvent('download'), notice.getByRole('button', { name: 'دانلود پشتیبان' }).click()]);
+  assert(/\.json$/.test(dl.suggestedFilename()), `backup file ${dl.suggestedFilename()}`);
+  await notice.getByRole('button', { name: 'حذف پشتیبان' }).click();
+  await page.locator('dialog.modal .modal-foot .btn-danger').click();
+  await page.waitForTimeout(300);
+  assert((await page.evaluate(() => window.__hoshmand.getState().settings.quickBackup)) === null, 'backup deleted on request');
   assert(log.external.length === 0, `no external requests ${log.external}`);
-  report.push('PASS Saved templates from the previous version are upgraded once (sharpness 14→22, fill light 35→45, skin balance 30→40), user values kept, new engine fields present');
+  report.push('PASS Saved templates/adjustments removed with a downloadable backup; only the four reference-valued ready-made templates remain');
 } finally {
   console.log(report.join('\n'));
   await browser.close();

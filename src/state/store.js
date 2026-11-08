@@ -23,7 +23,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   layoutPresets: [],
   quickPresets: [], // user's own one-click presets (core/quickpresets.js fields)
   quickOverrides: {}, // adjustments to built-in one-click presets, by id
-  quickSchema: 6,
+  quickBackup: null, // what the v7 reset removed (own templates / adjustments), for download until deleted
+  quickSchema: 7,
 });
 
 export const DEFAULT_SHEET = Object.freeze({

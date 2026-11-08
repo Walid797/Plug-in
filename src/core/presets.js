@@ -52,8 +52,9 @@ export const RULE_PROFILES = Object.freeze([
   },
   {
     id: 'generic-4x6', nameFa: 'عکس عمومی ۴×۶', photoId: '4x6', widthMm: 40, heightMm: 60,
-    headHeight: { min: 34, max: 42, target: 38 }, eyeFromBottom: { min: 34, max: 40, target: 37 },
-    background: '#ffffff', verified: false, noteFa: 'راهنمای عمومی؛ تأییدنشده.',
+    // same proportions as the 3x4 quality reference scaled to 60 mm: head ≈ 63.7%, eye line ≈ 65% from the bottom
+    headHeight: { min: 35, max: 41.5, target: 38.2 }, eyeFromBottom: { min: 37.5, max: 41, target: 39 },
+    background: '#ffffff', verified: false, noteFa: 'راهنمای عمومی؛ تأییدنشده. نسبت‌ها از مرجع کیفیت ۳×۴ گرفته شده است.',
   },
   {
     id: 'generic-5x5', nameFa: 'عکس عمومی ۵×۵', photoId: '5x5', widthMm: 50, heightMm: 50,

@@ -58,6 +58,26 @@ export function sanitizeTemplates(json) {
   return out;
 }
 
+function QuickBackupNotice({ settings }) {
+  const b = settings.quickBackup;
+  if (!b) return null;
+  const n = (b.quickPresets?.length || 0) + Object.keys(b.quickOverrides || {}).length;
+  const download = async () => {
+    const data = JSON.stringify({ format: 'hoshmand-templates', version: 1, paperPresets: [], layoutPresets: [], customProfiles: [], quickPresets: b.quickPresets || [], quickOverrides: b.quickOverrides || {} }, null, 2);
+    await saveBlob(new Blob([data], { type: 'application/json' }), safeFileName('پشتیبان-قالب‌های-قبلی', 'json'));
+    toast('فایل پشتیبان ساخته شد.', 'success');
+  };
+  return (
+    <Notice kind="info" title="قالب‌ها با مقدارهای مرجع کیفیت به‌روز شدند">
+      <p>طبق درخواست، {formatNumber(n)} قالب و تنظیم ذخیره‌شدهٔ قبلی شما پاک شد و همهٔ قالب‌های آماده فقط مقدارهای مرجع را دارند. نسخهٔ پشتیبانِ پاک‌شده‌ها تا وقتی حذفش نکنید روی همین دستگاه می‌ماند و با «وارد کردن قالب‌ها» برمی‌گردد.</p>
+      <div class="btn-row">
+        <Button size="sm" icon="download" onClick={download}>دانلود پشتیبان</Button>
+        <Button size="sm" variant="ghost" icon="trash-2" onClick={async () => { if (await confirmDialog({ title: 'حذف پشتیبان', body: 'نسخهٔ پشتیبان قالب‌های قبلی برای همیشه پاک شود؟', confirmLabel: 'حذف', danger: true })) updateSettings({ quickBackup: null }); }}>حذف پشتیبان</Button>
+      </div>
+    </Notice>
+  );
+}
+
 function QuickPresetsCard({ settings }) {
   const list = allQuickPresets(settings);
   const papers = settings.paperPresets || [];
@@ -72,6 +92,7 @@ function QuickPresetsCard({ settings }) {
   return (
     <section class="card" id="quick-presets">
       <div class="group-title"><h3>قالب‌های چاپ سریع (یک کلیک)</h3><span class="actions"><Button size="sm" icon="plus" onClick={() => editQuickPreset(null, 'new')}>قالب تازه</Button></span></div>
+      <QuickBackupNotice settings={settings} />
       <p class="muted small">هر قالب یک بار اندازه، پس‌زمینه، کادر، نور، کاغذ، حاشیه، تعداد و روشن‌سازی چاپ را تنظیم می‌کند. قالب‌های آماده را می‌توانید دستی تغییر دهید و هر وقت خواستید به تنظیمات اصلی برگردانید.</p>
       <div class="table-wrap">
         <table class="table quick-table">
