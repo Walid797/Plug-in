@@ -61,6 +61,8 @@ function normalize(input) {
     gap: { ...DEFAULTS.gap, ...(input.gap || {}) },
     mode: input.mode ?? DEFAULTS.mode,
     allowRotation: !!(input.allowRotation ?? DEFAULTS.allowRotation),
+    // every photo turned 90° (the tidy rotated grid) whenever that holds MORE than the upright grid
+    rotateAll: !!input.rotateAll,
     grid: { ...DEFAULTS.grid, ...(input.grid || {}) },
     align: { ...DEFAULTS.align, ...(input.align || {}) },
     fillOrder: input.fillOrder ?? DEFAULTS.fillOrder,
@@ -353,8 +355,14 @@ function layoutUniform(cfg, sheet, orientation, items, errors, warnings) {
     const cands = uniformCandidates(a.w, a.h, item, gx, gy, extra, cfg.allowRotation);
     if (!cands.length) return null;
     const total = cfg.mode === 'exact' ? items.reduce((s, it) => s + it.copies, 0) : 0;
-    cands.sort((x, y) => compareCandidates(x, y, cfg.mode, total));
-    [chosen] = cands;
+    let pool = cands;
+    if (cfg.rotateAll && cfg.allowRotation) {
+      const up = cands.find((c) => c.kind === 'grid'); const rot = cands.find((c) => c.kind === 'grid-rotated');
+      pool = cands.filter((c) => c.kind !== 'mixed'); // one orientation for every photo: no mixed layouts
+      if (rot && (!up || rot.capacity > up.capacity)) pool = [rot];
+    }
+    pool.sort((x, y) => compareCandidates(x, y, cfg.mode, total));
+    [chosen] = pool;
   }
 
   const capacity = chosen.capacity;
@@ -628,6 +636,22 @@ function dedupe(list) {
     seen.add(k);
     return true;
   });
+}
+
+/**
+ * Exactly nine photos on one sheet (template setting `nine` = {margin, gap}): the margin and the gap shrink and the photos
+ * stand upright in a 3 × 3 grid. Applied only when it really puts all nine on ONE sheet; any other count keeps the normal layout.
+ * @param {{margin:number,gap:number}|null} nine
+ * @param {object} base layout-engine input
+ * @returns {object|null} the changed layout input, or null when the mode does not apply
+ */
+export function nineModeInput(nine, base) {
+  if (!nine || base.mode !== 'exact') return null;
+  if (base.items.reduce((s, it) => s + it.copies, 0) !== 9) return null;
+  const side = (v) => ({ top: v, right: v, bottom: v, left: v });
+  const alt = { ...base, margins: side(nine.margin), gap: { x: nine.gap, y: nine.gap }, allowRotation: false, rotateAll: false, grid: { cols: null, rows: null, rotated: false } };
+  const l = computeLayout(alt);
+  return l.ok && l.totals.sheets === 1 ? alt : null;
 }
 
 /**

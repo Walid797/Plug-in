@@ -35,7 +35,7 @@ try {
   await dlg.waitFor();
   assert((await dlg.getByRole('slider', { name: /وضوح موضعی/ }).inputValue()) === '55', 'clarity 55');
   assert((await dlg.getByRole('slider', { name: /روشن‌کردن سایه‌ها/ }).inputValue()) === '45', 'fill light 45');
-  assert((await dlg.getByLabel('حاشیهٔ بیرونی', { exact: true }).inputValue()) === '۳٫۷', 'the old margin 3 is gone: factory margin 3.7');
+  assert((await dlg.getByLabel('حاشیهٔ بیرونی', { exact: true }).inputValue()) === '۵', 'the old margin 3 is gone: factory margin 5');
   await page.keyboard.press('Escape');
   // Templates view: the notice with the backup, which can be downloaded and deleted
   await page.locator('nav.rail .rail-item[title="قالب‌های ذخیره‌شده"]').click();

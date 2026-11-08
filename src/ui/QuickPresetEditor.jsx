@@ -201,7 +201,14 @@ export function QuickPresetEditorDialog({ presetId, mode = 'edit' }) {
             <Segmented label="جهت کاغذ" value={d.orientation} onChange={(v) => set({ orientation: v })} options={[
               { value: 'auto', label: 'خودکار (بهترین)' }, { value: 'portrait', label: 'عمودی' }, { value: 'landscape', label: 'افقی' },
             ]} />
-            <Switch label="چرخاندن ۹۰ درجهٔ عکس‌ها فقط وقتی تعداد بیشتری جا شود" checked={d.allowRotation} onChange={(v) => set({ allowRotation: v })} />
+            <Switch label="همهٔ عکس‌ها ۹۰ درجه بچرخند (چیدمان ۸ عکسه روی ۱۰×۱۵)" checked={d.allowRotation} onChange={(v) => set({ allowRotation: v })} />
+            <Switch label="وقتی دقیقاً ۹ عکس روی یک برگه است: حاشیه و فاصله کم شود و ۳×۳ ایستاده چیده شود" checked={d.nine} onChange={(v) => set({ nine: v })} />
+            {d.nine ? (
+              <div class="grid-2">
+                <NumberInput label="حاشیهٔ حالت ۹ عکس" unit="ملی‌متر" value={d.nineMargin} min={0} max={20} step={0.1} onChange={(v) => set({ nineMargin: v })} />
+                <NumberInput label="فاصلهٔ حالت ۹ عکس" unit="ملی‌متر" value={d.nineGap} min={0} max={20} step={0.1} onChange={(v) => set({ nineGap: v })} />
+              </div>
+            ) : null}
             <div class="grid-2">
               <NumberInput label="حاشیهٔ بیرونی" unit="ملی‌متر" value={d.margin} min={0} max={100} step={0.1} onChange={(v) => set({ margin: v })} />
               <NumberInput label="فاصلهٔ بین عکس‌ها" unit="ملی‌متر" value={d.gap} min={0} max={50} step={0.5} onChange={(v) => set({ gap: v })} />

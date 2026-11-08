@@ -37,6 +37,8 @@ export const DEFAULT_SHEET = Object.freeze({
   gapLinked: true,
   mode: 'exact',
   allowRotation: false,
+  rotateAll: false,
+  nine: null,
   grid: { cols: null, rows: null, rotated: false },
   align: { mode: 'center', offsetX: 0, offsetY: 0 },
   fillOrder: 'col-ltr',

@@ -20,7 +20,7 @@ export const PHOTO_PRESETS = Object.freeze([
   { id: '5x5', nameFa: '۵×۵ سانتی‌متر', widthMm: 50, heightMm: 50 },
 ]);
 
-export const COPY_PRESETS = Object.freeze([1, 2, 4, 6, 8, 10, 12, 16, 20]);
+export const COPY_PRESETS = Object.freeze([1, 2, 4, 6, 8, 9, 10, 12, 16, 20]);
 export const DPI_PRESETS = Object.freeze([300, 350, 400, 600]);
 
 /**

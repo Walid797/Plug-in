@@ -376,6 +376,8 @@ export function PrintView() {
             <Margins sheet={sheet} />
             <Group title="چیدمان">
               <Switch label="چرخاندن ۹۰ درجهٔ بعضی عکس‌ها برای جا شدن بیشتر" checked={sheet.allowRotation} onChange={(v) => updateSheet({ allowRotation: v })} hint="فقط وقتی به کار می‌رود که واقعاً تعداد بیشتری جا شود. اندازهٔ عکس تغییر نمی‌کند." />
+              {sheet.allowRotation ? <Switch label="همهٔ عکس‌ها ۹۰ درجه (چیدمان ۸ عکسه: ۲ ستون × ۴ ردیف)" checked={!!sheet.rotateAll} onChange={(v) => updateSheet({ rotateAll: v })} hint="وقتی روشن باشد، همهٔ عکس‌ها یک‌دست چرخیده چیده می‌شوند، نه ترکیبی." /> : null}
+              {sheet.nine ? <p class="hint">حالت ۹ عکس: وقتی دقیقاً ۹ عکس روی یک برگه باشد، حاشیه {formatNumber(sheet.nine.margin, { maxFraction: 1 })} و فاصله {formatNumber(sheet.nine.gap, { maxFraction: 1 })} ملی‌متر و چیدمان ۳×۳ ایستاده به‌کار می‌رود تا هر ۹ عکس در یک برگه جا شود. برای هر تعداد دیگر، چیدمان بالا.</p> : null}
               <div class="grid-2">
                 <NumberInput label="ستون‌ها (دستی)" placeholder="خودکار" allowEmpty integer min={1} max={200} value={sheet.grid.cols} onChange={(v) => updateSheet((sh) => ({ ...sh, grid: { ...sh.grid, cols: v } }))} />
                 <NumberInput label="ردیف‌ها (دستی)" placeholder="خودکار" allowEmpty integer min={1} max={200} value={sheet.grid.rows} onChange={(v) => updateSheet((sh) => ({ ...sh, grid: { ...sh.grid, rows: v } }))} />

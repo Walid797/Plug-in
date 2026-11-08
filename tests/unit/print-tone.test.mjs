@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { printBoostLut, printBoostValue, applyLut, PRINT_BOOST_IDS, PRINT_BOOST_LEVELS, isPrintBoost } from '../../src/core/adjust.js';
 import { autoExposureDelta, AUTO_LIGHT, QUALITY_THRESHOLDS } from '../../src/core/idphoto.js';
 import { resetSavedQuick, upgradeSavedQuickFields, gradeStrength, detailStrength, presetAdjustFor, presetAdjust, GRADE_FULL_BELOW_L, DETAIL_FULL_BELOW_SHARPNESS, QUICK_PRESETS, QUICK_DEFAULTS, presetCapacity, quickSheetPatch, quickLayoutInput, findQuickPreset, normalizeQuickPreset, allQuickPresets, quickFields, quickWarnings, copiesPerPerson, quickPaper } from '../../src/core/quickpresets.js';
-import { computeLayout, computeMarks } from '../../src/core/layout.js';
+import { computeLayout, computeMarks, nineModeInput } from '../../src/core/layout.js';
 import { layoutToPdfPages } from '../../src/core/pdf.js';
 import { findPaper, findPhoto, findProfile } from '../../src/core/presets.js';
 
@@ -56,11 +56,11 @@ test('auto light corrects only clearly dark or bright faces, within limits', () 
 
 test('quick presets: real 4R paper, capacities from the layout engine, studio settings', () => {
   const caps = Object.fromEntries(QUICK_PRESETS.map((p) => [p.id, presetCapacity(p)]));
-  assert.equal(caps['q-3x4-4r'].capacity, 9);
+  assert.equal(caps['q-3x4-4r'].capacity, 8, 'portrait sheet, every photo turned 90°: 2 columns × 4 rows');
   assert.equal(caps['q-3x4-4r'].orientation, 'portrait');
   assert.equal(caps['q-35x45-4r'].capacity, 6);
   assert.equal(caps['q-4x6-4r'].capacity, 4);
-  assert.equal(caps['q-3x4-a4'].capacity, 42, 'A4: 36 upright, 42 when some photos turn 90 degrees');
+  assert.equal(caps['q-3x4-a4'].capacity, 36);
   for (const p of QUICK_PRESETS) {
     const paper = findPaper(p.paperId); const photo = findPhoto(p.photoId); const prof = findProfile(p.profileId);
     assert.ok(paper && photo && prof, `${p.id} refers to known paper, photo and profile`);
@@ -74,7 +74,7 @@ test('quick presets: real 4R paper, capacities from the layout engine, studio se
       assert.ok(pl.photo.x >= hm && pl.photo.y >= hm);
       assert.ok(pl.photo.x + pl.photo.w <= l.sheet.widthMm - hm + 1e-9 && pl.photo.y + pl.photo.h <= l.sheet.heightMm - hm + 1e-9);
     }
-    assert.equal(p.printBoost, 'medium'); assert.equal(p.fillOrder, 'col-ltr'); assert.equal(p.margin, 3.7); assert.equal(p.orientation, 'portrait'); assert.equal(p.bgColor, '#ffffff');
+    assert.equal(p.printBoost, 'medium'); assert.equal(p.fillOrder, 'ltr'); assert.equal(p.margin, 5); assert.equal(p.orientation, 'portrait'); assert.equal(p.bgColor, '#ffffff');
     assert.ok(p.builtin && p.whiteBg && p.autoCrop && p.autoLight);
   }
   assert.equal(findPaper('4x6in').widthMm, 101.6);
@@ -83,7 +83,7 @@ test('quick presets: real 4R paper, capacities from the layout engine, studio se
 test('quick preset sheet: 4 photos for the 3x4 template, a full sheet per person for the others, even share on A4', () => {
   let n = 0; const id = (p) => `${p}${(n += 1)}`;
   const p34 = findQuickPreset('q-3x4-4r');
-  assert.equal(presetCapacity(p34).capacity, 9, 'the sheet has 9 slots (portrait sheet, 3.7 mm margins)');
+  assert.equal(presetCapacity(p34).capacity, 8, 'the sheet has 8 slots (portrait, photos turned 90°)');
   assert.equal(p34.perPerson, 'copies'); assert.equal(p34.copies, 4);
   const four = quickSheetPatch(p34, ['A', 'B'], id);
   assert.equal(four.mode, 'exact');
@@ -94,10 +94,10 @@ test('quick preset sheet: 4 photos for the 3x4 template, a full sheet per person
   const one = computeLayout(quickLayoutInput(p34, [{ id: 'a', copies: 4 }], 'exact'));
   assert.equal(one.totals.placed, 4); assert.equal(one.totals.sheets, 1);
   const pos = one.pages[0].placements.map((pl) => [pl.photo.x, pl.photo.y]);
-  const expected = [[3.7, 3.7], [3.7, 45.7], [3.7, 87.7], [35.7, 3.7]]; // 101.6×152.4 portrait, top-left (3.7 mm margin), filled column by column from the left
+  const expected = [[5, 5], [47, 5], [5, 37], [47, 37]]; // 101.6×152.4 portrait, photos turned 90° (40×30), top-left (5 mm margin), filled row by row
   pos.forEach(([x, y], i) => { assert.ok(Math.abs(x - expected[i][0]) < 1e-6 && Math.abs(y - expected[i][1]) < 1e-6, `slot ${i}: ${x},${y}`); });
-  assert.ok(pos[3][0] + 30 < 70 && 101.6 - (pos[3][0] + 30) > 30, 'the third column of the paper stays untouched');
-  // two people share the 9-slot sheet (4 + 4 photos)
+  assert.ok(pos[3][1] + 30 < 80 && 152.4 - (pos[3][1] + 30) > 70, 'the lower half of the paper stays untouched');
+  // two people share the 8-slot sheet (4 + 4 photos)
   const two = computeLayout(quickLayoutInput(p34, four.items, 'exact'));
   assert.equal(two.totals.sheets, 1); assert.equal(two.totals.placed, 8);
   const p35 = findQuickPreset('q-35x45-4r');
@@ -109,7 +109,7 @@ test('quick preset sheet: 4 photos for the 3x4 template, a full sheet per person
   const share = quickSheetPatch(findQuickPreset('q-3x4-a4'), ['A', 'B', 'C'], id);
   assert.equal(share.mode, 'fill');
   const l2 = computeLayout(quickLayoutInput(findQuickPreset('q-3x4-a4'), share.items, 'fill'));
-  assert.deepEqual(Object.values(l2.totals.perItem), [14, 14, 14]);
+  assert.deepEqual(Object.values(l2.totals.perItem), [12, 12, 12]);
 });
 
 test('preset editor values are validated: clamped numbers, known enums, safe colour, custom sizes', () => {
@@ -121,7 +121,7 @@ test('preset editor values are validated: clamped numbers, known enums, safe col
   assert.equal(p.nameFa, 'آزمایش');
   assert.equal(p.widthMm, 300); assert.equal(p.heightMm, 5);
   assert.equal(p.margin, 0); assert.equal(p.gap, 50); assert.equal(p.copies, 3);
-  assert.equal(p.dpi, 300); assert.equal(p.printBoost, 'medium'); assert.equal(p.fillOrder, 'col-ltr');
+  assert.equal(p.dpi, 300); assert.equal(p.printBoost, 'medium'); assert.equal(p.fillOrder, 'ltr');
   assert.equal(p.orientation, 'portrait'); assert.equal(p.perPerson, 'sheet'); assert.equal(p.bgColor, '#ffffff');
   assert.equal(p.hardMargin, 20); assert.equal(p.paperWidthMm, 10); assert.equal(p.paperHeightMm, 2000);
   assert.equal(p.whiteBg, QUICK_DEFAULTS.whiteBg, 'non-boolean ignored'); assert.equal(p.autoCrop, false);
@@ -135,7 +135,7 @@ test('preset editor values are validated: clamped numbers, known enums, safe col
 
 test('built-in presets can be adjusted (and reset) and user presets are listed after them', () => {
   const base = findQuickPreset('q-3x4-4r');
-  assert.equal(presetCapacity(base).capacity, 9);
+  assert.equal(presetCapacity(base).capacity, 8);
   const settings = {
     quickOverrides: { 'q-3x4-4r': { margin: 3, orientation: 'portrait', allowRotation: false } },
     quickPresets: [{ id: 'qp_mine', nameFa: 'قالب من', photoId: '3x4', perPerson: 'copies', copies: 4, bgColor: '#cfe3f5', autoLight: false }],
@@ -152,7 +152,7 @@ test('built-in presets can be adjusted (and reset) and user presets are listed a
   assert.deepEqual(quickWarnings(edited, cap), [], 'margin equal to the printer edge is allowed');
   assert.equal(quickWarnings({ ...edited, margin: 2 }, cap)[0].code, 'MARGIN_IN_HARD');
   // factory preset untouched
-  assert.equal(QUICK_PRESETS[0].margin, 3.7);
+  assert.equal(QUICK_PRESETS[0].margin, 5);
   assert.equal(allQuickPresets({}).find((p) => p.id === 'q-3x4-4r').edited, false);
   const mine = list[4];
   assert.equal(mine.builtin, false);
@@ -351,14 +351,15 @@ test('templates place the photos at the top-left; no crop marks run toward unuse
   assert.equal(patch.align.mode, 'top-left');
   const four = computeLayout(quickLayoutInput(p34, [{ id: 'a', copies: 4 }], 'exact'));
   const first = four.pages[0].placements[0].photo;
-  assert.ok(Math.abs(first.x - 3.7) < 1e-6 && Math.abs(first.y - 3.7) < 1e-6, 'first photo in the top-left corner of the printable area');
+  assert.ok(Math.abs(first.x - 5) < 1e-6 && Math.abs(first.y - 5) < 1e-6, 'first photo in the top-left corner of the printable area');
   const marks = computeMarks(four, four.pages[0], patch.marks).under.filter((m) => m.kind === 'crop');
-  const horiz = marks.filter((m) => m.y1 === m.y2);
-  const right = Math.max(...four.pages[0].placements.map((pl) => pl.photo.x + pl.photo.w));
-  assert.ok(horiz.length > 0, 'left-side marks stay');
-  assert.ok(horiz.every((m) => m.x2 <= first.x), 'no horizontal mark to the right of the printed photos (the free paper)');
-  assert.ok(horiz.every((m) => m.x2 < right));
-  assert.ok(marks.some((m) => m.x1 === m.x2 && m.y1 > four.pages[0].placements[1].photo.y), 'bottom marks stay (both rows are printed)');
+  // 4 photos (2 × 2, turned 90°) of the 2 × 4 sheet: the printed block is compact, so every mark is a short stub right
+  // around the photos; nothing runs down or across into the free lower half of the paper
+  const phs = four.pages[0].placements.map((pl) => pl.photo);
+  const bx0 = Math.min(...phs.map((r) => r.x)); const bx1 = Math.max(...phs.map((r) => r.x + r.w));
+  const by0 = Math.min(...phs.map((r) => r.y)); const by1 = Math.max(...phs.map((r) => r.y + r.h));
+  assert.ok(marks.length > 0);
+  assert.ok(marks.every((m) => Math.max(m.x1, m.x2) <= bx1 + 6 && Math.max(m.y1, m.y2) <= by1 + 6 && Math.min(m.x1, m.x2) >= bx0 - 6 && Math.min(m.y1, m.y2) >= by0 - 6), 'marks stay within a few mm of the printed photos');
   // a full sheet keeps marks on all four sides
   const full = computeLayout(quickLayoutInput(p34, [{ id: 'a', copies: 8 }], 'exact'));
   const fm = computeMarks(full, full.pages[0], patch.marks).under.filter((m) => m.kind === 'crop' && m.y1 === m.y2);
@@ -368,7 +369,7 @@ test('templates place the photos at the top-left; no crop marks run toward unuse
   const one = computeLayout(quickLayoutInput(p34, [{ id: 'a', copies: 1 }], 'exact'));
   const om = computeMarks(one, one.pages[0], patch.marks).under.filter((m) => m.kind === 'crop');
   const ph = one.pages[0].placements[0].photo;
-  assert.ok(om.length > 0 && om.every((m) => (m.y1 === m.y2 ? m.x2 <= ph.x + 1e-6 : m.y2 <= ph.y + 1e-6)), 'single photo: marks only on the top and left, none toward the rest of the sheet');
+  assert.ok(om.length > 0 && om.every((m) => Math.max(m.x1, m.x2) <= ph.x + ph.w + 6 && Math.max(m.y1, m.y2) <= ph.y + ph.h + 6), 'single photo: short marks right around it, none toward the rest of the sheet');
 });
 
 test('every ready-made template carries the quality-reference engine settings; saved templates are upgraded once', () => {
@@ -406,4 +407,43 @@ test('reset to the reference: saved adjustments and own templates are removed, a
   assert.ok(Math.abs(p46.headHeight.target / 60 - 25.5 / 40) < 0.005, 'head proportion = reference');
   assert.ok(Math.abs(p46.eyeFromBottom.target / 60 - 26 / 40) < 0.005, 'eye-line proportion = reference');
   assert.equal(findProfile('icao-35x45').headHeight.target, 34, 'passport rule untouched (ICAO)');
+});
+
+test('3x4 template: 8-photo form (every photo turned 90°, 2 × 4, row by row); exactly 9 photos use the compact upright 3 × 3', () => {
+  const p = findQuickPreset('q-3x4-4r');
+  assert.equal(p.orientation, 'portrait'); assert.equal(p.allowRotation, true); assert.equal(p.fillOrder, 'ltr'); assert.equal(p.margin, 5); assert.equal(p.gap, 2);
+  assert.equal(p.nine, true); assert.equal(p.nineMargin, 3.7); assert.equal(p.nineGap, 2);
+  // 8 photos: 2 columns × 4 rows, ALL turned (40 × 30), numbered row by row, top-left
+  const base8 = quickLayoutInput(p, [{ id: 'a', copies: 8 }], 'exact');
+  const l8 = computeLayout(base8);
+  assert.equal(l8.totals.sheets, 1); assert.equal(l8.totals.placed, 8);
+  const pl8 = l8.pages[0].placements;
+  assert.ok(pl8.every((q) => q.photo.w === 40 && q.photo.h === 30), 'every photo turned 90°, none upright');
+  assert.deepEqual(pl8.slice(0, 4).map((q) => [q.photo.x, q.photo.y]), [[5, 5], [47, 5], [5, 37], [47, 37]]);
+  // any count other than 9 keeps that form (4, 6, 7, 8, 10, 12 photos)
+  for (const n of [4, 6, 7, 8, 10, 12]) {
+    const l = computeLayout(quickLayoutInput(p, [{ id: 'a', copies: n }], 'exact'));
+    assert.ok(l.pages[0].placements.every((q) => q.photo.w === 40), `${n} photos: turned form`);
+    assert.equal(nineModeInput({ margin: p.nineMargin, gap: p.nineGap }, quickLayoutInput(p, [{ id: 'a', copies: n }], 'exact')), null, `${n}: nine mode not used`);
+  }
+  // exactly 9: one sheet, upright 3 × 3, margin 3.7 and gap 2 (still ≥ the printer's 3 mm edge), row by row
+  const base9 = quickLayoutInput(p, [{ id: 'a', copies: 9 }], 'exact');
+  assert.equal(computeLayout(base9).totals.sheets, 2, 'without the nine mode 9 photos would need two sheets');
+  const alt = nineModeInput({ margin: p.nineMargin, gap: p.nineGap }, base9);
+  assert.ok(alt, 'nine mode applies');
+  const l9 = computeLayout(alt);
+  assert.equal(l9.totals.sheets, 1); assert.equal(l9.totals.placed, 9);
+  const pl9 = l9.pages[0].placements;
+  assert.ok(pl9.every((q) => q.photo.w === 30 && q.photo.h === 40), 'upright');
+  assert.deepEqual(pl9.slice(0, 4).map((q) => [q.photo.x, q.photo.y]), [[3.7, 3.7], [35.7, 3.7], [67.7, 3.7], [3.7, 45.7]]);
+  const right = Math.max(...pl9.map((q) => q.photo.x + q.photo.w)); const bottom = Math.max(...pl9.map((q) => q.photo.y + q.photo.h));
+  assert.ok(right <= 101.6 - 3 + 1e-9 && bottom <= 152.4 - 3 + 1e-9, 'inside the printer edge (3 mm)');
+  assert.equal(l9.warnings.some((w) => w.code === 'MARGINS_BELOW_PRINTER' || w.code === 'PRINTER_MARGIN_CLIP'), false);
+  // two people 4 + 5 = 9 photos also use it; 'fill' mode never does
+  assert.ok(nineModeInput({ margin: 3.7, gap: 2 }, quickLayoutInput(p, [{ id: 'a', copies: 4 }, { id: 'b', copies: 5 }], 'exact')));
+  assert.equal(nineModeInput({ margin: 3.7, gap: 2 }, quickLayoutInput(p, [{ id: 'a', copies: 9 }], 'fill')), null);
+  assert.equal(nineModeInput(null, base9), null);
+  // a size where nine cannot fit on one sheet keeps the normal layout instead of a broken one
+  const big = findQuickPreset('q-4x6-4r');
+  assert.equal(nineModeInput({ margin: 3.7, gap: 2 }, quickLayoutInput(big, [{ id: 'a', copies: 9 }], 'exact')), null);
 });

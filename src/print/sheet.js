@@ -1,7 +1,7 @@
 // Print studio: layout input, sheet DOM (shared by preview and print), browser
 // print, exact-size PDF, raster sheet export and the calibration sheet.
 import { getState, startTask, toast, logEvent } from '../state/store.js';
-import { computeLayout, computeMarks } from '../core/layout.js';
+import { computeLayout, computeMarks, nineModeInput } from '../core/layout.js';
 import { PAPER_PRESETS } from '../core/presets.js';
 import { printBoostLut, applyLut, PRINT_BOOST_IDS } from '../core/adjust.js';
 import { mmToPx, mmToPt } from '../core/units.js';
@@ -35,7 +35,7 @@ export function layoutInput(project, photos, settings) {
   const items = sh.items
     .filter((it) => photos[it.photoId])
     .map((it) => ({ id: it.id, widthMm: photos[it.photoId].edit.widthMm, heightMm: photos[it.photoId].edit.heightMm, copies: it.copies }));
-  return {
+  const base = {
     paper: resolvePaper(sh, settings),
     orientation: sh.orientation,
     margins: sh.margins,
@@ -43,6 +43,7 @@ export function layoutInput(project, photos, settings) {
     items,
     mode: sh.mode,
     allowRotation: sh.allowRotation,
+    rotateAll: !!sh.rotateAll,
     grid: sh.grid,
     align: sh.align,
     fillOrder: sh.fillOrder,
@@ -50,6 +51,7 @@ export function layoutInput(project, photos, settings) {
     label: { enabled: sh.label.enabled, heightMm: sh.label.heightMm, gapMm: sh.label.gapMm },
     printer: sh.printer,
   };
+  return nineModeInput(sh.nine, base) || base;
 }
 
 export function computeSheetLayout(state = getState()) {
