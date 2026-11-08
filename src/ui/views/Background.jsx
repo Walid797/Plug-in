@@ -11,6 +11,7 @@ import { aiAvailability } from '../../platform/capabilities.js';
 import { formatNumber } from '../../core/digits.js';
 import { findModel } from '../../ai/registry.js';
 import { modelStatusText } from './Settings.jsx';
+import { aiFailureText } from '../../ai/errors.js';
 
 export { maskForegroundFraction };
 
@@ -21,7 +22,7 @@ export function segErrorText(err) {
     case 'MODEL_MISSING': return 'فایل مدل پیدا نشد. از «تنظیمات و مدل‌های آفلاین» آن را نصب کنید.';
     case 'HASH_MISMATCH': return 'فایل مدل خراب یا تغییر یافته است (چکسام نادرست).';
     case 'FILE_PROTOCOL': return 'در حالت file:// مدل بارگذاری نمی‌شود؛ برنامه را با راه‌انداز محلی باز کنید.';
-    default: return 'جداسازی پس‌زمینه ناموفق بود (حافظهٔ دستگاه یا اجرای مدل). صفحه را دوباره بارگذاری کنید و دوباره امتحان کنید.';
+    default: return aiFailureText(err, 'جداسازی پس‌زمینه');
   }
 }
 

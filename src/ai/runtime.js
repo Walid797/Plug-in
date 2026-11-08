@@ -104,7 +104,16 @@ export function getSegmenter({ cpuOnly = false } = {}) {
  */
 export async function runWithFallback(id, getter, fn, validate = () => true) {
   const inst = await getter();
-  if (delegateOf(id) !== 'GPU') return fn(inst);
+  if (delegateOf(id) !== 'GPU') {
+    try {
+      return await fn(inst);
+    } catch (e) {
+      // one fresh start: the model is released (its memory is freed) and recreated, then the run is repeated
+      console.warn(`inference failed for ${id}; retrying once with a fresh model`, e);
+      disposeModel(id);
+      return fn(await getter({ cpuOnly: true }));
+    }
+  }
   try {
     const r = await fn(inst);
     if (validate(r)) return r;

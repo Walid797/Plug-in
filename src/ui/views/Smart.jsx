@@ -14,6 +14,7 @@ import { qualityText, LEVEL_FA } from '../../i18n/fa.js';
 import { formatNumber } from '../../core/digits.js';
 import { aiAvailability } from '../../platform/capabilities.js';
 import { modelStatusText } from './Settings.jsx';
+import { aiFailureText } from '../../ai/errors.js';
 
 const LEVEL_ICON = { ok: 'circle-check', warn: 'triangle-alert', error: 'circle-x', info: 'info' };
 
@@ -21,9 +22,8 @@ function aiErrorText(e) {
   if (e?.code === 'FILE_PROTOCOL') return 'در حالت file:// مدل بارگذاری نمی‌شود. برنامه را با راه‌انداز محلی باز کنید.';
   if (e?.code === 'MODEL_MISSING') return 'فایل مدل پیدا نشد. از «تنظیمات و مدل‌های آفلاین» آن را نصب کنید.';
   if (e?.code === 'HASH_MISMATCH') return 'فایل مدل خراب یا تغییر یافته است (چکسام نادرست).';
-  if (e?.code === 'RUNTIME_LOAD') return 'موتور هوش مصنوعی محلی بارگذاری نشد (پوشهٔ vendor ناقص است؟).';
   if (e?.code === 'NO_ORIGINAL') return 'عکس اصلی در دسترس نیست.';
-  return 'اجرای مدل محلی ناموفق بود. حافظهٔ دستگاه ممکن است کافی نباشد.';
+  return aiFailureText(e, 'تحلیل چهره');
 }
 
 export function SmartView() {

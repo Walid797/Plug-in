@@ -153,7 +153,7 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
 
       step(0, 'تغییر پس‌زمینه');
       if (preset.whiteBg && aiState.segOk) {
-        try { r.bg = await replaceBackground(photo, aiState, preset); } catch (err) { console.error(err); r.bg = 'failed'; r.bgError = err?.code || 'FAILED'; }
+        try { r.bg = await replaceBackground(photo, aiState, preset); } catch (err) { console.error(err); r.bg = 'failed'; r.bgError = err?.code || 'FAILED'; r.bgErrorInfo = { message: String(err?.message || ''), name: String(err?.name || '') }; }
       }
       if (task.signal.aborted) { cancelled = true; r.cancelled = true; break; }
 

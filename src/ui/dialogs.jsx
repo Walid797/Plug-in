@@ -70,7 +70,7 @@ function bgStatus(r, color) {
   if (r.bg === 'ok') return { kind: 'ok', text: `پس‌زمینه ${name} شد` };
   if (r.bg === 'white') return { kind: 'ok', text: 'پس‌زمینه از قبل سفید بود؛ دست نخورد (جزئیات مو حفظ شد)' };
   if (r.bg === 'reused') return { kind: 'ok', text: `پس‌زمینه ${name} شد (ماسک قبلی)` };
-  if (r.bg === 'failed') return { kind: 'err', text: `پس‌زمینه ${name} نشد`, detail: segErrorText({ code: r.bgError }) };
+  if (r.bg === 'failed') return { kind: 'err', text: `پس‌زمینه ${name} نشد`, detail: segErrorText({ code: r.bgError, ...(r.bgErrorInfo || {}) }) };
   if (r.bg === 'off') return { kind: '', text: 'پس‌زمینه طبق قالب دست نخورد' };
   return { kind: 'warn', text: 'پس‌زمینه دست نخورد (مدل محلی در دسترس نیست)' };
 }
