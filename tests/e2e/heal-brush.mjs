@@ -54,7 +54,18 @@ try {
   await page.getByRole('button', { name: 'پاک‌کردن همهٔ ضربه‌ها' }).click();
   await page.waitForTimeout(500);
   assert((await fixes()).length === 0, 'all strokes cleared');
-  const real = log.errors.filter((l) => !/404|favicon|WebGL|GPU|net::ERR/i.test(l));
+  // ready-made template: the "ready to print" dialog offers the brush for each photo
+  await gotoSection(page, 'home');
+  const pid = await page.evaluate(() => window.__hoshmand.getState().selectedPhotoId);
+  await page.evaluate((id) => { window.__hoshmand.quick.runQuickPreset('q-3x4-4r', [id], { openReady: true }); }, pid);
+  const ready = page.locator('dialog.modal:has(h2:text-is("آماده برای چاپ"))');
+  await ready.waitFor({ timeout: 180000 });
+  await ready.getByRole('button', { name: 'پاک‌کردن با قلم' }).first().click();
+  await page.waitForTimeout(600);
+  assert(await page.getByRole('button', { name: /قلم فعال است/ }).count() === 1, 'the Smart view opens with the repair brush already active');
+  const sec = await page.evaluate(() => window.__hoshmand.getState().section);
+  assert(sec === 'smart', `smart section (${sec})`);
+  const real = log.errors.filter((l) => !/404|XNNPACK|favicon|WebGL|GPU|net::ERR/i.test(l));
   assert(!real.length, `no page errors ${real.join(' | ').slice(0, 300)}`);
   assert(log.external.length === 0, `no external requests ${log.external}`);
   console.log('heal-brush: OK');
