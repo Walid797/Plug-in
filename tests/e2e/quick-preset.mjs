@@ -59,7 +59,7 @@ try {
   assert(A.contrast === 8 && A.saturation === 3 && A.temperature === 2 && A.tint === 0 && A.highlights === -10 && A.blacks === -8 && A.denoise === 30, `subtle grading values in full ${JSON.stringify(A)}`);
   assert(A.brightness >= 0 && A.brightness <= 8 && A.shadows >= 0 && A.shadows <= 12 && A.whites >= 0 && A.whites <= 8, `brightening values within the table ${JSON.stringify(A)}`);
   assert(A.sharpness >= 0 && A.sharpness <= 22 && A.clarity >= 0 && A.clarity <= 55, 'detail values within the table');
-  assert(st.face.skin.spots === 90 && st.face.protect.length === 4, `spot healing armed with 4 protected zones (${JSON.stringify(st.face.skin)}, ${st.face.protect?.length})`);
+  assert(st.face.skin.spots === 90 && st.face.protect.length === 8, `spot healing armed with 8 protected zones (${JSON.stringify(st.face.skin)}, ${st.face.protect?.length})`);
   assert(st.face.ellipse && st.face.skin.enabled && st.face.light.enabled, `face engines armed on the analysed face ${JSON.stringify(st.face)}`);
   assert(st.face.ellipse.cx > 0.2 && st.face.ellipse.cx < 0.8 && st.face.ellipse.rx > 0.05, 'face ellipse sane');
   assert(st.sheet.marks.borders === true && st.sheet.marks.borderWidth === 0.1, `border on in the built-in template (${JSON.stringify(st.sheet.marks)})`);

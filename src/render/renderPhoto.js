@@ -8,7 +8,7 @@
 import { cropMatrix, invertMatrix, applyMatrix, multiplyMatrix, defaultCrop } from '../core/crop.js';
 import { applyAdjustments, isNeutral, snapNearWhite } from '../core/adjust.js';
 import { decontaminate, recolorRegion, boxFilter } from '../core/mask.js';
-import { applyFaceEngine, ellipseToOutput, skinProbability } from '../core/faceengine.js';
+import { applyFaceEngine, ellipseToOutput, healDiscs, skinProbability } from '../core/faceengine.js';
 import { makeCanvas } from '../platform/image.js';
 
 export const FULL_FRAME = Object.freeze({ cx: 0.5, cy: 0.5, cw: 1, rotation: 0 });
@@ -136,10 +136,11 @@ export function renderPhoto(edit, assets, outW, outH, opts = {}) {
   const face = edit.face;
   const snapWhite = !before && !!edit.bg?.whiteSnap && !edit.bg?.enabled;
   const faceOn = !before && !!(face?.ellipse && (face.skin?.enabled || face.light?.enabled));
+  const fixesOn = !before && !!face?.fixes?.length;
   const frameWidthPx = opts.frameWidthPx || outW;
   const pxPerMm = opts.pxPerMm || outW / (edit.widthMm || 30);
 
-  if (recolorOn || bgOn || adjustOn || faceOn || snapWhite) {
+  if (recolorOn || bgOn || adjustOn || faceOn || fixesOn || snapWhite) {
     const img = fctx.getImageData(0, 0, outW, outH);
     const data = img.data;
     if (recolorOn) {
@@ -162,6 +163,8 @@ export function renderPhoto(edit, assets, outW, outH, opts = {}) {
       const rep = applyFaceEngine(data, outW, outH, ellipseToOutput(face.ellipse, src.width, src.height, M), { ...face, protect });
       if (opts.faceReport) Object.assign(opts.faceReport, rep);
     }
+    // manual repair brush: real skin texture cloned over the marks the user painted (after all tone work)
+    if (fixesOn) healDiscs(data, outW, outH, fixesToDiscs(face.fixes, src.width, src.height, M));
     if (snapWhite) snapNearWhite(data);
     let alpha = null;
     if (bgOn) {
@@ -227,6 +230,26 @@ export function alphaCanvasFromBytes(bytes, w, h) {
   }
   cx.putImageData(img, 0, 0);
   return c;
+}
+
+/** Repair-brush strokes (source-normalised) → discs in output pixels, sampled along each stroke. */
+export function fixesToDiscs(fixes, srcW, srcH, M, cap = 600) {
+  const scale = Math.hypot(M[0], M[1]);
+  const out = [];
+  for (const s of fixes || []) {
+    const r = Math.max(1.5, (s.size || 0.004) * srcW * scale);
+    const pts = (s.points || []).map(([px, py]) => [M[0] * px * srcW + M[2] * py * srcH + M[4], M[1] * px * srcW + M[3] * py * srcH + M[5]]);
+    if (!pts.length) continue;
+    out.push({ x: pts[0][0], y: pts[0][1], r });
+    const step = Math.max(1, r * 0.6);
+    for (let i = 1; i < pts.length; i += 1) {
+      const [ax, ay] = pts[i - 1]; const [bx, by] = pts[i];
+      const d = Math.hypot(bx - ax, by - ay);
+      for (let t = step; t <= d; t += step) out.push({ x: ax + ((bx - ax) * t) / d, y: ay + ((by - ay) * t) / d, r });
+    }
+    if (out.length >= cap) break;
+  }
+  return out.slice(0, cap);
 }
 
 /** Brush strokes on a mask canvas (alpha = foreground). Coordinates are normalised to the source. */

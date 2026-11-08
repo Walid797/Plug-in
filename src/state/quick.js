@@ -145,7 +145,7 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
       // the colour-grading values are applied after the face brightness is measured on the neutral photo
       // (adaptive strength); until then the photo's own adjustments are cleared
       if (preset.grade) updateEdit(id, (ed) => ({ ...ed, adjust: { ...ADJUSTMENT_DEFAULTS } }), { history: false });
-      updateEdit(id, (ed) => ({ ...ed, face: { ...presetFaceParams(preset), skin: { ...presetFaceParams(preset).skin, enabled: false }, light: { ...presetFaceParams(preset).light, enabled: false }, ellipse: null } }), { history: false });
+      updateEdit(id, (ed) => ({ ...ed, face: { ...presetFaceParams(preset), skin: { ...presetFaceParams(preset).skin, enabled: false }, light: { ...presetFaceParams(preset).light, enabled: false }, ellipse: null, fixes: ed.face?.fixes } }), { history: false });
 
       step(0, 'تغییر پس‌زمینه');
       if (preset.whiteBg && aiState.segOk) {
@@ -188,7 +188,7 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
             // arm the face & skin / lighting engines on this face
             if (preset.skinOn || preset.lightOn) {
               const fp = presetFaceParams(preset);
-              updateEdit(id, (ed) => ({ ...ed, face: { ...fp, ellipse: faceEllipse(getFace(id).metrics, photo.width, photo.height), protect: faceProtectZones(getFace(id).landmarks, photo.width, photo.height) } }), { history: false });
+              updateEdit(id, (ed) => ({ ...ed, face: { ...fp, fixes: ed.face?.fixes, ellipse: faceEllipse(getFace(id).metrics, photo.width, photo.height), protect: faceProtectZones(getFace(id).landmarks, photo.width, photo.height) } }), { history: false });
               r.engine = await engineReport(id).catch(() => null);
             }
             const { shoulderStatsFor } = await import('../ai/face.js');

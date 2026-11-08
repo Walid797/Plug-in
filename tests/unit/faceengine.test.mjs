@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyFaceEngine, faceEllipse, ellipseToOutput, REDNESS_LIMIT, FACE_ENGINE_DEFAULTS, skinDetailWeight } from '../../src/core/faceengine.js';
+import { applyFaceEngine, faceEllipse, ellipseToOutput, REDNESS_LIMIT, FACE_ENGINE_DEFAULTS, skinDetailWeight, healDiscs } from '../../src/core/faceengine.js';
+import { fixesToDiscs } from '../../src/render/renderPhoto.js';
 import { buildLuts, applyAdjustments, chromaDenoise, localContrast, snapNearWhite, ADJUSTMENT_DEFAULTS } from '../../src/core/adjust.js';
 import { suggestCrop, evaluateCrop, faceMetrics, shoulderSides, assessQuality, exposureTowardTarget, backgroundWhiteness, faceProtectZones } from '../../src/core/idphoto.js';
 import { setPngSrgb, setPngDpi, readPngPhys } from '../../src/core/binary.js';
@@ -417,10 +418,65 @@ test('protected zones (eyes, mouth, nostrils) are never retouched, the same blob
   const lm = Array.from({ length: 478 }, () => ({ x: 0.5, y: 0.5 }));
   const set = (i, x, y) => { lm[i] = { x, y }; };
   set(33, 0.34, 0.4); set(133, 0.45, 0.4); set(263, 0.66, 0.4); set(362, 0.55, 0.4); set(61, 0.4, 0.72); set(291, 0.6, 0.72); set(0, 0.5, 0.7); set(17, 0.5, 0.76); set(98, 0.46, 0.6); set(327, 0.54, 0.6);
+  set(70, 0.33, 0.34); set(107, 0.46, 0.35); set(300, 0.67, 0.34); set(336, 0.54, 0.35); set(152, 0.5, 0.86);
   const zones = faceProtectZones(lm, 1000, 1400);
-  assert.equal(zones.length, 4);
+  assert.equal(zones.length, 8, 'eyes x2, mouth, eyebrows x2, mustache band, beard area, nose underside');
   const near = (z, x, y) => Math.abs(z.cx - x) < 0.03 && Math.abs(z.cy - y) < 0.03;
-  assert.ok(near(zones[0], 0.395, 0.4) && near(zones[1], 0.605, 0.4), 'eyes'); assert.ok(near(zones[2], 0.5, 0.72), 'mouth'); assert.ok(near(zones[3], 0.5, 0.6), 'nose underside');
+  assert.ok(near(zones[0], 0.395, 0.4) && near(zones[1], 0.605, 0.4), 'eyes'); assert.ok(near(zones[2], 0.5, 0.72), 'mouth'); assert.ok(near(zones[7], 0.5, 0.6), 'nose underside');
+  assert.ok(near(zones[3], 0.395, 0.345) && near(zones[4], 0.605, 0.345), 'eyebrows'); assert.ok(near(zones[5], 0.5, 0.66) && near(zones[6], 0.5, 0.81), 'mustache band and beard area');
   assert.ok(zones.every((z) => z.rx > 0 && z.ry > 0));
   assert.deepEqual(faceProtectZones(null, 10, 10), []);
+});
+
+test('an elongated stain (a brown smudge) is healed; an equally shaped shadow or crease is not', () => {
+  const img = skinWith(); const rect = (x0, y0, w, h, rgb) => { for (let y = y0; y < y0 + h; y += 1) for (let x = x0; x < x0 + w; x += 1) { const i = (y * img.w + x) * 4; img.d[i] = rgb[0]; img.d[i + 1] = rgb[1]; img.d[i + 2] = rgb[2]; } };
+  rect(70, 170, 4, 30, [186, 120, 92]); // stain: darker AND browner than the skin (like a mark beside the ear)
+  rect(280, 170, 6, 30, [224 * 0.93, 172 * 0.93, 150 * 0.93]); // a soft crease/shadow: only a little darker, same colour
+  const orig = img.d.slice();
+  applyFaceEngine(img.d, img.w, img.h, img.ell, { ...SPOT_ONLY, protect: [] });
+  const skin = [224, 172, 150];
+  assert.ok(dist(P(img, 72, 185), skin) < 30, `stain healed (${P(img, 72, 185)})`);
+  const crease = [orig[(185 * img.w + 282) * 4], orig[(185 * img.w + 282) * 4 + 1], orig[(185 * img.w + 282) * 4 + 2]];
+  assert.ok(dist(P(img, 282, 185), crease) <= 8, 'a soft crease or shadow keeps its shape (it is skin-coloured, so not a stain)');
+});
+
+test('repair brush: a painted mark is replaced by real skin texture and nothing else changes', () => {
+  const w = 160; const h = 160;
+  const d = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      const i = (y * w + x) * 4; const t = noise(x, y) * 5;
+      d[i] = 226 + t; d[i + 1] = 176 + t; d[i + 2] = 154 + t; d[i + 3] = 255;
+    }
+  }
+  // a dark brown elongated mark (like a smudge by the ear) and a tiny mole
+  for (let y = 60; y < 80; y += 1) for (let x = 78; x < 84; x += 1) { const i = (y * w + x) * 4; d[i] = 150; d[i + 1] = 98; d[i + 2] = 80; }
+  for (let y = 118; y < 121; y += 1) for (let x = 40; x < 43; x += 1) { const i = (y * w + x) * 4; d[i] = 120; d[i + 1] = 70; d[i + 2] = 50; }
+  const orig = d.slice();
+  const lum = (a, x, y) => { const i = (y * w + x) * 4; return 0.299 * a[i] + 0.587 * a[i + 1] + 0.114 * a[i + 2]; };
+  const r = healDiscs(d, w, h, [{ x: 81, y: 64, r: 8 }, { x: 81, y: 70, r: 8 }, { x: 81, y: 76, r: 8 }, { x: 41.5, y: 119.5, r: 5 }]);
+  assert.equal(r.healed, 4); assert.equal(r.skipped, 0);
+  for (const [x, y] of [[80, 62], [81, 70], [82, 77], [41, 119]]) assert.ok(Math.abs(lum(d, x, y) - 183) < 14, `mark at ${x},${y} gone (${lum(d, x, y).toFixed(0)})`);
+  // far away pixels are bit-identical
+  for (const [x, y] of [[5, 5], [150, 150], [120, 30], [20, 100]]) assert.equal(lum(d, x, y), lum(orig, x, y), 'untouched outside the brush');
+  // the healed area keeps skin texture (not a flat smear)
+  let mean = 0; let n = 0;
+  for (let y = 62; y < 78; y += 1) for (let x = 77; x < 85; x += 1) { mean += lum(d, x, y); n += 1; }
+  mean /= n; let v = 0;
+  for (let y = 62; y < 78; y += 1) for (let x = 77; x < 85; x += 1) v += (lum(d, x, y) - mean) ** 2;
+  assert.ok(Math.sqrt(v / n) > 0.8, 'texture is kept');
+  // edge cases: off-image and empty input never throw
+  assert.deepEqual(healDiscs(d, w, h, []), { healed: 0, skipped: 0 });
+  assert.equal(healDiscs(d, w, h, [{ x: -500, y: 10, r: 5 }]).skipped, 1);
+});
+
+test('repair brush strokes map to output discs through the crop matrix', () => {
+  const M = [2, 0, 0, 2, 10, 20]; // scale 2, offset
+  const discs = fixesToDiscs([{ size: 0.01, points: [[0.1, 0.1], [0.1, 0.2]] }], 1000, 1000, M);
+  assert.ok(discs.length >= 3, 'sampled along the stroke');
+  assert.deepEqual([discs[0].x, discs[0].y], [210, 220]);
+  assert.equal(discs[0].r, 20);
+  assert.ok(discs.every((p) => p.x === 210));
+  assert.equal(fixesToDiscs([], 10, 10, M).length, 0);
+  assert.ok(fixesToDiscs(Array.from({ length: 50 }, () => ({ size: 0.004, points: [[0.1, 0.1], [0.9, 0.9]] })), 1000, 1000, M).length <= 600, 'capped');
 });

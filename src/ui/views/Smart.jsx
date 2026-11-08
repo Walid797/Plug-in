@@ -6,6 +6,7 @@ import { Icon, Button, Group, Notice, Badge, Select, Switch, Slider } from '../k
 import { faceEllipse } from '../../core/faceengine.js';
 import { faceProtectZones } from '../../core/idphoto.js';
 import { useCropHandlers, ViewSwitch } from './Editor.jsx';
+import { strokeHandlers } from './Background.jsx';
 import { analyzeFace, currentQuality, suggestionFor, profileFor, shoulderFracFor, refineCrownWithMask } from '../../ai/face.js';
 import { getFace } from '../../state/media.js';
 import { RULE_PROFILES, findPhoto } from '../../core/presets.js';
@@ -39,6 +40,8 @@ export function SmartView() {
   const handlers = useCropHandlers(photo || { id: null });
 
   const [shoulderFrac, setShoulderFrac] = useState(null);
+  const [healing, setHealing] = useState(false);
+  const [healSize, setHealSize] = useState(4);
   useEffect(() => { setSuggestion(batch?.[photo?.id] || null); }, [photo?.id]);
   useEffect(() => {
     let alive = true;
@@ -151,7 +154,8 @@ export function SmartView() {
             <span class="toolbar-spacer" />
             <ViewSwitch view={view} setView={setView} />
           </div>
-          <PhotoCanvas photo={photo} mode="crop" view={view} guides={profile} face={showFace ? face : null} suggestion={suggestion} {...handlers} />
+          <PhotoCanvas photo={photo} mode={healing ? 'brush' : 'crop'} view={healing ? 'result' : view} guides={healing ? null : profile} face={showFace && !healing ? face : null} suggestion={healing ? null : suggestion}
+            brush={healing ? { mode: 'heal', size: healSize / 100, softness: 0 } : null} noMask {...handlers} {...strokeHandlers(photo.id, ['face', 'fixes'])} />
           {suggestion ? <div class="stage-note ok"><Icon name="square-dashed" size={16} />کادر سبز خط‌چین پیشنهاد برنامه است. «پذیرش» را بزنید یا کادر را دستی تنظیم کنید.</div> : null}
         </section>
         <aside class="panel" aria-label="اصلاح هوشمند">
@@ -213,6 +217,18 @@ export function SmartView() {
                   <p class="hint">فقط پوست صورت اصلاح می‌شود؛ لب، چشم، ابرو، ریش و مو دست نمی‌خورند و شکل صورت، بافت پوست، سن و هویت تغییر نمی‌کند.</p>
                 </>
               )}
+            </Group>
+            <Group title="قلم پاک‌کردن لکهٔ دستی (ترمیم واقعی)">
+              <p class="hint">اگر لکه، داغ یا نقطه‌ای باقی ماند: «فعال‌کردن قلم» را بزنید و روی همان نقطه بکشید یا ضربه بزنید. برنامه آن ناحیه را با بافت واقعی پوست کنار همان نقطه (از خود همین عکس) جایگزین می‌کند؛ چیزی ساخته نمی‌شود. پس از هر ضربه، نتیجه فوراً در بوم دیده می‌شود و با «واگرد» برمی‌گردد.</p>
+              <div class="btn-row">
+                <Button icon="brush" variant={healing ? 'primary' : ''} onClick={() => setHealing(!healing)} aria-pressed={healing}>{healing ? 'قلم فعال است (برای حرکت عکس، غیرفعال کنید)' : 'فعال‌کردن قلم'}</Button>
+              </div>
+              <Slider label="اندازهٔ قلم (کمی بزرگ‌تر از لکه)" min={1} max={15} value={healSize} defaultValue={4} format={(v) => formatNumber(v)} onInput={setHealSize} />
+              <div class="btn-row">
+                <Button size="sm" variant="ghost" icon="undo-2" disabled={!e.face?.fixes?.length} onClick={() => { recordHistory({ type: 'edit', photoId: photo.id }); updateEdit(photo.id, (ed) => ({ ...ed, face: { ...ed.face, fixes: (ed.face.fixes || []).slice(0, -1) } }), { history: false }); }}>برداشتن آخرین ضربه</Button>
+                <Button size="sm" variant="ghost" icon="trash-2" disabled={!e.face?.fixes?.length} onClick={() => updateEdit(photo.id, (ed) => ({ ...ed, face: { ...ed.face, fixes: [] } }))}>پاک‌کردن همهٔ ضربه‌ها</Button>
+                <span class="hint">{formatNumber(e.face?.fixes?.length || 0)} ضربه</span>
+              </div>
             </Group>
             <Group title="پردازش گروهی">
               <p class="hint">برای همهٔ عکس‌های پروژه پیشنهاد کادر ساخته می‌شود؛ هیچ تغییری بدون تأیید شما اعمال نمی‌شود.</p>

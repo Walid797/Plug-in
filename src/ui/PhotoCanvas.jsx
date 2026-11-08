@@ -99,7 +99,7 @@ export function PhotoCanvas(props) {
   // mask canvas for mask view / brush feedback
   const target = props.maskTarget || 'person';
   useEffect(() => {
-    if (!pv || !photo || (view !== 'mask' && mode !== 'brush')) { setMaskCanvas(null); return undefined; }
+    if (!pv || !photo || (view !== 'mask' && (mode !== 'brush' || props.noMask))) { setMaskCanvas(null); return undefined; }
     let alive = true;
     const t = setTimeout(async () => {
       const m = target === 'clothes' ? await getClothesMask(photo) : await getPersonMask(photo);
@@ -189,7 +189,7 @@ export function PhotoCanvas(props) {
     if (face?.landmarks) drawFace(ctx, face, V, pv, photo);
     if (mode === 'brush' && cursor.current && props.brush) {
       const r = (props.brush.size * frame.w) / 2;
-      ctx.strokeStyle = props.brush.mode === 'erase' ? '#ff7a6e' : '#7cf0b4'; ctx.lineWidth = 1.5;
+      ctx.strokeStyle = props.brush.mode === 'erase' || props.brush.mode === 'heal' ? '#ff7a6e' : '#7cf0b4'; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(cursor.current.x, cursor.current.y, Math.max(2, r), 0, Math.PI * 2); ctx.stroke();
     }
   });

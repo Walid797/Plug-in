@@ -64,8 +64,8 @@ export function faceMetrics(lm, srcW, srcH, opts = {}) {
 }
 
 /**
- * Zones that retouching must never touch: both eyes (inner corner, lashes, lids), the mouth (lips and
- * corners) and the underside of the nose (nostrils). Ellipses in source-normalised units like faceEllipse
+ * Zones that retouching must never touch: both eyes (inner corner, lashes, lids), both eyebrows, the mouth (lips and
+ * corners), the mustache band, the beard area below the lip, and the underside of the nose (nostrils). Ellipses in source-normalised units like faceEllipse
  * (centre over the source size, radii over the source width). Derived from the landmarks only; nothing is
  * stored about the person beyond these shapes.
  */
@@ -84,8 +84,18 @@ export function faceProtectZones(lm, srcW, srcH) {
   const m1 = P(61); const m2 = P(291); const mw = d(m1, m2); // mouth
   const mc = mid(mid(m1, m2), mid(P(0), P(17)));
   out.push(zone(mc, mw * 0.68, Math.max(d(P(0), P(17)) * 0.95, mw * 0.3), rot(m1, m2)));
+  for (const [o, i] of [[70, 107], [300, 336]]) { // eyebrows
+    const a = P(o); const b = P(i); const w = d(a, b);
+    out.push(zone(mid(a, b), w * 0.66, w * 0.3, rot(a, b)));
+  }
+  {
+    const nb = mid(P(98), P(327)); const lipTop = P(0); const lipBottom = P(17); const chin = P(152);
+    // mustache band (between the nose and the upper lip) and the beard area (below the lower lip down to the chin)
+    out.push(zone(mid(nb, lipTop), mw * 0.85, Math.max(d(nb, lipTop) * 0.8, mw * 0.14), rot(m1, m2)));
+    out.push(zone(mid(lipBottom, chin), mw * 0.95, Math.max(d(lipBottom, chin) * 0.8, mw * 0.2), rot(m1, m2)));
+  }
   const n1 = P(98); const n2 = P(327); const nw = d(n1, n2); // nostrils / underside of the nose
-  out.push(zone({ x: (n1.x + n2.x) / 2, y: (n1.y + n2.y) / 2 - nw * 0.08 }, nw * 0.72, nw * 0.4, rot(n1, n2)));
+  out.push(zone({ x: (n1.x + n2.x) / 2, y: (n1.y + n2.y) / 2 - nw * 0.08 }, nw * 0.6, nw * 0.36, rot(n1, n2)));
   return out;
 }
 

@@ -71,7 +71,13 @@ function roundBlobs(flag, bw, bh, rx) {
     const fsMin = r === 1 ? 0.88 : 0.7; // the 3x3 window is too coarse: a bend of a 2 px hair would pass 0.7
     const fh = boxAxis(flag, bw, bh, r, true); const fv = boxAxis(flag, bw, bh, r, false);
     const fs = boxFilter(flag, bw, bh, r); const fb = boxFilter(flag, bw, bh, R);
-    for (let j = 0; j < n; j += 1) if (flag[j] && Math.min(fh[j], fv[j]) >= 0.6 && fs[j] >= fsMin && fb[j] < fbMax) q[j] = 1;
+    for (let j = 0; j < n; j += 1) {
+      if (!flag[j]) continue;
+      const roundBlob = Math.min(fh[j], fv[j]) >= 0.6 && fs[j] >= fsMin && fb[j] < fbMax;
+      // a tiny 2-3 px dot (a mole, a pimple head) cannot fill a 3x3 window: accept it when it is clearly isolated
+      const tinyDot = r === 1 && fs[j] >= 0.4 && fb[j] < 0.08;
+      if (roundBlob || tinyDot) q[j] = 1;
+    }
   }
   return q;
 }
@@ -95,8 +101,17 @@ export function spotCorrection(Y, Cb, Cr, strictW, bw, bh, rx, strength, holeCan
   let skinW = strictW;
   if (holeCand) {
     const q = roundBlobs(holeCand, bw, bh, rx);
+    // elongated but THICK holes (a stain: >= 3 px survives a 3x3 erosion; no hair does) count as well
+    const er = new Float32Array(n);
+    for (let y = 1; y < bh - 1; y += 1) for (let x = 1; x < bw - 1; x += 1) {
+      const j = y * bw + x; let all = 1;
+      for (let oy = -1; oy <= 1 && all; oy += 1) for (let ox = -1; ox <= 1; ox += 1) if (!holeCand[j + oy * bw + ox]) { all = 0; break; }
+      er[j] = all;
+    }
+    const thickHole = boxFilter(er, bw, bh, 2);
+    const holeDens = boxFilter(holeCand, bw, bh, Math.max(10, Math.round(rx * 0.1))); // a stain is isolated; stubble and clumps are dense
     skinW = new Float32Array(n);
-    for (let j = 0; j < n; j += 1) skinW[j] = Math.max(strictW[j], q[j] * 0.9);
+    for (let j = 0; j < n; j += 1) skinW[j] = Math.max(strictW[j], q[j] * 0.9, holeCand[j] && thickHole[j] > 0.04 && holeDens[j] < 0.2 && !(protect && protect[j] > 0.05) ? 0.9 : 0);
   }
   const dY = new Float32Array(n); const dCb = new Float32Array(n); const dCr = new Float32Array(n);
   if (!(strength > 0)) return { dY, dCb, dCr, fixedFrac: 0 };
@@ -109,35 +124,68 @@ export function spotCorrection(Y, Cb, Cr, strictW, bw, bh, rx, strength, holeCan
     sure[j] = smooth(0.6, 0.9, rawM ? rawM[j] : strictW[j]);
     wY[j] = Y[j] * skinW[j]; wC[j] = Cr[j] * skinW[j]; sY[j] = Y[j] * sure[j]; sC[j] = Cr[j] * sure[j]; sB[j] = Cb[j] * sure[j];
   }
+  const wB0 = new Float32Array(n);
+  for (let j = 0; j < n; j += 1) wB0[j] = Cb[j] * skinW[j];
   const D = new Float32Array(n); const E = new Float32Array(n);
   for (const f of [0.006, 0.014, 0.03, 0.055]) { // blob radii: ~0.6%, 1.4%, 3% and 5.5% of the face half-width
     const r1 = Math.max(1, Math.round(rx * f)); const r2 = Math.max(r1 * 2 + 1, Math.round(r1 * 2.6));
-    const m2 = num(sure, r2); const y2 = num(sY, r2); const c2 = num(sC, r2);
+    const m2 = num(sure, r2); const y2 = num(sY, r2); const c2 = num(sC, r2); const bs2 = num(sB, r2);
     // the blob signal is measured along a horizontal AND a vertical window and the weaker one counts: a round blemish is
     // dark/red in both, a thin hair (any direction) is weak in at least one, so hairs and lashes are not mistaken for it
     const sig = (horizontal) => {
-      const m1 = boxAxis(skinW, bw, bh, r1, horizontal); const y1 = boxAxis(wY, bw, bh, r1, horizontal); const c1 = boxAxis(wC, bw, bh, r1, horizontal);
-      const d = new Float32Array(n); const e = new Float32Array(n);
+      const m1 = boxAxis(skinW, bw, bh, r1, horizontal); const y1 = boxAxis(wY, bw, bh, r1, horizontal); const c1 = boxAxis(wC, bw, bh, r1, horizontal); const b1 = boxAxis(wB0, bw, bh, r1, horizontal);
+      const d = new Float32Array(n); const e = new Float32Array(n); const eb = new Float32Array(n);
       for (let j = 0; j < n; j += 1) {
         if (m1[j] < 0.25 || m2[j] < 0.25) continue;
         d[j] = y2[j] / m2[j] - y1[j] / m1[j]; // positive: darker than the surroundings
         e[j] = c1[j] / m1[j] - c2[j] / m2[j]; // positive: redder
+        eb[j] = bs2[j] / m2[j] - b1[j] / m1[j]; // positive: more yellow-brown
       }
-      return { d, e };
+      return { d, e, eb };
     };
     const H = sig(true); const V = sig(false);
     for (let j = 0; j < n; j += 1) {
-      // isotropy: a round blob is about equally dark/red in both directions, a line much more along its length
+      // isotropy: a round blob is about equally dark/red in both directions, a thin line much more along its length
       const d = Math.min(H.d[j], V.d[j]) >= 0.72 * Math.max(H.d[j], V.d[j]) ? Math.min(H.d[j], V.d[j]) : 0;
       const e = Math.min(H.e[j], V.e[j]) >= 0.72 * Math.max(H.e[j], V.e[j]) ? Math.min(H.e[j], V.e[j]) : 0;
       if (d > D[j]) D[j] = d;
       if (e > E[j]) E[j] = e;
     }
   }
+  // Wide pigment marks (a brown or red stain, elongated): thick enough that no hair is (>= 3 px survives a 3x3
+  // erosion) AND different in colour from the skin around it. Shadows, folds and the sides of the nose only change
+  // the light, not the colour, so they do not qualify.
+  const raw2 = new Float32Array(n);
+  {
+    const wB = new Float32Array(n);
+    for (let j = 0; j < n; j += 1) wB[j] = Cb[j] * skinW[j];
+    const cand = new Float32Array(n);
+    const dd = new Float32Array(n); const cd = new Float32Array(n);
+    for (const [r1, r2] of [[2, 7], [3, 10]]) {
+      const m1 = num(skinW, r1); const mm2 = num(sure, r2);
+      const y1 = num(wY, r1); const y2 = num(sY, r2); const c1 = num(wC, r1); const c2 = num(sC, r2); const b1 = num(wB, r1); const b2 = num(sB, r2);
+      for (let j = 0; j < n; j += 1) {
+        if (m1[j] < 0.4 || mm2[j] < 0.25) continue;
+        const d = y2[j] / mm2[j] - y1[j] / m1[j];
+        const chroma = Math.max(c1[j] / m1[j] - c2[j] / mm2[j], b2[j] / mm2[j] - b1[j] / m1[j]); // redder or more yellow-brown
+        if (d > dd[j]) dd[j] = d;
+        if (chroma > cd[j]) cd[j] = chroma;
+      }
+    }
+    for (let j = 0; j < n; j += 1) cand[j] = dd[j] > 9 && cd[j] > 3 && skinW[j] >= 0.5 ? 1 : 0;
+    const er = new Float32Array(n); // 3x3 erosion: a hair (<= 2 px) vanishes, a stain stays
+    for (let y = 1; y < bh - 1; y += 1) for (let x = 1; x < bw - 1; x += 1) {
+      const j = y * bw + x; let all = 1;
+      for (let oy = -1; oy <= 1 && all; oy += 1) for (let ox = -1; ox <= 1; ox += 1) if (!cand[j + oy * bw + ox]) { all = 0; break; }
+      er[j] = all;
+    }
+    const thick = boxFilter(er, bw, bh, 2); // grow back over the stain
+    for (let j = 0; j < n; j += 1) if (thick[j] > 0.04 && cand[j]) raw2[j] = smooth(9, 28, dd[j]) * smooth(3, 8, cd[j]);
+  }
   const raw = new Float32Array(n);
   for (let j = 0; j < n; j += 1) {
     if (skinW[j] < 0.5) continue;
-    raw[j] = Math.max(smooth(14, 40, D[j]), smooth(3, 9, E[j])); // clear blemishes only: faint freckles and fine texture stay
+    raw[j] = Math.max(smooth(8, 24, D[j]), smooth(2.5, 7, E[j]), raw2[j]);
   }
   // dense clusters of dark dots are texture (stubble, freckles), not blemishes
   const dens = boxFilter(raw, bw, bh, Math.max(3, Math.round(rx * 0.1)));
@@ -145,7 +193,7 @@ export function spotCorrection(Y, Cb, Cr, strictW, bw, bh, rx, strength, holeCan
   const w0 = new Float32Array(n);
   for (let j = 0; j < n; j += 1) {
     // weak detections are ignored (thin hairs and fine texture give weak, partial responses); only clear blemishes are healed
-    if (raw[j] > 0.35) w0[j] = raw[j] * (1 - smooth(0.12, 0.3, dens[j])) * k * Math.min(1, skinW[j] * 1.4) * (protect ? 1 - protect[j] : 1);
+    if (raw[j] > 0.25) w0[j] = raw[j] * (1 - smooth(0.12, 0.3, dens[j])) * k * Math.min(1, skinW[j] * 1.4) * (protect ? 1 - protect[j] : 1);
   }
   // grow the repair area by one pixel so the soft rim of the blemish is covered too
   const wg = boxFilter(w0, bw, bh, 1);
@@ -310,7 +358,7 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
   const n = bw * bh;
   const cos = Math.cos(ell.rot); const sin = Math.sin(ell.rot);
   const Y = new Float32Array(n); const Cb = new Float32Array(n); const Cr = new Float32Array(n);
-  const we = new Float32Array(n); const U = new Float32Array(n);
+  const we = new Float32Array(n); const weW = new Float32Array(n); const U = new Float32Array(n);
   const seedCb = []; const seedCr = [];
   for (let y = 0; y < bh; y += 1) {
     for (let x = 0; x < bw; x += 1) {
@@ -324,6 +372,10 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
       U[j] = u;
       const d = Math.hypot(u, v);
       we[j] = d <= 0.85 ? 1 : d >= 1.05 ? 0 : 1 - smooth(0.85, 1.05, d);
+      // wider region for blemish healing only: cheeks beside the ears and the jaw lie outside the face ellipse
+      // (sideways only: widening upwards would reach the hair)
+      const dW = Math.hypot(u * 0.77, v);
+      weW[j] = dW <= 1.05 ? 1 : dW >= 1.3 ? 0 : 1 - smooth(1.05, 1.3, dW);
       if (d < 0.6 && Y[j] > 50 && Y[j] < 240 && Cb[j] > 77 && Cb[j] < 127 && Cr[j] > 133 && Cr[j] < 173) { seedCb.push(Cb[j]); seedCr.push(Cr[j]); }
     }
   }
@@ -333,15 +385,16 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
   // Burnt (very bright) skin loses saturation, so in the highlights the colour tolerance widens, but
   // only for pixels that are still clearly warm: neutral eye whites stay excluded.
   const warm = Math.max(1, mCr - 128);
-  const m = new Float32Array(n);
+  const m = new Float32Array(n); const base = new Float32Array(n);
   for (let j = 0; j < n; j += 1) {
-    if (we[j] <= 0) continue;
+    if (weW[j] <= 0) continue;
     const relax = smooth(190, 235, Y[j]) * smooth(0.15 * warm, 0.35 * warm, Cr[j] - 128);
     const tol = 1 + 2.5 * relax;
     const dCb = (Cb[j] - mCb) / (7 * tol); const dCr = (Cr[j] - mCr) / (8 * tol);
     const chroma = Math.exp(-0.5 * (dCb * dCb + dCr * dCr));
     const lum = smooth(35, 75, Y[j]) * (1 - smooth(238, 252, Y[j]));
-    m[j] = chroma * lum * we[j];
+    base[j] = chroma * lum;
+    m[j] = base[j] * we[j];
   }
   const r0 = Math.max(1, Math.round(Math.min(ell.rx, ell.ry) / 40));
   const ms = boxFilter(m, bw, bh, r0);
@@ -380,11 +433,15 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
   const gL = lw > 0 && rw > 0 && light.enabled && light.even ? clamp(aY / (lY / lw), 1 - MAX_EVEN_GAIN, 1 + MAX_EVEN_GAIN) : 1;
   const gR = lw > 0 && rw > 0 && light.enabled && light.even ? clamp(aY / (rY / rw), 1 - MAX_EVEN_GAIN, 1 + MAX_EVEN_GAIN) : 1;
   report.evenGain = [gL, gR];
-  let holeCand = null;
+  let holeCand = null; let mSp = null; let msSp = null;
   if (skin.enabled && skin.spots > 0) {
+    mSp = new Float32Array(n);
+    for (let j = 0; j < n; j += 1) mSp[j] = base[j] * weW[j];
+    msSp = boxFilter(mSp, bw, bh, r0);
+    for (let j = 0; j < n; j += 1) msSp[j] *= smooth(0.08, 0.45, mSp[j]);
     holeCand = new Float32Array(n);
     for (let j = 0; j < n; j += 1) {
-      if (we[j] > 0.5 && ms[j] < 0.5 && Y[j] > 70 && Y[j] < 240 && Cr[j] - 128 >= 0.35 * warm) holeCand[j] = 1;
+      if (weW[j] > 0.5 && msSp[j] < 0.5 && Y[j] > 70 && Y[j] < 240 && Cr[j] - 128 >= 0.35 * warm) holeCand[j] = 1;
     }
   }
   // retouch-free zones (eyes, mouth, nostrils) in bbox coordinates, soft edge
@@ -404,7 +461,7 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
       }
     }
   }
-  const spots = holeCand ? spotCorrection(Y, Cb, Cr, ms, bw, bh, ell.rx, skin.spots, holeCand, m, protect) : null;
+  const spots = holeCand ? spotCorrection(Y, Cb, Cr, msSp, bw, bh, ell.rx, skin.spots, holeCand, mSp, protect) : null;
   report.spotsFrac = spots ? spots.fixedFrac : 0;
   let after = 0; let liftSum = 0; let blotchSum = 0; let protectedW = 0;
   for (let y = 0; y < bh; y += 1) {
@@ -459,4 +516,84 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
   report.protectedFrac = protectedW / wsum;
   report.lumaAfter = after / wsum;
   return report;
+}
+
+/**
+ * Manual spot removal ("repair brush"). Every disc is replaced by real skin texture cloned from a clean
+ * patch nearby, shifted so its surroundings match the surroundings of the disc, then feathered into the
+ * skin. Nothing is invented: the pixels come from the same photo. Works in place on RGBA data.
+ * @param {Uint8ClampedArray} data
+ * @param {number} w
+ * @param {number} h
+ * @param {{x:number,y:number,r:number}[]} discs centres/radii in output pixels
+ * @returns {{healed:number,skipped:number}}
+ */
+export function healDiscs(data, w, h, discs) {
+  let healed = 0; let skipped = 0;
+  const ANG = 12;
+  const dirs = [];
+  for (let a = 0; a < ANG; a += 1) dirs.push([Math.cos((a * 2 * Math.PI) / ANG), Math.sin((a * 2 * Math.PI) / ANG)]);
+  const lum = (i) => 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+  /** mean RGB + luma stdev of the disc interior (rad) or of the ring (rad*1.35..rad*2) at (cx,cy). */
+  const stats = (cx, cy, rad, ring) => {
+    const lo = ring ? rad * 1.35 : 0; const hi = ring ? rad * 2 : rad;
+    const xa = Math.max(0, Math.floor(cx - hi)); const xb = Math.min(w - 1, Math.ceil(cx + hi));
+    const ya = Math.max(0, Math.floor(cy - hi)); const yb = Math.min(h - 1, Math.ceil(cy + hi));
+    let n = 0; let s0 = 0; let s1 = 0; let s2 = 0; let sl = 0; let sl2 = 0;
+    for (let y = ya; y <= yb; y += 1) {
+      for (let x = xa; x <= xb; x += 1) {
+        const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
+        if (d > hi || d < lo) continue;
+        const i = (y * w + x) * 4; const l = lum(i);
+        n += 1; s0 += data[i]; s1 += data[i + 1]; s2 += data[i + 2]; sl += l; sl2 += l * l;
+      }
+    }
+    if (n < 6) return null;
+    const ml = sl / n;
+    return { rgb: [s0 / n, s1 / n, s2 / n], std: Math.sqrt(Math.max(0, sl2 / n - ml * ml)), n };
+  };
+  for (const disc of discs || []) {
+    const r = Math.max(1.5, disc.r);
+    const cx = disc.x; const cy = disc.y;
+    if (!(cx > -r && cy > -r && cx < w + r && cy < h + r)) { skipped += 1; continue; }
+    const target = stats(cx, cy, r, true);
+    if (!target) { skipped += 1; continue; }
+    // best clean source patch: surroundings like ours, flat inside (no blemish of its own)
+    let best = null;
+    for (const dist of [2.6, 3.4, 4.4]) {
+      for (const [dx, dy] of dirs) {
+        const sx = cx + dx * r * dist; const sy = cy + dy * r * dist;
+        if (sx - r * 2 < 0 || sy - r * 2 < 0 || sx + r * 2 >= w || sy + r * 2 >= h) continue;
+        const ring = stats(sx, sy, r, true); const inner = stats(sx, sy, r, false);
+        if (!ring || !inner) continue;
+        let diff = 0; let inDiff = 0;
+        for (let c = 0; c < 3; c += 1) { diff += Math.abs(ring.rgb[c] - target.rgb[c]); inDiff += Math.abs(inner.rgb[c] - ring.rgb[c]); }
+        const score = diff + 1.5 * inDiff + 0.8 * inner.std + dist * 1.5;
+        if (!best || score < best.score) best = { sx, sy, ring, score };
+      }
+    }
+    if (!best) { skipped += 1; continue; }
+    const off = [target.rgb[0] - best.ring.rgb[0], target.rgb[1] - best.ring.rgb[1], target.rgb[2] - best.ring.rgb[2]];
+    const ox = best.sx - cx; const oy = best.sy - cy;
+    const xa = Math.max(0, Math.floor(cx - r * 1.2)); const xb = Math.min(w - 1, Math.ceil(cx + r * 1.2));
+    const ya = Math.max(0, Math.floor(cy - r * 1.2)); const yb = Math.min(h - 1, Math.ceil(cy + r * 1.2));
+    const patch = [];
+    for (let y = ya; y <= yb; y += 1) {
+      for (let x = xa; x <= xb; x += 1) {
+        const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy) / r;
+        if (d >= 1.2) continue;
+        const k = d <= 0.8 ? 1 : 1 - smooth(0.8, 1.2, d);
+        const sxp = Math.min(w - 1, Math.max(0, Math.round(x + ox))); const syp = Math.min(h - 1, Math.max(0, Math.round(y + oy)));
+        const si = (syp * w + sxp) * 4;
+        patch.push([(y * w + x) * 4, k, data[si] + off[0], data[si + 1] + off[1], data[si + 2] + off[2]]);
+      }
+    }
+    for (const [i, k, r2, g2, b2] of patch) {
+      data[i] = data[i] + (r2 - data[i]) * k;
+      data[i + 1] = data[i + 1] + (g2 - data[i + 1]) * k;
+      data[i + 2] = data[i + 2] + (b2 - data[i + 2]) * k;
+    }
+    healed += 1;
+  }
+  return { healed, skipped };
 }

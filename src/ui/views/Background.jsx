@@ -33,6 +33,7 @@ function backendLabel(modelId) {
 export function strokeHandlers(photoId, path) {
   // path: ['bg','strokes'] or ['clothes','recolor','strokes']
   const set = (edit, fn) => {
+    if (path[0] === 'face') return { ...edit, face: { ...edit.face, fixes: fn(edit.face?.fixes || []) } };
     if (path[0] === 'bg') return { ...edit, bg: { ...edit.bg, strokes: fn(edit.bg.strokes) } };
     return { ...edit, clothes: { ...edit.clothes, recolor: { ...edit.clothes.recolor, strokes: fn(edit.clothes.recolor.strokes) } } };
   };
