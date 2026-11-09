@@ -6,7 +6,7 @@
 // → clothing template overlay.
 
 import { cropMatrix, invertMatrix, applyMatrix, multiplyMatrix, defaultCrop } from '../core/crop.js';
-import { applyAdjustments, isNeutral, snapNearWhite } from '../core/adjust.js';
+import { applyAdjustments, isNeutral, snapNearWhite, reconstructEdgeDetails } from '../core/adjust.js';
 import { decontaminate, recolorRegion, boxFilter } from '../core/mask.js';
 import { applyFaceEngine, ellipseToOutput, healDiscs, skinProbability } from '../core/faceengine.js';
 import { makeCanvas } from '../platform/image.js';
@@ -158,6 +158,10 @@ export function renderPhoto(edit, assets, outW, outH, opts = {}) {
       for (let j = 0; j < skinP.length; j += 1) detailWeight[j] = 1 - 0.9 * skinP[j];
     }
     if (adjustOn) applyAdjustments(data, outW, outH, edit.adjust, { scale: Math.max(1, frameWidthPx / 350), detailWeight });
+    // Super-resolution detail reconstruction for low-resolution sources (e.g. 500px images upscaled for print/export)
+    if (!before && src.width > 0 && outW / src.width > 1.15) {
+      reconstructEdgeDetails(data, outW, outH, outW / src.width, detailWeight);
+    }
     if (faceOn) {
       const protect = (face.protect || []).map((z) => ({ ...ellipseToOutput(z, src.width, src.height, M), soft: !!z.soft }));
       const toOut = (poly) => (poly || []).map(([px, py]) => applyMatrix(M, px * src.width, py * src.height)).map((p) => [p.x, p.y]);

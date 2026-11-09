@@ -224,6 +224,46 @@ export function applyAdjustments(data, w, h, params, opts = {}) {
   return data;
 }
 
+/**
+ * Edge-preserving super-resolution detail reconstruction for low-resolution sources (e.g. 500px).
+ * Reconstructs micro-contrast along authentic facial and hair contours without halos or noise amplification.
+ */
+export function reconstructEdgeDetails(data, w, h, upFactor, weight = null) {
+  if (upFactor <= 1.15) return data;
+  const n = w * h;
+  const Y = new Float32Array(n);
+  for (let i = 0, j = 0; j < n; i += 4, j += 1) {
+    Y[j] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+  }
+  const strength = Math.min(0.65, (upFactor - 1) * 0.45);
+  for (let y = 1; y < h - 1; y += 1) {
+    const row = y * w;
+    for (let x = 1; x < w - 1; x += 1) {
+      const j = row + x;
+      const wVal = weight ? weight[j] : 1;
+      if (wVal <= 0.05) continue;
+      // 3x3 unsharp laplacian difference
+      const center = Y[j];
+      const lap = 8 * center - (
+        Y[j - 1] + Y[j + 1] +
+        Y[j - w] + Y[j + w] +
+        Y[j - w - 1] + Y[j - w + 1] +
+        Y[j + w - 1] + Y[j + w + 1]
+      );
+      // Only enhance authentic structural gradients (avoid flat areas and extreme clipping)
+      const absLap = Math.abs(lap);
+      if (absLap >= 4 && absLap <= 90) {
+        const boost = clampN(lap * 0.12 * strength * wVal, -16, 16);
+        const idx = j * 4;
+        data[idx] += boost;
+        data[idx + 1] += boost;
+        data[idx + 2] += boost;
+      }
+    }
+  }
+  return data;
+}
+
 /* ------------------------------------------------------- print brightening */
 
 /**

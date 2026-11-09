@@ -188,7 +188,10 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
               r.shoulders = sh.status;
             }
             const meanNow = getFace(id)?.stats?.meanL;
-            const delta = preset.autoLight ? (autoExposureDelta(meanNow) || exposureTowardTarget(meanNow)) : 0;
+            // When colour grading (preset.grade) is enabled, the presetAdjust table already adaptively brightens
+            // the photo toward the reference tone (via gradeStrength). Applying exposureTowardTarget on top would
+            // double the brightening and bleach midtones/clothes. If grade is disabled, exposureTowardTarget acts as fallback.
+            const delta = preset.autoLight ? (autoExposureDelta(meanNow) || (!preset.grade ? exposureTowardTarget(meanNow) : 0)) : 0;
             if (delta) {
               // brightening goes to the mid-tones and lights (skin, shirt), sparing the darks (hair, jacket, brows);
               // a face that is too bright is toned down with the ordinary exposure
