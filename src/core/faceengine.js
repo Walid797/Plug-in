@@ -356,8 +356,8 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
   const x0 = Math.max(0, Math.floor(ell.cx - Math.max(ell.rx, ell.ry) * 1.2));
   const x1 = Math.min(w, Math.ceil(ell.cx + Math.max(ell.rx, ell.ry) * 1.2));
   const y0 = Math.max(0, Math.floor(ell.cy - Math.max(ell.rx, ell.ry) * 1.2));
-  // blemish removal and lighting correction also cover the throat and neck below the chin (the skin-colour gate keeps collar and clothes out)
-  const neckReach = (skin.enabled && (skin.spots > 0 || skin.smooth > 0)) || (light.enabled && (light.even || light.fill > 0)) ? ell.ry * 2.55 : 0;
+  // blemish removal also covers the throat and neck below the chin (the skin-colour gate keeps collar and clothes out)
+  const neckReach = skin.enabled && skin.spots > 0 ? ell.ry * 1.95 : 0;
   const y1 = Math.min(h, Math.ceil(ell.cy + Math.max(Math.max(ell.rx, ell.ry) * 1.2, neckReach)));
   const bw = x1 - x0; const bh = y1 - y0;
   if (bw < 8 || bh < 8) return { applied: false, reason: 'NO_FACE' };
@@ -382,16 +382,14 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
       // (sideways only: widening upwards would reach the hair)
       const dW = Math.hypot(u * 0.77, v);
       weW[j] = dW <= 1.05 ? 1 : dW >= 1.3 ? 0 : 1 - smooth(1.05, 1.3, dW);
-      let neckWeight = 0;
-      if (neckReach > 0 && v > 0.65) { // throat and neck: a band below the jaw, as wide as the neck (widens toward shoulders)
-        const neckWidth = 1.05 + 0.35 * smooth(0.8, 1.8, v);
-        neckWeight = (1 - smooth(neckWidth, neckWidth + 0.35, Math.abs(u))) * (1 - smooth(2.15, 2.55, v)) * smooth(0.65, 0.82, v);
-        if (neckWeight > weW[j]) weW[j] = neckWeight;
-        if (neckWeight > we[j]) we[j] = neckWeight;
+      if (neckReach > 0 && v > 0.8) { // throat and neck: a band below the jaw, as wide as the neck
+        const nw = (1 - smooth(0.78, 0.98, Math.abs(u))) * (1 - smooth(1.75, 1.95, v)) * smooth(0.8, 0.95, v);
+        if (nw > weW[j]) weW[j] = nw;
       }
-      // region of the shading correction: the face, widened smoothly upwards across the whole forehead to the hairline, sideways and down the neck
+      // region of the shading correction: the face, widened smoothly upwards across the whole forehead to the hairline, sideways
+      // (fades out at the chin line so the throat/neck is never distorted by face shading gains)
       const dS = v < 0 ? Math.hypot(u * 0.9, v * 0.85) : Math.hypot(u * 0.77, v * 0.88);
-      weS[j] = Math.max(weW[j], neckWeight, dS <= 1.05 ? 1 : dS >= 1.4 ? 0 : 1 - smooth(1.05, 1.4, dS));
+      weS[j] = (dS <= 1.05 ? 1 : dS >= 1.4 ? 0 : 1 - smooth(1.05, 1.4, dS)) * (1 - smooth(0.85, 1.05, v));
       if (d < 0.6 && Y[j] > 50 && Y[j] < 240 && Cb[j] > 77 && Cb[j] < 127 && Cr[j] > 133 && Cr[j] < 173) { seedCb.push(Cb[j]); seedCr.push(Cr[j]); }
     }
   }
@@ -567,14 +565,10 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
       let R = data[i]; let G = data[i + 1]; let B = data[i + 2];
       // chroma: redness + evenness
       let dCr = -dCrRed * k; let dCb = 0;
-      const dx0 = x0 + x + 0.5 - ell.cx; const dy0 = y0 + y + 0.5 - ell.cy;
-      const v = (-dx0 * sin + dy0 * cos) / ell.ry;
       if (kBal > 0 && bm[j] > 1e-3) {
-        const maxShift = v > 0.65 ? 8 : MAX_BLOTCH_SHIFT;
-        const balMult = v > 0.65 ? kBal * 1.5 : kBal;
         const lowCb = bCb[j] / bm[j]; const lowCr = bCr[j] / bm[j];
-        const eCb = clamp(balMult * (aCb - lowCb), -maxShift, maxShift) * k;
-        const eCr = clamp(balMult * (aCr - lowCr), -maxShift, maxShift) * k;
+        const eCb = clamp(kBal * (aCb - lowCb), -MAX_BLOTCH_SHIFT, MAX_BLOTCH_SHIFT) * k;
+        const eCr = clamp(kBal * (aCr - lowCr), -MAX_BLOTCH_SHIFT, MAX_BLOTCH_SHIFT) * k;
         dCb += eCb; dCr += eCr; blotchSum += Math.abs(eCr) * k;
       }
       R += 1.402 * dCr; G += -0.344136 * dCb - 0.714136 * dCr; B += 1.772 * dCb;
@@ -586,10 +580,9 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
       const y0v = Y[j];
       let gain = 1;
       if (kFill > 0 && fm[j] > 1e-3) {
-        const local = v > 0.65 ? Math.max(fY[j] / fm[j], aY * 0.98) : fY[j] / fm[j];
-        const fillMult = v > 0.65 ? Math.min(1.8, kFill * 2.2) : kFill;
-        const lift = Math.min(MAX_FILL_LIFT, fillMult * Math.max(0, local - y0v)) * k;
-        gain *= Math.min(2.0, (y0v + lift) / Math.max(y0v, 8));
+        const local = fY[j] / fm[j];
+        const lift = Math.min(MAX_FILL_LIFT, kFill * Math.max(0, local - y0v)) * k;
+        gain *= Math.min(1.35, (y0v + lift) / Math.max(y0v, 8));
         liftSum += lift * k;
       }
       if (light.enabled && light.protect) {

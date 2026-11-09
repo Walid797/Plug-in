@@ -195,17 +195,20 @@ export function renderPhoto(edit, assets, outW, outH, opts = {}) {
     if (overlayOn) {
       let chinY = null;
       let cx = outW / 2;
-      let neckHalfW = outW * 0.22;
+      let rx = outW * 0.22;
+      let ry = outW * 0.28;
       if (face?.ellipse) {
         const ell = ellipseToOutput(face.ellipse, src.width, src.height, M);
-        chinY = ell.cy + ell.ry * 0.95;
+        chinY = ell.cy + ell.ry * 1.01;
         cx = ell.cx;
-        neckHalfW = ell.rx * 1.35;
+        rx = ell.rx;
+        ry = ell.ry;
       } else if (clothes.overlay) {
         const pt = applyMatrix(M, clothes.overlay.x * src.width, clothes.overlay.y * src.height);
         chinY = pt.y;
         cx = pt.x;
-        neckHalfW = clothes.overlay.width * src.width * Math.hypot(M[0], M[1]) * 0.18;
+        rx = clothes.overlay.width * src.width * Math.hypot(M[0], M[1]) * 0.15;
+        ry = rx * 1.3;
       }
       if (assets.clothesMask) {
         const cAlpha = maskInOutput(assets.clothesMask, src.width, src.height, M, outW, outH);
@@ -222,12 +225,16 @@ export function renderPhoto(edit, assets, outW, outH, opts = {}) {
             }
           }
         }
-      } else if (chinY != null) {
+      }
+      if (chinY != null) {
         const bgRgb = hexToRgb(edit.bg?.color || '#ffffff');
         for (let y = Math.max(0, Math.floor(chinY)); y < outH; y += 1) {
           const row = y * outW;
+          // Neck column: starts below chin, safely preserving full neck and clearing old casual shoulders
+          const prog = Math.min(1, Math.max(0, (y - chinY) / Math.max(1, ry * 0.8)));
+          const curNeckHalfW = rx * (0.92 + 0.15 * prog);
           for (let x = 0; x < outW; x += 1) {
-            if (Math.abs(x - cx) > neckHalfW) {
+            if (Math.abs(x - cx) > curNeckHalfW) {
               const idx = (row + x) * 4;
               if (bgOn) {
                 data[idx + 3] = 0;

@@ -80,22 +80,26 @@ export function ClothingView() {
     } finally { setBusy(false); }
   };
 
-  const autoPlace = () => {
+  const autoPlace = (tidOverride) => {
     const f = getFace(photo.id);
     if (!f?.metrics) { toast('برای جای‌گذاری خودکار، ابتدا در بخش «اصلاح هوشمند» چهره را تحلیل کنید. می‌توانید دستی هم تنظیم کنید.', 'warn', 8000); return; }
     const m = f.metrics;
     const r = (m.rollDeg * Math.PI) / 180;
+    const currentId = tidOverride || ov?.templateId || '';
+    const isPhotoSuit = currentId.includes('suit-diplomat');
+    const mul = isPhotoSuit ? 2.5 : 3.4;
     const v = m.chinV * 1.08;
     const x = m.eyeMid.x + m.faceCenterU * Math.cos(r) - v * Math.sin(r);
     const y = m.eyeMid.y + m.faceCenterU * Math.sin(r) + v * Math.cos(r);
-    setOv({ x: x / photo.width, y: y / photo.height, width: (m.faceWidth * 3.4) / photo.width, rotation: m.rollDeg });
+    setOv({ x: x / photo.width, y: y / photo.height, width: (m.faceWidth * mul) / photo.width, rotation: m.rollDeg });
   };
 
   const chooseTemplate = (tid, color) => {
     const t = BUILTIN_TEMPLATES.find((x) => x.id === tid);
     const c = color || t?.defaultColor || '';
-    setOv({ enabled: true, templateId: `builtin:${tid}${c ? `:${c}` : ''}` });
-    if (!ov.templateId) setTimeout(autoPlace, 0);
+    const fullId = `builtin:${tid}${c ? `:${c}` : ''}`;
+    setOv({ enabled: true, templateId: fullId });
+    setTimeout(() => autoPlace(fullId), 0);
   };
 
   const testCompanion = async () => {

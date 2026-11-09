@@ -219,7 +219,7 @@ export const BUILTIN_TEMPLATES = [
     nameFa: 'کت‌وشلوار دیپلمات آتلیه‌ای (عکاسی واقعی)',
     png: 'models/templates/suit_diplomat.png',
     thumb: 'models/templates/suit_diplomat_thumb.png',
-    meta: { aspect: 768 / 1024, anchorX: 0.5, anchorY: 445 / 1024 },
+    meta: { aspect: 768 / 1024, anchorX: 0.5, anchorY: 535 / 1024 },
   },
   { id: 'suit', nameFa: 'کت‌وشلوار رسمی با پیراهن و نکتایی (طرح برداری)', defaultColor: '#1d2638', colors: ['#1d2638', '#111214', '#3a3f47', '#2c3e2f'], svg: suitSvg },
   { id: 'office', nameFa: 'لباس اداری (پیراهن روشن و نکتایی)', defaultColor: '#eef2f7', colors: ['#eef2f7', '#dbe8f6', '#f3efe6', '#ffffff'], svg: shirtTieSvg },
