@@ -23,11 +23,11 @@ export const FACE_ENGINE_DEFAULTS = Object.freeze({
 export const REDNESS_LIMIT = 1.5;
 const MAX_RED_SHIFT = 7; // Cr levels
 const MAX_BLOTCH_SHIFT = 4;
-const MAX_FILL_LIFT = 24; // luma levels
+const MAX_FILL_LIFT = 85; // luma levels
 /** Largest left/right brightness correction (±22 %): a hard side shadow is evened out, a natural asymmetry is not forced flat. */
 export const MAX_EVEN_GAIN = 0.22;
-/** Shading flattening in Lab lightness (a side shadow, a rim light): shadowed skin may be lifted up to ×1.9, a lit side dimmed by at most 8 % (dimming near-white skin turns it grey). Colour is kept as it is, so nothing turns orange or grey. */
-export const SHADE_UP = 0.9;
+/** Shading flattening in Lab lightness (a side shadow, a rim light, neck cast shadow): shadowed skin may be lifted up to ×2.6. */
+export const SHADE_UP = 1.6;
 export const SHADE_DOWN = 0.12;
 const PROTECT_FROM = 224;
 const MAX_SPOT_LIFT = 70; // luma levels a single spot may be raised
@@ -356,8 +356,8 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
   const x0 = Math.max(0, Math.floor(ell.cx - Math.max(ell.rx, ell.ry) * 1.2));
   const x1 = Math.min(w, Math.ceil(ell.cx + Math.max(ell.rx, ell.ry) * 1.2));
   const y0 = Math.max(0, Math.floor(ell.cy - Math.max(ell.rx, ell.ry) * 1.2));
-  // blemish removal also covers the throat and neck below the chin (the skin-colour gate keeps collar and clothes out)
-  const neckReach = (skin.enabled && (skin.spots > 0 || skin.smooth > 0)) || (light.enabled && light.even) ? ell.ry * 1.95 : 0;
+  // blemish removal and lighting correction also cover the throat and neck below the chin (the skin-colour gate keeps collar and clothes out)
+  const neckReach = (skin.enabled && (skin.spots > 0 || skin.smooth > 0)) || (light.enabled && (light.even || light.fill > 0)) ? ell.ry * 2.55 : 0;
   const y1 = Math.min(h, Math.ceil(ell.cy + Math.max(Math.max(ell.rx, ell.ry) * 1.2, neckReach)));
   const bw = x1 - x0; const bh = y1 - y0;
   if (bw < 8 || bh < 8) return { applied: false, reason: 'NO_FACE' };
@@ -382,13 +382,16 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
       // (sideways only: widening upwards would reach the hair)
       const dW = Math.hypot(u * 0.77, v);
       weW[j] = dW <= 1.05 ? 1 : dW >= 1.3 ? 0 : 1 - smooth(1.05, 1.3, dW);
-      if (neckReach > 0 && v > 0.8) { // throat and neck: a band below the jaw, as wide as the neck
-        const nw = (1 - smooth(0.78, 0.98, Math.abs(u))) * (1 - smooth(1.75, 1.95, v)) * smooth(0.8, 0.95, v);
-        if (nw > weW[j]) weW[j] = nw;
+      let neckWeight = 0;
+      if (neckReach > 0 && v > 0.65) { // throat and neck: a band below the jaw, as wide as the neck (widens toward shoulders)
+        const neckWidth = 1.05 + 0.35 * smooth(0.8, 1.8, v);
+        neckWeight = (1 - smooth(neckWidth, neckWidth + 0.35, Math.abs(u))) * (1 - smooth(2.15, 2.55, v)) * smooth(0.65, 0.82, v);
+        if (neckWeight > weW[j]) weW[j] = neckWeight;
+        if (neckWeight > we[j]) we[j] = neckWeight;
       }
       // region of the shading correction: the face, widened smoothly upwards across the whole forehead to the hairline, sideways and down the neck
       const dS = v < 0 ? Math.hypot(u * 0.9, v * 0.85) : Math.hypot(u * 0.77, v * 0.88);
-      weS[j] = Math.max(weW[j], dS <= 1.05 ? 1 : dS >= 1.4 ? 0 : 1 - smooth(1.05, 1.4, dS));
+      weS[j] = Math.max(weW[j], neckWeight, dS <= 1.05 ? 1 : dS >= 1.4 ? 0 : 1 - smooth(1.05, 1.4, dS));
       if (d < 0.6 && Y[j] > 50 && Y[j] < 240 && Cb[j] > 77 && Cb[j] < 127 && Cr[j] > 133 && Cr[j] < 173) { seedCb.push(Cb[j]); seedCr.push(Cr[j]); }
     }
   }
@@ -452,7 +455,7 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
     for (let j = 0; j < n; j += 1) msSp[j] *= smooth(0.08, 0.45, mSp[j]);
     holeCand = new Float32Array(n);
     for (let j = 0; j < n; j += 1) {
-      if (weW[j] > 0.5 && msSp[j] < 0.5 && Y[j] > 70 && Y[j] < 240 && Cr[j] - 128 >= 0.35 * warm) holeCand[j] = 1;
+      if (weW[j] > 0.5 && msSp[j] < 0.5 && Y[j] > 20 && Y[j] < 240 && Cr[j] - 128 >= 0.35 * warm) holeCand[j] = 1;
     }
   }
   // retouch-free zones (eyes, mouth, nostrils) in bbox coordinates, soft edge
@@ -487,18 +490,26 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
     for (let j = 0; j < n; j += 1) {
       if (weS[j] <= 0) continue;
       const dCb = (Cb[j] - mCb) / (7 * 1.8); const dCr = (Cr[j] - mCr) / (8 * 1.8);
-      kS0[j] = Math.exp(-0.5 * (dCb * dCb + dCr * dCr)) * smooth(15, 45, Y[j]) * (1 - smooth(238, 252, Y[j])) * weS[j];
+      kS0[j] = Math.exp(-0.5 * (dCb * dCb + dCr * dCr)) * smooth(12, 38, Y[j]) * (1 - smooth(238, 252, Y[j])) * weS[j];
     }
     kS = boxFilter(kS0, bw, bh, Math.max(2, Math.round(ell.rx * 0.02)));
-    for (let j = 0; j < n; j += 1) kS[j] *= smooth(0.08, 0.45, kS0[j]);
+    for (let j = 0; j < n; j += 1) kS[j] *= smooth(0.06, 0.40, kS0[j]);
     Lb = new Float32Array(n);
     for (let y = 0; y < bh; y += 1) for (let x = 0; x < bw; x += 1) { const i = ((y0 + y) * w + x0 + x) * 4; Lb[y * bw + x] = rgbToLab(data[i], data[i + 1], data[i + 2])[0]; }
     const shm = blurBig(kS);
     let tn = 0; let td = 0; for (let j = 0; j < n; j += 1) { tn += Lb[j] * kS[j]; td += kS[j]; }
-    const tgt = td > 0 ? tn / td : 60;
+    const meanSkinL = td > 0 ? tn / td : 60;
+    let litSum = 0; let litW = 0;
+    for (let j = 0; j < n; j += 1) {
+      if (kS[j] > 0.2 && Lb[j] >= meanSkinL) {
+        litSum += Lb[j] * kS[j];
+        litW += kS[j];
+      }
+    }
+    const tgt = litW > 0 ? 0.25 * meanSkinL + 0.75 * (litSum / litW) : meanSkinL;
     shadeGain = new Float32Array(n).fill(1);
     const tmp = new Float32Array(n);
-    for (let round = 0; round < 3; round += 1) {
+    for (let round = 0; round < 4; round += 1) {
       for (let j = 0; j < n; j += 1) tmp[j] = Lb[j] * shadeGain[j] * kS[j];
       const low = blurBig(tmp);
       for (let j = 0; j < n; j += 1) {
@@ -556,10 +567,14 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
       let R = data[i]; let G = data[i + 1]; let B = data[i + 2];
       // chroma: redness + evenness
       let dCr = -dCrRed * k; let dCb = 0;
+      const dx0 = x0 + x + 0.5 - ell.cx; const dy0 = y0 + y + 0.5 - ell.cy;
+      const v = (-dx0 * sin + dy0 * cos) / ell.ry;
       if (kBal > 0 && bm[j] > 1e-3) {
+        const maxShift = v > 0.65 ? 8 : MAX_BLOTCH_SHIFT;
+        const balMult = v > 0.65 ? kBal * 1.5 : kBal;
         const lowCb = bCb[j] / bm[j]; const lowCr = bCr[j] / bm[j];
-        const eCb = clamp(kBal * (aCb - lowCb), -MAX_BLOTCH_SHIFT, MAX_BLOTCH_SHIFT) * k;
-        const eCr = clamp(kBal * (aCr - lowCr), -MAX_BLOTCH_SHIFT, MAX_BLOTCH_SHIFT) * k;
+        const eCb = clamp(balMult * (aCb - lowCb), -maxShift, maxShift) * k;
+        const eCr = clamp(balMult * (aCr - lowCr), -maxShift, maxShift) * k;
         dCb += eCb; dCr += eCr; blotchSum += Math.abs(eCr) * k;
       }
       R += 1.402 * dCr; G += -0.344136 * dCb - 0.714136 * dCr; B += 1.772 * dCb;
@@ -571,9 +586,10 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
       const y0v = Y[j];
       let gain = 1;
       if (kFill > 0 && fm[j] > 1e-3) {
-        const local = fY[j] / fm[j];
-        const lift = Math.min(MAX_FILL_LIFT, kFill * Math.max(0, local - y0v)) * k;
-        gain *= Math.min(1.6, (y0v + lift) / Math.max(y0v, 8));
+        const local = v > 0.65 ? Math.max(fY[j] / fm[j], aY * 0.98) : fY[j] / fm[j];
+        const fillMult = v > 0.65 ? Math.min(1.8, kFill * 2.2) : kFill;
+        const lift = Math.min(MAX_FILL_LIFT, fillMult * Math.max(0, local - y0v)) * k;
+        gain *= Math.min(2.0, (y0v + lift) / Math.max(y0v, 8));
         liftSum += lift * k;
       }
       if (light.enabled && light.protect) {
@@ -721,8 +737,7 @@ export function findBlemishes(Y, Cr, sure, protect, soft, bw, bh, rx, strength =
   if (skinOk < 100) return { discs: [], found: 0, rejected: 0, T };
   // very dark pixels wherever they are, skin mask or not: if the surroundings of a mark contain them, it is a hairy area
   const H = hair || hairMask(Y, sure, bw, bh, rx);
-  const dark = H.dark;
-  const low = dark;
+  const low = H.mask;
   const seen = new Uint8Array(n);
   const comps = [];
   const stack = [];
@@ -793,7 +808,7 @@ export function findBlemishes(Y, Cr, sure, protect, soft, bw, bh, rx, strength =
       }
     }
     const crowdFrac = crowd / Math.max(1, crowdN);
-    const strongMole = pk >= 6.5 * T && sharp >= 5 && elong <= 2 && thick >= 4 && thick <= 10;
+    const strongMole = pk >= 2.2 * T && sharp >= 3.0 && elong <= 2.2 && thick >= 2 && thick <= 14;
     let ok = true;
     if (pr > 0.3) ok = false;
     else if (thick < 2.6 && elong > 2.2) ok = false; // a hair
@@ -802,11 +817,11 @@ export function findBlemishes(Y, Cr, sure, protect, soft, bw, bh, rx, strength =
     else if (skinFrac < (thick >= 4.5 ? 0.5 : 0.6)) ok = false;
     else if (m > 20 && solid < 0.55) ok = false;
     else if (sharp < 3 || (elong > 3.5 && sharp < 4.5)) ok = false;
-    else if (pk < 2.7 * T) ok = false; // freckles and pores stay: only marks that clearly stand out
-    else if (strongMole && crowdFrac <= 0.012) ok = true; // a dark, sharp, round dot is a mole
-    else if (crowdFrac > 0.012) ok = false; // hairs/stubble around: leave the whole area alone
-    else if (ps > 0.3 && (pk < 4 * T || m < 5 || elong > 2.2)) ok = false; // inside stubble areas only clear, round, strong marks
-    else if (m <= 4 && pk < 2.6 * T) ok = false; // a 2-4 px speck must be strong
+    else if (pk < 1.7 * T) ok = false; // freckles and pores stay: only marks that clearly stand out
+    else if (strongMole && crowdFrac <= 0.04) ok = true; // a dark, sharp, round dot is a mole
+    else if (crowdFrac > 0.04) ok = false; // hairs/stubble around: leave the whole area alone
+    else if (ps > 0.3 && (pk < 3.2 * T || m < 5 || elong > 2.2)) ok = false; // inside stubble areas only clear, round, strong marks
+    else if (m <= 4 && pk < 2.2 * T) ok = false; // a 2-4 px speck must be strong
     if (!ok) { rejected += 1; continue; }
     info.push({ pix, mx, my, thick, major, elong, pk, m, soft: ps > 0.3 });
   }
