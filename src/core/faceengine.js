@@ -28,7 +28,7 @@ const MAX_FILL_LIFT = 24; // luma levels
 export const MAX_EVEN_GAIN = 0.22;
 /** Shading flattening in Lab lightness (a side shadow, a rim light): shadowed skin may be lifted up to ×1.9, a lit side dimmed by at most 8 % (dimming near-white skin turns it grey). Colour is kept as it is, so nothing turns orange or grey. */
 export const SHADE_UP = 0.9;
-export const SHADE_DOWN = 0.08;
+export const SHADE_DOWN = 0.12;
 const PROTECT_FROM = 224;
 const MAX_SPOT_LIFT = 70; // luma levels a single spot may be raised
 const MAX_SPOT_RED = 28; // Cr levels a single red mark may be reduced
@@ -387,7 +387,7 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
         if (nw > weW[j]) weW[j] = nw;
       }
       // region of the shading correction: the face, widened upwards (forehead up to the hairline), sideways and down the neck
-      const dS = v < 0 ? Math.hypot(u * 0.97, v * 0.9) : Math.hypot(u * 0.77, v); // stays inside the working box
+      const dS = v < 0 ? Math.hypot(u * 0.97, v * 1.12) : Math.hypot(u * 0.77, v); // upwards it stops inside the working box (no hard edge)
       weS[j] = Math.max(weW[j], dS <= 1.05 ? 1 : dS >= 1.3 ? 0 : 1 - smooth(1.05, 1.3, dS));
       if (d < 0.6 && Y[j] > 50 && Y[j] < 240 && Cb[j] > 77 && Cb[j] < 127 && Cr[j] > 133 && Cr[j] < 173) { seedCb.push(Cb[j]); seedCr.push(Cr[j]); }
     }
@@ -598,7 +598,8 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
         if (ks <= 0.004) continue;
         const gs = shadeGain[j]; const i = ((y0 + y) * w + x0 + x) * 4;
         const [L, a, b] = rgbToLab(data[i], data[i + 1], data[i + 2]);
-        const gk = 1 + (gs - 1) * ks; const ch = gk > 1 ? Math.sqrt(gk) : 1; // lifted shadows get their share of colour, dimmed light does not lose any
+        const gk0 = 1 + (gs - 1) * ks; const gk = gk0 < 1 && L > 86 ? 1 - (1 - gk0) * (1 - smooth(86, 94, L)) : gk0; // near-white skin is not dimmed (it would turn grey)
+        const ch = gk > 1 ? Math.sqrt(gk) : 1; // lifted shadows get their share of colour, dimmed light does not lose any
         const [R2, G2, B2] = labToRgb(Math.min(100, L * gk), a * ch, b * ch);
         data[i] = R2; data[i + 1] = G2; data[i + 2] = B2;
         if (U[j] < 0) { gLsum += gs * ks; gLw += ks; } else { gRsum += gs * ks; gRw += ks; }
