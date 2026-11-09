@@ -598,7 +598,7 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
         if (ks <= 0.004) continue;
         const gs = shadeGain[j]; const i = ((y0 + y) * w + x0 + x) * 4;
         const [L, a, b] = rgbToLab(data[i], data[i + 1], data[i + 2]);
-        const gk0 = 1 + (gs - 1) * ks; const gk = gk0 < 1 && L > 86 ? 1 - (1 - gk0) * (1 - smooth(86, 94, L)) : gk0; // near-white skin is not dimmed (it would turn grey)
+        const gk0 = 1 + (gs - 1) * ks; const gk = gk0 < 1 && L > 78 ? 1 - (1 - gk0) * (1 - smooth(78, 90, L)) : gk0; // near-white skin is not dimmed (it would turn grey)
         const ch = gk > 1 ? Math.sqrt(gk) : 1; // lifted shadows get their share of colour, dimmed light does not lose any
         const [R2, G2, B2] = labToRgb(Math.min(100, L * gk), a * ch, b * ch);
         data[i] = R2; data[i + 1] = G2; data[i + 2] = B2;
