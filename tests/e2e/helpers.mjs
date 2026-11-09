@@ -83,5 +83,16 @@ export async function importAndRetain(page, files, keep = true) {
 
 /** Chromium with a UTF-8 locale (otherwise Linux Chrome renames non-ASCII downloads to "download"). */
 export function launchBrowser(opts = {}) {
-  return chromium.launch({ ...opts, env: { ...process.env, LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8', ...(opts.env || {}) } });
+  return chromium.launch({
+    ...opts,
+    executablePath: opts.executablePath || process.env.CHROME_PATH || '/usr/bin/google-chrome',
+    headless: opts.headless ?? true,
+    args: ['--no-sandbox', '--disable-dev-shm-usage', ...(opts.args || [])],
+    env: {
+      ...process.env,
+      LANG: 'C.UTF-8',
+      LC_ALL: 'C.UTF-8',
+      ...(opts.env || {})
+    }
+  });
 }

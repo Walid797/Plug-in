@@ -121,7 +121,7 @@ def main():
         sys.exit(1)
     url = 'http://127.0.0.1:%d/' % httpd.server_address[1]
     print('هوشمند فوتو استودیو آماده است (فقط روی همین کمپیوتر):')
-    print('  ' + url)
+    print('  ' + url, flush=True)
     print('برای بستن، این پنجره را ببندید یا Ctrl+C بزنید.')
     if '--no-open' not in sys.argv:
         webbrowser.open(url)
