@@ -141,6 +141,7 @@ export function QuickPresetEditorDialog({ presetId, mode = 'edit' }) {
                 <Slider label="توازن رنگ پوست (یکنواخت‌کردن لکه‌های رنگی بزرگ)" min={0} max={100} value={d.skinBalance} defaultValue={40} format={(v) => formatNumber(v)} onInput={(v) => set({ skinBalance: v })} />
                 <Slider label="پاک‌کردن جوش، لکه و داغ (واقعی؛ ۰ = خاموش)" min={0} max={100} value={d.skinSpots} defaultValue={90} format={(v) => formatNumber(v)} onInput={(v) => set({ skinSpots: v })} />
                 <Slider label="پوست صاف و تمیز (کاهش منافذ و ناهمواری؛ ۰ = خاموش)" min={0} max={100} value={d.skinSmooth} defaultValue={55} format={(v) => formatNumber(v)} onInput={(v) => set({ skinSmooth: v })} />
+                <Slider label="رنگ طبیعی لب (۰ = خاموش)" min={0} max={100} value={d.skinLips} defaultValue={60} format={(v) => formatNumber(v)} onInput={(v) => set({ skinLips: v })} />
               </>
             ) : null}
             <p class="hint">پاک‌کردن لکه مثل قلموی ترمیم کار می‌کند: بافت یک تکه پوست سالمِ کنار جای لکه می‌نشیند، پس پوست مصنوعی و صاف نمی‌شود. چشم‌ها، دهان و سوراخ‌های بینی کاملاً محافظت می‌شوند؛ ریش، سبیل و ته‌ریش دست نمی‌خورد؛ کک‌ومک پراکنده فقط کم‌رنگ می‌شود. خال‌های برجستهٔ کوچک هم ممکن است مثل لکه پاک شوند، و برای مدارک رسمی ممکن است هرگونه روتوش ممنوع باشد؛ در آن صورت این را روی ۰ بگذارید. رنگ پوست از خود صورت اندازه‌گیری می‌شود، پس برای هر رنگ پوستی کار می‌کند. فقط قرمزیِ بالاتر از حد طبیعی کم می‌شود؛ بافت پوست، رنگ لب و چشم و شکل و اندازهٔ اعضای صورت، سن و هویت هرگز تغییر نمی‌کند.</p>

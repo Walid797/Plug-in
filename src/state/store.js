@@ -74,7 +74,7 @@ export function defaultEdit(widthMm = 30, heightMm = 40, sizeId = '3x4') {
       patch: null,
     },
     // face & skin + lighting engines (core/faceengine.js); the ellipse is set by the face analysis
-    face: { skin: { enabled: false, redness: 40, balance: 30, spots: 0, smooth: 0 }, light: { enabled: false, fill: 35, even: true, protect: true }, ellipse: null },
+    face: { skin: { enabled: false, redness: 40, balance: 30, spots: 0, smooth: 0, lips: 0 }, light: { enabled: false, fill: 35, even: true, protect: true }, ellipse: null },
     aiEdited: false,
     profileId: null,
   };

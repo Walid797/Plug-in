@@ -99,6 +99,17 @@ export function faceProtectZones(lm, srcW, srcH) {
   return out;
 }
 
+/** MediaPipe face-mesh indices of the outer and the inner lip contour. */
+const LIP_OUTER = [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 409, 270, 269, 267, 0, 37, 39, 40, 185];
+const LIP_INNER = [78, 95, 88, 178, 87, 14, 317, 402, 318, 324, 308, 415, 310, 311, 312, 13, 82, 81, 80, 191];
+
+/** Lip polygons in source-normalised coordinates (the mouth opening is the inner one), or null without landmarks. */
+export function lipPolygons(lm) {
+  if (!lm || lm.length < 400) return null;
+  const pts = (ids) => ids.map((i) => [lm[i].x, lm[i].y]);
+  return { outer: pts(LIP_OUTER), inner: pts(LIP_INNER) };
+}
+
 /** Map face-frame (u,v) back to source pixels. */
 export function faceToSource(m, u, v) {
   const r = (m.rollDeg * Math.PI) / 180;

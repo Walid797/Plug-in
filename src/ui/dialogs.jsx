@@ -93,6 +93,7 @@ function engineStatus(r, preset) {
     else if (!e.applied) out.push({ kind: 'warn', icon: 'triangle-alert', text: e.reason === 'NO_SKIN' ? 'پوست در عکس به‌اندازهٔ کافی تشخیص داده نشد؛ موتور پوست و نور اعمال نشد' : 'موتور پوست و نور اعمال نشد' });
     else {
       if (preset.skinOn && preset.skinSmooth > 0) out.push({ kind: 'ok', icon: 'check', text: `پوست صاف و تمیز شد (${formatNumber(preset.skinSmooth)}٪؛ مو، ابرو، چشم و لب دست‌نخورده)` });
+      if (preset.skinOn && preset.skinLips > 0 && e.lips) out.push({ kind: 'ok', icon: 'check', text: 'رنگ لب طبیعی شد (بافت و شکل لب دست‌نخورده)' });
       if (preset.skinOn && preset.skinSpots > 0) out.push(e.spotsFrac > 0.0005 || e.blemishes > 0 ? { kind: 'ok', icon: 'check', text: `جوش، خال و لکه‌ها خودکار پاک شد${e.blemishes ? ` (${formatNumber(e.blemishes)} نقطه با بافت واقعی پوست ترمیم شد)` : ''}؛ ریش، ابرو، چشم، لب و بافت پوست حفظ شد` } : { kind: 'ok', icon: 'check', text: 'لکهٔ واضحی برای پاک‌کردن پیدا نشد' });
       if (preset.skinOn) out.push(e.redShift > 0.3 ? { kind: 'ok', icon: 'check', text: 'قرمزی بیش‌ازحد پوست کم شد' } : { kind: 'ok', icon: 'check', text: 'رنگ پوست طبیعی بود؛ تغییر نکرد' });
       if (preset.lightOn && preset.lightEven && r.sidesEvened) {

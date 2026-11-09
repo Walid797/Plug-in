@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyFaceEngine, faceEllipse, ellipseToOutput, REDNESS_LIMIT, FACE_ENGINE_DEFAULTS, skinDetailWeight, healDiscs } from '../../src/core/faceengine.js';
+import { applyFaceEngine, faceEllipse, ellipseToOutput, REDNESS_LIMIT, FACE_ENGINE_DEFAULTS, skinDetailWeight, healDiscs, recolorLips } from '../../src/core/faceengine.js';
 import { fixesToDiscs } from '../../src/render/renderPhoto.js';
 import { buildLuts, applyAdjustments, chromaDenoise, localContrast, snapNearWhite, ADJUSTMENT_DEFAULTS } from '../../src/core/adjust.js';
 import { suggestCrop, evaluateCrop, faceMetrics, shoulderSides, assessQuality, exposureTowardTarget, backgroundWhiteness, faceProtectZones } from '../../src/core/idphoto.js';
@@ -556,4 +556,33 @@ test('lighting engine: a shadow on one side of the face (even a strong one) is f
   let maxd = 0; // a clean patch of cheek (the synthetic face also holds marks, hairs and stubble)
   for (let y = 170; y < 215; y += 1) for (let x = 150; x < 215; x += 1) { const i = (y * flat.w + x) * 4; maxd = Math.max(maxd, Math.abs(o[i] - flat.d[i])); }
   assert.ok(maxd <= 6, `a flat face is hardly changed (max ${maxd})`);
+});
+
+test('lip colour: a pale or greyish lip moves towards a natural lip colour, texture/teeth/outside stay', () => {
+  const w = 120; const h = 90; const d = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) { const i = (y * w + x) * 4; const t = noise(x, y) * 3; d[i] = 222 + t; d[i + 1] = 172 + t; d[i + 2] = 150 + t; d[i + 3] = 255; }
+  const outer = [[30, 40], [60, 34], [90, 40], [60, 64]]; const inner = [[42, 46], [60, 44], [78, 46], [60, 52]];
+  const inside = (x, y, poly) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i, i += 1) { const [xi, yi] = poly[i]; const [xj, yj] = poly[j]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c; } return c; };
+  for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) {
+    const i = (y * w + x) * 4;
+    if (inside(x + 0.5, y + 0.5, inner)) { d[i] = 245; d[i + 1] = 245; d[i + 2] = 240; } // teeth
+    else if (inside(x + 0.5, y + 0.5, outer)) { const t = noise(x * 2, y) * 4; d[i] = 178 + t; d[i + 1] = 150 + t; d[i + 2] = 150 + t; } // pale grey-pink lip
+  }
+  const o = d.slice();
+  const lab = (i) => { const r = recolorLips; return r; };
+  const res = recolorLips(d, w, h, { outer, inner }, [222, 172, 150], 0.8);
+  assert.equal(res.recolored, true);
+  assert.ok(res.after[1] > res.before[1] + 4, `redder (a* ${res.before[1].toFixed(1)} → ${res.after[1].toFixed(1)})`);
+  const px = (a, x, y) => [a[(y * w + x) * 4], a[(y * w + x) * 4 + 1], a[(y * w + x) * 4 + 2]];
+  const sat = (p) => p[0] - p[1];
+  assert.ok(sat(px(d, 58, 58)) > sat(px(o, 58, 58)) + 8, 'lip pixel is redder');
+  assert.deepEqual(px(d, 60, 48), px(o, 60, 48), 'teeth untouched');
+  assert.deepEqual(px(d, 5, 5), px(o, 5, 5), 'outside untouched');
+  // texture kept: the pixel-to-pixel variation of the lip is still there
+  let v0 = 0; let v1 = 0; let n = 0; for (let x = 52; x < 68; x += 1) { v0 += Math.abs(px(o, x, 58)[1] - px(o, x + 1, 58)[1]); v1 += Math.abs(px(d, x, 58)[1] - px(d, x + 1, 58)[1]); n += 1; }
+  assert.ok(v1 / n > 0.5 * (v0 / n), 'texture kept');
+  // a lip that is already natural hardly changes
+  const natural = new Uint8ClampedArray(o); for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) { if (!inside(x + 0.5, y + 0.5, inner) && inside(x + 0.5, y + 0.5, outer)) { const i = (y * w + x) * 4; natural[i] = 196; natural[i + 1] = 110; natural[i + 2] = 112; } }
+  const n0 = natural.slice(); recolorLips(natural, w, h, { outer, inner }, [222, 172, 150], 0.8);
+  assert.ok(Math.abs(px(natural, 58, 58)[0] - px(n0, 58, 58)[0]) < 25, 'a natural lip stays close');
 });

@@ -160,7 +160,9 @@ export function renderPhoto(edit, assets, outW, outH, opts = {}) {
     if (adjustOn) applyAdjustments(data, outW, outH, edit.adjust, { scale: Math.max(1, frameWidthPx / 350), detailWeight });
     if (faceOn) {
       const protect = (face.protect || []).map((z) => ({ ...ellipseToOutput(z, src.width, src.height, M), soft: !!z.soft }));
-      const rep = applyFaceEngine(data, outW, outH, ellipseToOutput(face.ellipse, src.width, src.height, M), { ...face, protect });
+      const toOut = (poly) => (poly || []).map(([px, py]) => applyMatrix(M, px * src.width, py * src.height)).map((p) => [p.x, p.y]);
+      const lips = face.lips ? { outer: toOut(face.lips.outer), inner: toOut(face.lips.inner) } : null;
+      const rep = applyFaceEngine(data, outW, outH, ellipseToOutput(face.ellipse, src.width, src.height, M), { ...face, protect, lips });
       if (opts.faceReport) Object.assign(opts.faceReport, rep);
     }
     // manual repair brush: real skin texture cloned over the marks the user painted (after all tone work)

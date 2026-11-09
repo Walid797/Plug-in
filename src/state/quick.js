@@ -5,7 +5,7 @@ import { getState, updateEdit, updateSheet, updateSettings, recordHistory, start
 import { getPersonMask, hasMask, getFace, maskForegroundFraction, originalAvailable, getPreview, gatherAssets } from './media.js';
 import { renderPhoto } from '../render/renderPhoto.js';
 import { findQuickPreset, quickSheetPatch, presetCapacity, quickFields, normalizeQuickPreset, QUICK_PRESETS, presetAdjustFor, gradeStrength, detailStrength, presetFaceParams } from '../core/quickpresets.js';
-import { autoExposureDelta, exposureTowardTarget, suggestCrop, backgroundWhiteness, faceProtectZones, QUALITY_THRESHOLDS } from '../core/idphoto.js';
+import { autoExposureDelta, exposureTowardTarget, suggestCrop, backgroundWhiteness, faceProtectZones, lipPolygons, QUALITY_THRESHOLDS } from '../core/idphoto.js';
 import { isFrameInside } from '../core/crop.js';
 import { faceEllipse } from '../core/faceengine.js';
 import { makeCanvas } from '../platform/image.js';
@@ -192,7 +192,7 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
             // arm the face & skin / lighting engines on this face
             if (preset.skinOn || preset.lightOn) {
               const fp = presetFaceParams(preset);
-              updateEdit(id, (ed) => ({ ...ed, face: { ...fp, fixes: ed.face?.fixes, ellipse: faceEllipse(getFace(id).metrics, photo.width, photo.height), protect: faceProtectZones(getFace(id).landmarks, photo.width, photo.height) } }), { history: false });
+              updateEdit(id, (ed) => ({ ...ed, face: { ...fp, fixes: ed.face?.fixes, ellipse: faceEllipse(getFace(id).metrics, photo.width, photo.height), protect: faceProtectZones(getFace(id).landmarks, photo.width, photo.height), lips: lipPolygons(getFace(id).landmarks) } }), { history: false });
               r.engine = await engineReport(id).catch(() => null);
               // the brightening is steered by the whole-face mean, which a beard, glasses or dark hair pull down: so a face with
               // dark parts can end up too bright. The skin itself is measured after the engines and trimmed back to the reference level.

@@ -15,7 +15,7 @@ import { boxFilter } from './mask.js';
 import { faceToSource } from './idphoto.js';
 
 export const FACE_ENGINE_DEFAULTS = Object.freeze({
-  skin: Object.freeze({ enabled: true, redness: 40, balance: 40, spots: 0, smooth: 0 }),
+  skin: Object.freeze({ enabled: true, redness: 40, balance: 40, spots: 0, smooth: 0, lips: 0 }),
   light: Object.freeze({ enabled: true, fill: 45, even: true, protect: true }),
 });
 
@@ -599,6 +599,11 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
     for (let j = 0; j < n; j += 1) wgt[j] = smooth(0.2, 0.6, mSp[j]) * (hairInfo.near[j] ? 0 : 1) * (1 - (protect ? protect[j] : 0));
     report.smoothed = smoothSkinRegion(data, w, x0, y0, bw, bh, wgt, (skin.smooth / 100) * 0.9, ell.rx);
   }
+  if (skin.enabled && skin.lips > 0 && params.lips) {
+    const sr = [aY + 1.402 * (aCr - 128), aY - 0.344136 * (aCb - 128) - 0.714136 * (aCr - 128), aY + 1.772 * (aCb - 128)];
+    const lr = recolorLips(data, w, h, params.lips, sr, skin.lips / 100);
+    report.lips = lr.recolored ? { before: lr.before, after: lr.after } : null;
+  }
   if (blemish?.discs.length) {
     const hr = healDiscs(data, w, h, blemish.discs.map((d) => ({ x: d.x + x0, y: d.y + y0, r: d.r })));
     report.blemishes = hr.healed;
@@ -870,6 +875,86 @@ export function smoothSkinRegion(data, w, x0, y0, bw, bh, weight, strength, rx) 
     used += f; cnt += 1;
   }
   return cnt ? used / cnt : 0;
+}
+
+const srgbLin = (v) => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+const linSrgb = (c) => 255 * (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055);
+function rgbToLab(R, G, B) {
+  const r = srgbLin(R); const g = srgbLin(G); const b = srgbLin(B);
+  const X = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047; const Yv = 0.2126 * r + 0.7152 * g + 0.0722 * b; const Z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883;
+  const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+  const fx = f(X); const fy = f(Yv); const fz = f(Z);
+  return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+}
+function labToRgb(L, a, b) {
+  const fy = (L + 16) / 116; const fx = fy + a / 500; const fz = fy - b / 200;
+  const inv = (t) => (t ** 3 > 0.008856 ? t ** 3 : (t - 16 / 116) / 7.787);
+  const X = inv(fx) * 0.95047; const Yv = inv(fy); const Z = inv(fz) * 1.08883;
+  const r = 3.2406 * X - 1.5372 * Yv - 0.4986 * Z; const g = -0.9689 * X + 1.8758 * Yv + 0.0415 * Z; const bb = 0.0557 * X - 0.204 * Yv + 1.057 * Z;
+  return [clamp(linSrgb(Math.max(0, r)), 0, 255), clamp(linSrgb(Math.max(0, g)), 0, 255), clamp(linSrgb(Math.max(0, bb)), 0, 255)];
+}
+
+/** Soft mask (0..1) of a polygon inside the w×h image, with a small feather. */
+function polygonMask(poly, w, h, feather = 1) {
+  const m = new Float32Array(w * h);
+  let y0 = h; let y1 = 0;
+  for (const [, y] of poly) { if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  y0 = Math.max(0, Math.floor(y0)); y1 = Math.min(h - 1, Math.ceil(y1));
+  for (let y = y0; y <= y1; y += 1) {
+    const yc = y + 0.5; const xs = [];
+    for (let i = 0; i < poly.length; i += 1) {
+      const [ax, ay] = poly[i]; const [bx, by] = poly[(i + 1) % poly.length];
+      if ((ay <= yc && by > yc) || (by <= yc && ay > yc)) xs.push(ax + ((yc - ay) / (by - ay)) * (bx - ax));
+    }
+    xs.sort((p, q) => p - q);
+    for (let k = 0; k + 1 < xs.length; k += 2) for (let x = Math.max(0, Math.ceil(xs[k] - 0.5)); x <= Math.min(w - 1, Math.floor(xs[k + 1] - 0.5)); x += 1) m[y * w + x] = 1;
+  }
+  return feather > 0 ? boxFilter(m, w, h, feather) : m;
+}
+
+/**
+ * Natural lip colour: the lips keep their own light, texture and shape; only their mean colour moves towards a lip colour
+ * that fits THIS skin (redder and a little less yellow than the skin, a little darker). A lip that already has such a
+ * colour hardly changes. Teeth and the dark of the mouth opening are excluded; a hair-thin edge keeps skin and lip apart.
+ * @param {{outer:number[][], inner:number[][]}} lips polygons in output pixels
+ * @param {number[]} skinRgb mean skin colour
+ * @param {number} strength 0..1
+ * @returns {{recolored:boolean, before?:number[], after?:number[]}}
+ */
+export function recolorLips(data, w, h, lips, skinRgb, strength) {
+  if (!lips?.outer?.length || !(strength > 0) || !skinRgb) return { recolored: false };
+  const outer = polygonMask(lips.outer, w, h, 1);
+  const inner = lips.inner?.length ? boxFilter(polygonMask(lips.inner, w, h, 0), w, h, 1) : null; // dilated opening
+  const wgt = new Float32Array(w * h);
+  let sumL = 0; let sumA = 0; let sumB = 0; let sw = 0;
+  for (let j = 0; j < wgt.length; j += 1) {
+    if (outer[j] <= 0.01) continue;
+    const k = outer[j] * (1 - Math.min(1, (inner ? inner[j] : 0) * 3));
+    if (k <= 0.01) continue;
+    wgt[j] = k;
+    const [L, a, b] = rgbToLab(data[j * 4], data[j * 4 + 1], data[j * 4 + 2]);
+    sumL += L * k; sumA += a * k; sumB += b * k; sw += k;
+  }
+  if (sw < 12) return { recolored: false };
+  const mL = sumL / sw; const mA = sumA / sw; const mB = sumB / sw;
+  const [sL, sA, sB] = rgbToLab(skinRgb[0], skinRgb[1], skinRgb[2]);
+  const tA = clamp(sA + 12, 22, 40); const tB = clamp(sB - 6, 8, 24); const tL = clamp(sL - 14, 28, 62);
+  // a lip colour inside the natural band is left as it is; only a pale, grey, blue or over-yellow lip is moved (to the band's edge)
+  const band = (v, lo, hi) => (v < lo ? lo - v : v > hi ? hi - v : 0);
+  const st = Math.min(1, strength * 1.4);
+  const dA = band(mA, tA - 2, tA + 8) * st; const dB = band(mB, tB - 3, tB + 5) * st;
+  const dL = (mL < tL - 12 || mL > tL + 12 ? (tL - mL) * 0.3 : 0) * st;
+  for (let j = 0; j < wgt.length; j += 1) {
+    const k = wgt[j]; if (k <= 0.01) continue;
+    const i = j * 4;
+    const [L, a, b] = rgbToLab(data[i], data[i + 1], data[i + 2]);
+    // a near-black or near-white pixel (shadow in the corner, glint) is left alone
+    const edge = smooth(8, 22, L) * (1 - smooth(88, 96, L));
+    const kk = k * edge;
+    const [R2, G2, B2] = labToRgb(L + dL * kk, a + dA * kk, b + dB * kk);
+    data[i] += (R2 - data[i]) * Math.min(1, kk + 0.0); data[i + 1] += (G2 - data[i + 1]) * Math.min(1, kk); data[i + 2] += (B2 - data[i + 2]) * Math.min(1, kk);
+  }
+  return { recolored: true, before: [mL, mA, mB], after: [mL + dL, mA + dA, mB + dB] };
 }
 
 /**
