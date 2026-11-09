@@ -214,7 +214,14 @@ function uniformSvg({ color = '#25324a', collar = '#f2f4f7' }) {
 }
 
 export const BUILTIN_TEMPLATES = [
-  { id: 'suit', nameFa: 'کت‌وشلوار رسمی با پیراهن و نکتایی', defaultColor: '#1d2638', colors: ['#1d2638', '#111214', '#3a3f47', '#2c3e2f'], svg: suitSvg },
+  {
+    id: 'suit-diplomat',
+    nameFa: 'کت‌وشلوار دیپلمات آتلیه‌ای (عکاسی واقعی)',
+    png: 'models/templates/suit_diplomat.png',
+    thumb: 'models/templates/suit_diplomat_thumb.png',
+    meta: { aspect: 768 / 1024, anchorX: 0.5, anchorY: 445 / 1024 },
+  },
+  { id: 'suit', nameFa: 'کت‌وشلوار رسمی با پیراهن و نکتایی (طرح برداری)', defaultColor: '#1d2638', colors: ['#1d2638', '#111214', '#3a3f47', '#2c3e2f'], svg: suitSvg },
   { id: 'office', nameFa: 'لباس اداری (پیراهن روشن و نکتایی)', defaultColor: '#eef2f7', colors: ['#eef2f7', '#dbe8f6', '#f3efe6', '#ffffff'], svg: shirtTieSvg },
   { id: 'uniform', nameFa: 'یونیفورم ساده (پیراهن تیره با یخن)', defaultColor: '#25324a', colors: ['#25324a', '#1b1b1f', '#2f4a3a', '#4a2f2f'], svg: uniformSvg },
 ];
@@ -236,12 +243,26 @@ async function rasteriseSvg(svgText, widthPx = 1500) {
   }
 }
 
-/** id format: "builtin:<id>:<color>" or "user:<key>" */
+/** id format: "builtin:<id>" or "builtin:<id>:<color>" or "user:<key>" */
 export async function getTemplate(id) {
   if (id.startsWith('builtin:')) {
-    const [, tid, color] = id.split(':');
+    const parts = id.split(':');
+    const tid = parts[1];
+    const color = parts[2];
     const t = BUILTIN_TEMPLATES.find((x) => x.id === tid);
     if (!t) return null;
+    if (t.png) {
+      try {
+        const res = await fetch(t.png);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        const dec = await decodeImage(blob, {});
+        return { image: dec.image, meta: t.meta || { aspect: dec.width / dec.height, anchorX: 0.5, anchorY: 0.56 } };
+      } catch (err) {
+        console.error('Failed to load photographic suit template:', t.png, err);
+        return null;
+      }
+    }
     const image = await rasteriseSvg(t.svg({ color: color || t.defaultColor }));
     return { image, meta: TEMPLATE_META };
   }
@@ -256,5 +277,6 @@ export async function getTemplate(id) {
 
 export function templatePreviewSvg(tid, color) {
   const t = BUILTIN_TEMPLATES.find((x) => x.id === tid);
-  return t ? t.svg({ color: color || t.defaultColor }) : '';
+  if (!t) return '';
+  return t.svg ? t.svg({ color: color || t.defaultColor }) : '';
 }

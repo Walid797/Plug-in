@@ -114,8 +114,10 @@ async function listFiles(dir, base = root) {
 
 async function writeServiceWorker(version) {
   // App shell is precached; large vendor/model files are cached on first use.
+  const tplFiles = await listFiles(path.join(root, 'models', 'templates')).catch(() => []);
   const shell = ['index.html', 'manifest.webmanifest', 'app/app.js', 'app/app.css', 'app/build-info.json',
-    ...(await listFiles(path.join(root, 'icons')))];
+    ...(await listFiles(path.join(root, 'icons'))),
+    ...tplFiles];
   const hashes = {};
   for (const f of shell) hashes[f] = (await sha256File(path.join(root, f))).slice(0, 12);
   const tpl = await fs.readFile(path.join(root, 'src', 'sw.template.js'), 'utf8');

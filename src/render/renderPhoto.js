@@ -137,10 +137,11 @@ export function renderPhoto(edit, assets, outW, outH, opts = {}) {
   const snapWhite = !before && !!edit.bg?.whiteSnap && !edit.bg?.enabled;
   const faceOn = !before && !!(face?.ellipse && (face.skin?.enabled || face.light?.enabled));
   const fixesOn = !before && !!face?.fixes?.length;
+  const overlayOn = !before && !!clothes.overlay?.enabled;
   const frameWidthPx = opts.frameWidthPx || outW;
   const pxPerMm = opts.pxPerMm || outW / (edit.widthMm || 30);
 
-  if (recolorOn || bgOn || adjustOn || faceOn || fixesOn || snapWhite) {
+  if (recolorOn || bgOn || adjustOn || faceOn || fixesOn || snapWhite || overlayOn) {
     const img = fctx.getImageData(0, 0, outW, outH);
     const data = img.data;
     if (recolorOn) {
@@ -189,6 +190,56 @@ export function renderPhoto(edit, assets, outW, outH, opts = {}) {
       alpha = maskInOutput(assets.mask, src.width, src.height, M, outW, outH);
       if (edit.bg.decontaminate !== false) decontaminate(data, alpha, outW, outH, Math.max(2, Math.round(frameWidthPx / 120)));
       for (let i = 0; i < alpha.length; i += 1) data[i * 4 + 3] = Math.round((data[i * 4 + 3] / 255) * alpha[i] * 255);
+    }
+    // If clothing overlay is active, erase old clothing so casual clothes never peep out behind the suit
+    if (overlayOn) {
+      let chinY = null;
+      let cx = outW / 2;
+      let neckHalfW = outW * 0.22;
+      if (face?.ellipse) {
+        const ell = ellipseToOutput(face.ellipse, src.width, src.height, M);
+        chinY = ell.cy + ell.ry * 0.95;
+        cx = ell.cx;
+        neckHalfW = ell.rx * 1.35;
+      } else if (clothes.overlay) {
+        const pt = applyMatrix(M, clothes.overlay.x * src.width, clothes.overlay.y * src.height);
+        chinY = pt.y;
+        cx = pt.x;
+        neckHalfW = clothes.overlay.width * src.width * Math.hypot(M[0], M[1]) * 0.18;
+      }
+      if (assets.clothesMask) {
+        const cAlpha = maskInOutput(assets.clothesMask, src.width, src.height, M, outW, outH);
+        const bgRgb = hexToRgb(edit.bg?.color || '#ffffff');
+        for (let i = 0; i < cAlpha.length; i += 1) {
+          if (cAlpha[i] > 10) {
+            if (bgOn) {
+              data[i * 4 + 3] = Math.round(data[i * 4 + 3] * Math.max(0, 1 - cAlpha[i] / 255));
+            } else {
+              const keep = Math.max(0, 1 - cAlpha[i] / 255);
+              data[i * 4] = Math.round(data[i * 4] * keep + bgRgb.r * (1 - keep));
+              data[i * 4 + 1] = Math.round(data[i * 4 + 1] * keep + bgRgb.g * (1 - keep));
+              data[i * 4 + 2] = Math.round(data[i * 4 + 2] * keep + bgRgb.b * (1 - keep));
+            }
+          }
+        }
+      } else if (chinY != null) {
+        const bgRgb = hexToRgb(edit.bg?.color || '#ffffff');
+        for (let y = Math.max(0, Math.floor(chinY)); y < outH; y += 1) {
+          const row = y * outW;
+          for (let x = 0; x < outW; x += 1) {
+            if (Math.abs(x - cx) > neckHalfW) {
+              const idx = (row + x) * 4;
+              if (bgOn) {
+                data[idx + 3] = 0;
+              } else {
+                data[idx] = bgRgb.r;
+                data[idx + 1] = bgRgb.g;
+                data[idx + 2] = bgRgb.b;
+              }
+            }
+          }
+        }
+      }
     }
     fctx.putImageData(img, 0, 0);
     if (bgOn) {

@@ -7,6 +7,13 @@ import { initStorage, blobBackend, kvGet } from './storage/db.js';
 import { loadSettings, startAutosave, openProject, createProject, refreshProjectsIndex, hasUnsavedChanges, flushSave } from './state/persist.js';
 import { refreshModelStatus } from './ai/models.js';
 import { SECTIONS } from './i18n/fa.js';
+import * as sheet from './print/sheet.js';
+import * as db from './storage/db.js';
+import * as media from './state/media.js';
+import * as face from './ai/face.js';
+import * as quick from './state/quick.js';
+import * as renderPhotoMod from './render/renderPhoto.js';
+import * as segment from './ai/segment.js';
 
 function applyTheme(theme) {
   const root = document.documentElement;
@@ -60,11 +67,8 @@ async function boot() {
   refreshModelStatus();
   registerServiceWorker(caps);
   if (/[?&]e2e=1\b/.test(location.search)) {
-    // Opt-in hook for the automated end-to-end tests only (no network, no extra capability).
-    const sheet = await import('./print/sheet.js');
-    const db = await import('./storage/db.js');
-    const [media, face, quick, render, segment] = await Promise.all([import('./state/media.js'), import('./ai/face.js'), import('./state/quick.js'), import('./render/renderPhoto.js'), import('./ai/segment.js')]);
-    window.__hoshmand = { getState, setState, sheet, db, media, face, quick, render, segment };
+    // Opt-in hook for automated end-to-end tests only
+    window.__hoshmand = { getState, setState, sheet, db, media, face, quick, render: renderPhotoMod, segment };
   }
 
   if (!settings.onboardingDone) {

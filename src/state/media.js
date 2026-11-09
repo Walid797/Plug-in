@@ -448,7 +448,7 @@ export async function gatherAssets(photo, src) {
   const e = photo.edit;
   const [mask, clothesMask, bgImage, tpl, patch] = await Promise.all([
     e.bg.enabled ? getPersonMask(photo) : null,
-    e.clothes.recolor.enabled ? getClothesMask(photo) : null,
+    (e.clothes.recolor.enabled || e.clothes.overlay?.enabled) ? getClothesMask(photo) : null,
     e.bg.enabled && e.bg.mode === 'image' ? getBgImage(e.bg.imageKey) : null,
     e.clothes.overlay.enabled ? getTemplateAsset(e.clothes.overlay.templateId) : null,
     e.clothes.patch ? getPatch(e.clothes.patch) : null,

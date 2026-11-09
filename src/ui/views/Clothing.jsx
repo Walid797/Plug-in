@@ -28,6 +28,14 @@ const CLOTH_COLORS = [
 ];
 
 function TemplateThumb({ tid, color }) {
+  const t = BUILTIN_TEMPLATES.find((x) => x.id === tid);
+  if (t?.thumb || t?.png) {
+    return (
+      <span class="tpl-thumb" aria-hidden="true">
+        <img src={t.thumb || t.png} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      </span>
+    );
+  }
   const svg = templatePreviewSvg(tid, color);
   return <span class="tpl-thumb" aria-hidden="true" dangerouslySetInnerHTML={{ __html: svg }} />;
 }
@@ -85,8 +93,8 @@ export function ClothingView() {
 
   const chooseTemplate = (tid, color) => {
     const t = BUILTIN_TEMPLATES.find((x) => x.id === tid);
-    const c = color || t.defaultColor;
-    setOv({ enabled: true, templateId: `builtin:${tid}:${c}` });
+    const c = color || t?.defaultColor || '';
+    setOv({ enabled: true, templateId: `builtin:${tid}${c ? `:${c}` : ''}` });
     if (!ov.templateId) setTimeout(autoPlace, 0);
   };
 
@@ -188,11 +196,11 @@ export function ClothingView() {
               ) : null}
             </Group>
 
-            <Group title="۲. قالب لباس (بدون هوش مصنوعی)">
-              <p class="hint">قالب‌های برداری ساده که روی عکس قرار می‌گیرند — مانند روش رایج عکاسی‌ها. هوش مصنوعی نیست.</p>
+            <Group title="۲. قالب لباس (آماده و بدون تغییر در چهره)">
+              <p class="hint">قالب‌های آمادهٔ کت‌وشلوار عکاسی آتلیه‌ای و لباس اداری که روی عکس قرار می‌گیرند — کاملاً آفلاین و طبیعی.</p>
               <div class="tpl-grid">
                 {BUILTIN_TEMPLATES.map((t) => (
-                  <button type="button" key={t.id} class="tpl" aria-pressed={String(ov.enabled && ov.templateId?.startsWith(`builtin:${t.id}:`))} onClick={() => chooseTemplate(t.id)}>
+                  <button type="button" key={t.id} class="tpl" aria-pressed={String(ov.enabled && (ov.templateId === `builtin:${t.id}` || ov.templateId?.startsWith(`builtin:${t.id}:`)))} onClick={() => chooseTemplate(t.id)}>
                     <TemplateThumb tid={t.id} />
                     <span>{t.nameFa}</span>
                   </button>
@@ -200,7 +208,7 @@ export function ClothingView() {
               </div>
               {ov.enabled && ov.templateId?.startsWith('builtin:') ? (
                 <div class="swatches" role="group" aria-label="رنگ قالب">
-                  {BUILTIN_TEMPLATES.find((t) => ov.templateId.startsWith(`builtin:${t.id}:`))?.colors.map((c) => {
+                  {BUILTIN_TEMPLATES.find((t) => ov.templateId === `builtin:${t.id}` || ov.templateId?.startsWith(`builtin:${t.id}:`))?.colors?.map((c) => {
                     const tid = ov.templateId.split(':')[1];
                     return <button type="button" key={c} class="swatch" style={{ background: c }} aria-label={`رنگ ${c}`} aria-pressed={String(ov.templateId.endsWith(c))} onClick={() => chooseTemplate(tid, c)} />;
                   })}
