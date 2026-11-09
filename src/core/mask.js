@@ -2,29 +2,30 @@
 // choke/expand and feathering. Masks are Float32Array values in 0..1.
 
 export function boxFilter(src, w, h, r) {
-  if (r <= 0) return Float32Array.from(src);
+  const rad = Math.round(r);
+  if (rad <= 0) return Float32Array.from(src);
   const tmp = new Float32Array(w * h);
   const out = new Float32Array(w * h);
   // horizontal (normalised by actual window size at borders)
   for (let y = 0; y < h; y += 1) {
     const row = y * w;
     let acc = 0;
-    for (let x = 0; x <= Math.min(r, w - 1); x += 1) acc += src[row + x];
+    for (let x = 0; x <= Math.min(rad, w - 1); x += 1) acc += src[row + x];
     for (let x = 0; x < w; x += 1) {
-      const lo = Math.max(0, x - r); const hi = Math.min(w - 1, x + r);
+      const lo = Math.max(0, x - rad); const hi = Math.min(w - 1, x + rad);
       tmp[row + x] = acc / (hi - lo + 1);
-      if (x + r + 1 < w) acc += src[row + x + r + 1];
-      if (x - r >= 0) acc -= src[row + x - r];
+      if (x + rad + 1 < w) acc += src[row + x + rad + 1];
+      if (x - rad >= 0) acc -= src[row + x - rad];
     }
   }
   for (let x = 0; x < w; x += 1) {
     let acc = 0;
-    for (let y = 0; y <= Math.min(r, h - 1); y += 1) acc += tmp[y * w + x];
+    for (let y = 0; y <= Math.min(rad, h - 1); y += 1) acc += tmp[y * w + x];
     for (let y = 0; y < h; y += 1) {
-      const lo = Math.max(0, y - r); const hi = Math.min(h - 1, y + r);
+      const lo = Math.max(0, y - rad); const hi = Math.min(h - 1, y + rad);
       out[y * w + x] = acc / (hi - lo + 1);
-      if (y + r + 1 < h) acc += tmp[(y + r + 1) * w + x];
-      if (y - r >= 0) acc -= tmp[(y - r) * w + x];
+      if (y + rad + 1 < h) acc += tmp[(y + rad + 1) * w + x];
+      if (y - rad >= 0) acc -= tmp[(y - rad) * w + x];
     }
   }
   return out;

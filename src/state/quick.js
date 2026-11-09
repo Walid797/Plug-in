@@ -5,8 +5,8 @@ import { getState, updateEdit, updateSheet, updateSettings, recordHistory, start
 import { getPersonMask, hasMask, getFace, maskForegroundFraction, originalAvailable, getPreview, gatherAssets } from './media.js';
 import { renderPhoto } from '../render/renderPhoto.js';
 import { findQuickPreset, quickSheetPatch, presetCapacity, quickFields, normalizeQuickPreset, QUICK_PRESETS, presetAdjustFor, gradeStrength, detailStrength, presetFaceParams } from '../core/quickpresets.js';
-import { autoExposureDelta, exposureTowardTarget, suggestCrop, backgroundWhiteness, faceProtectZones, lipPolygons, QUALITY_THRESHOLDS } from '../core/idphoto.js';
-import { isFrameInside } from '../core/crop.js';
+import { autoExposureDelta, exposureTowardTarget, suggestCrop, backgroundWhiteness, faceProtectZones, lipPolygons, eyePolygons, QUALITY_THRESHOLDS } from '../core/idphoto.js';
+import { isFrameInside, constrainCrop } from '../core/crop.js';
 import { faceEllipse } from '../core/faceengine.js';
 import { makeCanvas } from '../platform/image.js';
 import { ADJUSTMENT_DEFAULTS } from '../core/adjust.js';
@@ -173,8 +173,15 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
           }
           if (f.faceCount) {
             if (preset.autoCrop) {
-              const crop = suggestionFor(getState().photos[id]);
-              if (crop) { updateEdit(id, { crop }, { history: false }); r.crop = 'ok'; } else r.crop = 'failed';
+              let crop = suggestionFor(getState().photos[id]);
+              if (crop) {
+                const aspect = photo.edit.widthMm / photo.edit.heightMm;
+                if (!isFrameInside(crop, photo.width, photo.height, aspect)) {
+                  crop = constrainCrop(crop, photo.width, photo.height, aspect);
+                }
+                updateEdit(id, { crop }, { history: false });
+                r.crop = 'ok';
+              } else r.crop = 'failed';
             }
             if (preset.autoCrop && preset.cropShoulders) {
               const sh = await fitShoulders(id, getFace(id).metrics);
@@ -192,7 +199,7 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
             // arm the face & skin / lighting engines on this face
             if (preset.skinOn || preset.lightOn) {
               const fp = presetFaceParams(preset);
-              updateEdit(id, (ed) => ({ ...ed, face: { ...fp, fixes: ed.face?.fixes, ellipse: faceEllipse(getFace(id).metrics, photo.width, photo.height), protect: faceProtectZones(getFace(id).landmarks, photo.width, photo.height), lips: lipPolygons(getFace(id).landmarks) } }), { history: false });
+              updateEdit(id, (ed) => ({ ...ed, face: { ...fp, fixes: ed.face?.fixes, ellipse: faceEllipse(getFace(id).metrics, photo.width, photo.height), protect: faceProtectZones(getFace(id).landmarks, photo.width, photo.height), lips: lipPolygons(getFace(id).landmarks), eyes: eyePolygons(getFace(id).landmarks) } }), { history: false });
               r.engine = await engineReport(id).catch(() => null);
               // the brightening is steered by the whole-face mean, which a beard, glasses or dark hair pull down: so a face with
               // dark parts can end up too bright. The skin itself is measured after the engines and trimmed back to the reference level.

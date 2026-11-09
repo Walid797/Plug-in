@@ -386,9 +386,9 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
         const nw = (1 - smooth(0.78, 0.98, Math.abs(u))) * (1 - smooth(1.75, 1.95, v)) * smooth(0.8, 0.95, v);
         if (nw > weW[j]) weW[j] = nw;
       }
-      // region of the shading correction: the face, widened upwards (forehead up to the hairline), sideways and down the neck
-      const dS = v < 0 ? Math.hypot(u * 0.97, v * 1.12) : Math.hypot(u * 0.77, v); // upwards it stops inside the working box (no hard edge)
-      weS[j] = Math.max(weW[j], dS <= 1.05 ? 1 : dS >= 1.3 ? 0 : 1 - smooth(1.05, 1.3, dS));
+      // region of the shading correction: the face, widened smoothly upwards across the whole forehead to the hairline, sideways and down the neck
+      const dS = v < 0 ? Math.hypot(u * 0.9, v * 0.85) : Math.hypot(u * 0.77, v * 0.88);
+      weS[j] = Math.max(weW[j], dS <= 1.05 ? 1 : dS >= 1.4 ? 0 : 1 - smooth(1.05, 1.4, dS));
       if (d < 0.6 && Y[j] > 50 && Y[j] < 240 && Cb[j] > 77 && Cb[j] < 127 && Cr[j] > 133 && Cr[j] < 173) { seedCb.push(Cb[j]); seedCr.push(Cr[j]); }
     }
   }
@@ -490,7 +490,7 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
       kS0[j] = Math.exp(-0.5 * (dCb * dCb + dCr * dCr)) * smooth(15, 45, Y[j]) * (1 - smooth(238, 252, Y[j])) * weS[j];
     }
     kS = boxFilter(kS0, bw, bh, Math.max(2, Math.round(ell.rx * 0.02)));
-    for (let j = 0; j < n; j += 1) kS[j] *= smooth(0.08, 0.45, kS0[j]) * (1 - (protect ? protect[j] : 0));
+    for (let j = 0; j < n; j += 1) kS[j] *= smooth(0.08, 0.45, kS0[j]);
     Lb = new Float32Array(n);
     for (let y = 0; y < bh; y += 1) for (let x = 0; x < bw; x += 1) { const i = ((y0 + y) * w + x0 + x) * 4; Lb[y * bw + x] = rgbToLab(data[i], data[i + 1], data[i + 2])[0]; }
     const shm = blurBig(kS);
@@ -599,7 +599,7 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
         const gs = shadeGain[j]; const i = ((y0 + y) * w + x0 + x) * 4;
         const [L, a, b] = rgbToLab(data[i], data[i + 1], data[i + 2]);
         const gk0 = 1 + (gs - 1) * ks; const gk = gk0 < 1 && L > 78 ? 1 - (1 - gk0) * (1 - smooth(78, 90, L)) : gk0; // near-white skin is not dimmed (it would turn grey)
-        const ch = gk > 1 ? Math.sqrt(gk) : 1; // lifted shadows get their share of colour, dimmed light does not lose any
+        const ch = 1.0; // colour is truly kept untouched; lifted shadows do not gain red/yellow saturation
         const [R2, G2, B2] = labToRgb(Math.min(100, L * gk), a * ch, b * ch);
         data[i] = R2; data[i + 1] = G2; data[i + 2] = B2;
         if (U[j] < 0) { gLsum += gs * ks; gLw += ks; } else { gRsum += gs * ks; gRw += ks; }
@@ -623,6 +623,10 @@ export function applyFaceEngine(data, w, h, ell, params = {}) {
     const sr = [aY + 1.402 * (aCr - 128), aY - 0.344136 * (aCb - 128) - 0.714136 * (aCr - 128), aY + 1.772 * (aCb - 128)];
     const lr = recolorLips(data, w, h, params.lips, sr, skin.lips / 100);
     report.lips = lr.recolored ? { before: lr.before, after: lr.after } : null;
+  }
+  if (skin.enabled && params.eyes) {
+    const eyeRep = enhanceEyes(data, w, h, params.eyes, 0.75);
+    report.eyes = eyeRep.enhanced;
   }
   if (blemish?.discs.length) {
     const hr = healDiscs(data, w, h, blemish.discs.map((d) => ({ x: d.x + x0, y: d.y + y0, r: d.r })));
@@ -975,6 +979,104 @@ export function recolorLips(data, w, h, lips, skinRgb, strength) {
     data[i] += (R2 - data[i]) * Math.min(1, kk + 0.0); data[i + 1] += (G2 - data[i + 1]) * Math.min(1, kk); data[i + 2] += (B2 - data[i + 2]) * Math.min(1, kk);
   }
   return { recolored: true, before: [mL, mA, mB], after: [mL + dL, mA + dA, mB + dB] };
+}
+
+/**
+ * Studio Eye Clarification & Catchlight:
+ * - Sclera (eye whites): gently desaturate yellow/red veins and lift lightness toward clean, healthy neutral white.
+ * - Iris: define pupil/limbal ring depth and boost iris micro-contrast.
+ * - Studio Catchlight: add a crisp, delicate pinpoint reflection in the upper pupil if missing.
+ */
+export function enhanceEyes(data, w, h, eyes, strength = 0.75) {
+  if (!eyes || !(strength > 0)) return { enhanced: false };
+  const toMask = (poly) => (poly?.length ? polygonMask(poly, w, h, 1) : null);
+  const mR = toMask(eyes.right);
+  const mL = toMask(eyes.left);
+  if (!mR && !mL) return { enhanced: false };
+
+  const lum = (idx) => 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+  let count = 0;
+
+  for (const [m, iris] of [[mR, eyes.irisR], [mL, eyes.irisL]]) {
+    if (!m) continue;
+    const irX = iris ? iris.cx : 0;
+    const irY = iris ? iris.cy : 0;
+    const irR = iris ? Math.max(3, iris.r) : 0;
+
+    let maxIrisL = 0;
+    if (irR > 0) {
+      for (let dy = -irR; dy <= irR; dy += 1) {
+        for (let dx = -irR; dx <= irR; dx += 1) {
+          if (dx * dx + dy * dy <= irR * irR) {
+            const px = Math.round(irX + dx); const py = Math.round(irY + dy);
+            if (px >= 0 && px < w && py >= 0 && py < h) {
+              const l = lum((py * w + px) * 4);
+              if (l > maxIrisL) maxIrisL = l;
+            }
+          }
+        }
+      }
+    }
+
+    for (let y = 0; y < h; y += 1) {
+      for (let x = 0; x < w; x += 1) {
+        const j = y * w + x;
+        const wgt = m[j];
+        if (wgt <= 0.02) continue;
+        const idx = j * 4;
+        const [L, a, b] = rgbToLab(data[idx], data[idx + 1], data[idx + 2]);
+        const dIris = irR > 0 ? Math.hypot(x + 0.5 - irX, y + 0.5 - irY) : 999;
+
+        if (dIris <= irR) {
+          // Iris: gentle vibrance boost to eye color and micro-contrast, without darkening
+          const chBoost = 1 + 0.14 * strength * wgt;
+          const [r2, g2, b2] = labToRgb(Math.min(95, L + 1.5 * strength * wgt), a * chBoost, b * chBoost);
+          data[idx] = clamp(Math.round(r2), 0, 255);
+          data[idx + 1] = clamp(Math.round(g2), 0, 255);
+          data[idx + 2] = clamp(Math.round(b2), 0, 255);
+        } else if (dIris > irR * 1.05 && L > 35) {
+          // Sclera: clean eye whites by gently calming yellow/red cast and lifting lightness
+          const scleraFactor = smooth(35, 60, L) * smooth(irR * 1.05, irR * 1.35, dIris) * wgt * strength;
+          if (scleraFactor > 0.01) {
+            const cleanA = a * (1 - 0.45 * scleraFactor);
+            const cleanB = b * (1 - 0.45 * scleraFactor);
+            const liftL = Math.min(92, L + 8 * scleraFactor);
+            const [r2, g2, b2] = labToRgb(liftL, cleanA, cleanB);
+            data[idx] = clamp(Math.round(r2), 0, 255);
+            data[idx + 1] = clamp(Math.round(g2), 0, 255);
+            data[idx + 2] = clamp(Math.round(b2), 0, 255);
+            count += 1;
+          }
+        }
+      }
+    }
+
+    // Studio Catchlight: subtle pinpoint reflection in upper pupil
+    if (irR >= 3.5 && maxIrisL < 215) {
+      const clX = irX - irR * 0.22;
+      const clY = irY - irR * 0.28;
+      const clRad = Math.max(1.0, irR * 0.15);
+      const xStart = Math.max(0, Math.floor(clX - clRad * 2.5));
+      const xEnd = Math.min(w - 1, Math.ceil(clX + clRad * 2.5));
+      const yStart = Math.max(0, Math.floor(clY - clRad * 2.5));
+      const yEnd = Math.min(h - 1, Math.ceil(clY + clRad * 2.5));
+
+      for (let cy = yStart; cy <= yEnd; cy += 1) {
+        for (let cx = xStart; cx <= xEnd; cx += 1) {
+          const d = Math.hypot(cx + 0.5 - clX, cy + 0.5 - clY);
+          if (d <= clRad * 2.2) {
+            const alpha = Math.exp(-((d / clRad) ** 2)) * 0.8 * strength;
+            const idx = (cy * w + cx) * 4;
+            data[idx] = clamp(Math.round(data[idx] + (255 - data[idx]) * alpha), 0, 255);
+            data[idx + 1] = clamp(Math.round(data[idx + 1] + (255 - data[idx + 1]) * alpha), 0, 255);
+            data[idx + 2] = clamp(Math.round(data[idx + 2] + (255 - data[idx + 2]) * alpha), 0, 255);
+          }
+        }
+      }
+    }
+  }
+
+  return { enhanced: true, modifiedPixels: count };
 }
 
 /**

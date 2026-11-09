@@ -162,7 +162,19 @@ export function renderPhoto(edit, assets, outW, outH, opts = {}) {
       const protect = (face.protect || []).map((z) => ({ ...ellipseToOutput(z, src.width, src.height, M), soft: !!z.soft }));
       const toOut = (poly) => (poly || []).map(([px, py]) => applyMatrix(M, px * src.width, py * src.height)).map((p) => [p.x, p.y]);
       const lips = face.lips ? { outer: toOut(face.lips.outer), inner: toOut(face.lips.inner) } : null;
-      const rep = applyFaceEngine(data, outW, outH, ellipseToOutput(face.ellipse, src.width, src.height, M), { ...face, protect, lips });
+      const toIris = (iris) => {
+        if (!iris) return null;
+        const pt = applyMatrix(M, iris.cx * src.width, iris.cy * src.height);
+        const rPt = applyMatrix(M, (iris.cx + iris.r) * src.width, iris.cy * src.height);
+        return { cx: pt.x, cy: pt.y, r: Math.hypot(rPt.x - pt.x, rPt.y - pt.y) };
+      };
+      const eyes = face.eyes ? {
+        right: toOut(face.eyes.right),
+        left: toOut(face.eyes.left),
+        irisR: toIris(face.eyes.irisR),
+        irisL: toIris(face.eyes.irisL),
+      } : null;
+      const rep = applyFaceEngine(data, outW, outH, ellipseToOutput(face.ellipse, src.width, src.height, M), { ...face, protect, lips, eyes });
       if (opts.faceReport) Object.assign(opts.faceReport, rep);
     }
     // manual repair brush: real skin texture cloned over the marks the user painted (after all tone work)

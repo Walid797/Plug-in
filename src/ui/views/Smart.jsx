@@ -4,7 +4,7 @@ import { PhotoCanvas } from '../PhotoCanvas.jsx';
 import { Queue, NeedPhotos } from '../Queue.jsx';
 import { Icon, Button, Group, Notice, Badge, Select, Switch, Slider } from '../kit.jsx';
 import { faceEllipse } from '../../core/faceengine.js';
-import { faceProtectZones, lipPolygons } from '../../core/idphoto.js';
+import { faceProtectZones, lipPolygons, eyePolygons } from '../../core/idphoto.js';
 import { useCropHandlers, ViewSwitch } from './Editor.jsx';
 import { strokeHandlers } from './Background.jsx';
 import { analyzeFace, currentQuality, suggestionFor, profileFor, shoulderFracFor, refineCrownWithMask } from '../../ai/face.js';
@@ -126,7 +126,7 @@ export function SmartView() {
     const ellipse = f?.ellipse || (metrics ? faceEllipse(metrics, photo.width, photo.height) : null);
     if (!ellipse) return;
     const protect = f?.protect?.length ? f.protect : faceProtectZones(getFace(photo.id)?.landmarks, photo.width, photo.height);
-    updateEdit(photo.id, (ed) => ({ ...ed, face: { ...faceCfg, ...(ed.face || {}), ...patch, ellipse, protect, lips: lipPolygons(getFace(photo.id)?.landmarks) } }), { history });
+    updateEdit(photo.id, (ed) => ({ ...ed, face: { ...faceCfg, ...(ed.face || {}), ...patch, ellipse, protect, lips: lipPolygons(getFace(photo.id)?.landmarks), eyes: eyePolygons(getFace(photo.id)?.landmarks) } }), { history });
   };
 
   const engineSlider = (grp, key) => ({

@@ -110,6 +110,19 @@ export function lipPolygons(lm) {
   return { outer: pts(LIP_OUTER), inner: pts(LIP_INNER) };
 }
 
+export const EYE_RIGHT = Object.freeze([33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246]);
+export const EYE_LEFT = Object.freeze([362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398]);
+
+/** Eye polygons and iris positions in source-normalised coordinates, or null without landmarks. */
+export function eyePolygons(lm) {
+  if (!lm || lm.length < 400) return null;
+  const pts = (ids) => ids.map((i) => [lm[i].x, lm[i].y]);
+  const hasIris = lm.length >= 478;
+  const irisR = hasIris ? { cx: lm[468].x, cy: lm[468].y, r: Math.hypot(lm[469].x - lm[468].x, lm[469].y - lm[468].y) } : null;
+  const irisL = hasIris ? { cx: lm[473].x, cy: lm[473].y, r: Math.hypot(lm[474].x - lm[473].x, lm[474].y - lm[473].y) } : null;
+  return { right: pts(EYE_RIGHT), left: pts(EYE_LEFT), irisR, irisL };
+}
+
 /** Map face-frame (u,v) back to source pixels. */
 export function faceToSource(m, u, v) {
   const r = (m.rollDeg * Math.PI) / 180;
