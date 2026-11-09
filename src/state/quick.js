@@ -203,7 +203,7 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
               r.engine = await engineReport(id).catch(() => null);
               // the brightening is steered by the whole-face mean, which a beard, glasses or dark hair pull down: so a face with
               // dark parts can end up too bright. The skin itself is measured after the engines and trimmed back to the reference level.
-              for (let k = 0; k < 2 && r.engine?.lumaAfter > SKIN_TARGET_Y + 5; k += 1) {
+              for (let k = 0; k < 2 && r.engine?.lumaAfter > SKIN_TARGET_Y; k += 1) {
                 const ev = Math.log2(srgbToLinear(SKIN_TARGET_Y / 255) / srgbToLinear(r.engine.lumaAfter / 255));
                 const trim = Math.round((ev / 2) * 100); // negative slider units
                 updateEdit(id, (ed) => {

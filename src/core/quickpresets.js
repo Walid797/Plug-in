@@ -40,7 +40,7 @@ export const QUICK_DEFAULTS = Object.freeze({
   gExposure: 7.5, gBrightness: 8, gContrast: 8, gSaturation: 3, gTemperature: 2, gTint: 0,
   // contrast 8 and blacks -8 (suggested table: 5 / -3) were tuned on the studio's before/after pair: they give the
   // reference's deep hair, jacket and eye-socket shading instead of a flat look
-  gHighlights: -10, gShadows: 12, gWhites: 8, gBlacks: -8, gSharpness: 22, gClarity: 55, gDenoise: 30,
+  gHighlights: -16, gShadows: 12, gWhites: 0, gBlacks: -8, gSharpness: 22, gClarity: 55, gDenoise: 30,
   // face & skin engine (never reshapes the face): excess redness, colour evenness
   skinOn: true, skinRedness: 40, skinBalance: 40,
   // realistic spot healing (pimples, marks, stains): texture kept, beard and freckle clusters skipped; 0 = off
