@@ -202,61 +202,114 @@ export function renderPhoto(edit, assets, outW, outH, opts = {}) {
       if (edit.bg.decontaminate !== false) decontaminate(data, alpha, outW, outH, Math.max(2, Math.round(frameWidthPx / 120)));
       for (let i = 0; i < alpha.length; i += 1) data[i * 4 + 3] = Math.round((data[i * 4 + 3] / 255) * alpha[i] * 255);
     }
-    // If clothing overlay is active, erase old clothing so casual clothes never peep out behind the suit
+    // Clothing template: the person's own clothes must not show around or inside it. Below the chin everything is
+    // cleared except the neck; inside the collar opening the neck is continued downwards with its own skin, so there
+    // is skin (not the old shirt, not a hole) wherever the template is open.
     if (overlayOn) {
-      let chinY = null;
-      let cx = outW / 2;
-      let rx = outW * 0.22;
-      let ry = outW * 0.28;
+      let chinY = null; let cx = outW / 2; let rx = outW * 0.22; let ry = outW * 0.28;
       if (face?.ellipse) {
         const ell = ellipseToOutput(face.ellipse, src.width, src.height, M);
-        chinY = ell.cy + ell.ry * 1.01;
-        cx = ell.cx;
-        rx = ell.rx;
-        ry = ell.ry;
+        chinY = ell.cy + ell.ry * 1.01; cx = ell.cx; rx = ell.rx; ry = ell.ry;
       } else if (clothes.overlay) {
         const pt = applyMatrix(M, clothes.overlay.x * src.width, clothes.overlay.y * src.height);
-        chinY = pt.y;
-        cx = pt.x;
-        rx = clothes.overlay.width * src.width * Math.hypot(M[0], M[1]) * 0.15;
-        ry = rx * 1.3;
+        chinY = pt.y; cx = pt.x; rx = clothes.overlay.width * src.width * Math.hypot(M[0], M[1]) * 0.15; ry = rx * 1.3;
       }
-      if (assets.clothesMask) {
-        const cAlpha = maskInOutput(assets.clothesMask, src.width, src.height, M, outW, outH);
-        const bgRgb = hexToRgb(edit.bg?.color || '#ffffff');
-        for (let i = 0; i < cAlpha.length; i += 1) {
-          if (cAlpha[i] > 10) {
-            if (bgOn) {
-              data[i * 4 + 3] = Math.round(data[i * 4 + 3] * Math.max(0, 1 - cAlpha[i] / 255));
-            } else {
-              const keep = Math.max(0, 1 - cAlpha[i] / 255);
-              data[i * 4] = Math.round(data[i * 4] * keep + bgRgb.r * (1 - keep));
-              data[i * 4 + 1] = Math.round(data[i * 4 + 1] * keep + bgRgb.g * (1 - keep));
-              data[i * 4 + 2] = Math.round(data[i * 4 + 2] * keep + bgRgb.b * (1 - keep));
-            }
+      const bgRgb = hexToRgb(edit.bg?.color || '#ffffff');
+      const clear = (idx, keep = 0) => {
+        if (bgOn) data[idx + 3] = Math.round(data[idx + 3] * keep);
+        else for (let c = 0; c < 3; c += 1) data[idx + c] = Math.round(data[idx + c] * keep + bgRgb[c] * (1 - keep));
+      };
+      let cTight = null; // the mask as measured: inside the neck column the person's own neck skin must not be eaten by the grown edge
+      let cAlpha = assets.clothesMask ? maskInOutput(assets.clothesMask, src.width, src.height, M, outW, outH) : null; // 0..1
+      if (cAlpha) {
+        // grown a little: the soft outer edge of the old clothing would otherwise stay as a thin outline
+        const grown = boxFilter(cAlpha, outW, outH, Math.max(2, Math.round(outW / 110)));
+        cTight = cAlpha; cAlpha = Float32Array.from(cAlpha, (v, j) => Math.max(v, Math.min(1, grown[j] * 4)));
+      }
+      // where the template itself is opaque (it will be drawn over the photo at the end)
+      let tAlpha = null;
+      if (assets.template && assets.templateMeta && !opts.skipOverlay) {
+        const tc = makeCanvas(outW, outH); const tx = ctx2d(tc);
+        drawTemplate(tx, assets.template, assets.templateMeta, clothes.overlay, src, M);
+        const td = tx.getImageData(0, 0, outW, outH).data;
+        tAlpha = new Float32Array(outW * outH);
+        for (let i = 0; i < tAlpha.length; i += 1) tAlpha[i] = td[i * 4 + 3] / 255;
+      }
+      // old clothing beside and above the chin line (collar wings, shoulders that rise beside the jaw): cleared everywhere
+      // outside the face itself
+      if (cAlpha && chinY != null) {
+        const ecy = chinY - ry * 1.01;
+        for (let y = Math.max(0, Math.floor(ecy)); y < Math.min(outH, Math.ceil(chinY)); y += 1) {
+          for (let x = 0; x < outW; x += 1) {
+            const j = y * outW + x;
+            if (cAlpha[j] <= 0.04) continue;
+            const dx = (x - cx) / (rx * 1.02); const dy = (y - ecy) / (ry * 1.02);
+            if (dx * dx + dy * dy > 1) clear(j * 4, Math.max(0, 1 - cAlpha[j] * 1.6));
           }
         }
       }
       if (chinY != null) {
-        const bgRgb = hexToRgb(edit.bg?.color || '#ffffff');
-        for (let y = Math.max(0, Math.floor(chinY)); y < outH; y += 1) {
-          const row = y * outW;
-          // Neck column: starts below chin, safely preserving full neck and clearing old casual shoulders
-          const prog = Math.min(1, Math.max(0, (y - chinY) / Math.max(1, ry * 0.8)));
-          const curNeckHalfW = rx * (0.92 + 0.15 * prog);
-          for (let x = 0; x < outW; x += 1) {
-            if (Math.abs(x - cx) > curNeckHalfW) {
-              const idx = (row + x) * 4;
-              if (bgOn) {
-                data[idx + 3] = 0;
-              } else {
-                data[idx] = bgRgb.r;
-                data[idx + 1] = bgRgb.g;
-                data[idx + 2] = bgRgb.b;
-              }
+        const y0 = Math.max(0, Math.floor(chinY));
+        const filled = new Uint8Array(outW * outH);
+        // skin tone for a neck that is covered right from the chin (high collar): the lower face, a little darker
+        let fb = null;
+        { let r = 0; let g = 0; let b = 0; let k = 0;
+          for (let y = Math.max(0, Math.round(chinY - ry * 0.45)); y < Math.min(outH, Math.round(chinY - ry * 0.2)); y += 1) for (let x = Math.max(0, Math.round(cx - rx * 0.35)); x < Math.min(outW, Math.round(cx + rx * 0.35)); x += 1) { const i = (y * outW + x) * 4; r += data[i]; g += data[i + 1]; b += data[i + 2]; k += 1; }
+          if (k) fb = [(r / k) * 0.88, (g / k) * 0.86, (b / k) * 0.85]; }
+        // a pixel counts as the person's own neck only when it is not clothing and has the colour of this person's skin
+        const fbCb = fb ? -0.168736 * fb[0] - 0.331264 * fb[1] + 0.5 * fb[2] : 0; const fbCr = fb ? 0.5 * fb[0] - 0.418688 * fb[1] - 0.081312 * fb[2] : 0;
+        const skinLike = (idx) => {
+          if (!fb) return true;
+          const R = data[idx]; const G = data[idx + 1]; const B = data[idx + 2];
+          // generous: the neck is in the chin's shadow and often redder or greyer than the face
+          return 0.299 * R + 0.587 * G + 0.114 * B > 30 && Math.abs(-0.168736 * R - 0.331264 * G + 0.5 * B - fbCb) < 26 && Math.abs(0.5 * R - 0.418688 * G - 0.081312 * B - fbCr) < 26;
+        };
+        for (let x = 0; x < outW; x += 1) {
+          let last = null; // last skin pixel seen in this column, going down (starting with the skin just above the chin line)
+          if (y0 > 0) { const up = ((y0 - 1) * outW + x) * 4; if (data[up + 3] > 128 && skinLike(up) && Math.abs(x - cx) <= rx * 0.9) last = [data[up], data[up + 1], data[up + 2]]; }
+          for (let y = y0; y < outH; y += 1) {
+            const j = y * outW + x; const idx = j * 4;
+            const prog = Math.min(1, Math.max(0, (y - chinY) / Math.max(1, ry * 0.8)));
+            const half = rx * (0.92 + 0.15 * prog); const off = Math.abs(x - cx);
+            const inNeck = off <= half;
+            const cl = !cAlpha ? 0 : inNeck ? cTight[j] : cAlpha[j];
+            // beside the neck column: the person's own skin stays (a neck is as wide as it is; the template covers the shoulders),
+            // everything else there (old shoulders, collar wings) is cleared
+            if (!inNeck) { if (!(cl < 0.2 && data[idx + 3] > 128 && skinLike(idx) && off <= rx * 1.6)) clear(idx); continue; }
+            if (cl < 0.2 && data[idx + 3] > 128 && skinLike(idx)) { last = [data[idx], data[idx + 1], data[idx + 2]]; continue; } // the person's own neck
+            if (cl >= 0.2 || (data[idx + 3] > 128 && !skinLike(idx))) {
+              // old clothing inside the neck column: under the template it does not matter; where the template is open it becomes neck
+              const open = !tAlpha || tAlpha[j] < 0.98;
+              const src3 = last || fb;
+              if (open && src3 && y < chinY + ry * 1.6) {
+                const side = (x - cx) / (rx * 0.95);
+                const shade = (1 - 0.14 * Math.min(1, (y - chinY) / Math.max(1, ry))) * (1 - 0.16 * side * side); // a little darker towards the collar and towards the sides (round neck)
+                data[idx] = src3[0] * shade; data[idx + 1] = src3[1] * shade; data[idx + 2] = src3[2] * shade; data[idx + 3] = 255; filled[j] = 1;
+              } else clear(idx, cl >= 0.2 ? Math.max(0, 1 - cl * 1.6) : 0);
             }
           }
         }
+        // the continued neck is blended with the real neck around it (normalised blur over skin and continued skin only),
+        // so it reads as one piece of skin: no streaks, no line where it starts
+        let any = false; for (let j = y0 * outW; j < filled.length && !any; j += 1) any = filled[j] === 1;
+        if (any) {
+          const n = outW * outH; const wgt = new Float32Array(n); const near = new Float32Array(n);
+          for (let y = y0; y < outH; y += 1) for (let x = 0; x < outW; x += 1) { const j = y * outW + x; if (filled[j]) { wgt[j] = 1; near[j] = 1; } else if (data[j * 4 + 3] > 128 && Math.abs(x - cx) <= rx * 1.1 && skinLike(j * 4)) wgt[j] = 1; }
+          const rad = Math.max(3, Math.round(rx * 0.16));
+          const wB = boxFilter(boxFilter(wgt, outW, outH, rad), outW, outH, rad);
+          const reach = boxFilter(near, outW, outH, Math.max(2, Math.round(rx * 0.1))); // real skin right next to the continued part joins the blend
+          for (let c = 0; c < 3; c += 1) {
+            const ch = new Float32Array(n); for (let j = 0; j < n; j += 1) ch[j] = wgt[j] ? data[j * 4 + c] : 0;
+            const b = boxFilter(boxFilter(ch, outW, outH, rad), outW, outH, rad);
+            for (let j = y0 * outW; j < n; j += 1) {
+              if (!wgt[j] || wB[j] < 1e-3) continue;
+              const k = filled[j] ? 1 : Math.min(1, reach[j] * 2.5);
+              if (k > 0) data[j * 4 + c] = data[j * 4 + c] * (1 - k) + (b[j] / wB[j]) * k;
+            }
+          }
+        }
+      } else if (cAlpha) {
+        for (let j = 0; j < cAlpha.length; j += 1) if (cAlpha[j] > 0.04) clear(j * 4, Math.max(0, 1 - cAlpha[j]));
       }
     }
     fctx.putImageData(img, 0, 0);
@@ -280,19 +333,22 @@ export function renderPhoto(edit, assets, outW, outH, opts = {}) {
 
   const ov = clothes.overlay;
   if (!before && !opts.skipOverlay && ov?.enabled && assets.template && assets.templateMeta) {
-    const meta = assets.templateMeta;
-    const wPx = ov.width * src.width;
-    const hPx = wPx / meta.aspect;
-    const r = ((ov.rotation || 0) * Math.PI) / 180;
-    const cos = Math.cos(r); const sin = Math.sin(r);
-    const local = [cos, sin, -sin, cos, ov.x * src.width, ov.y * src.height];
-    const T = multiplyMatrix(M, local);
-    octx.imageSmoothingQuality = 'high';
-    octx.setTransform(T[0], T[1], T[2], T[3], T[4], T[5]);
-    octx.drawImage(assets.template, -meta.anchorX * wPx, -meta.anchorY * hPx, wPx, hPx);
-    octx.setTransform(1, 0, 0, 1, 0, 0);
+    drawTemplate(octx, assets.template, assets.templateMeta, ov, src, M);
   }
   return out;
+}
+
+/** Draw a clothing template at its overlay position (anchor at ov.x/ov.y of the source, ov.width of the source wide, turned by ov.rotation). */
+function drawTemplate(ctx, template, meta, ov, src, M) {
+  const wPx = ov.width * src.width;
+  const hPx = wPx / meta.aspect;
+  const r = ((ov.rotation || 0) * Math.PI) / 180;
+  const cos = Math.cos(r); const sin = Math.sin(r);
+  const T = multiplyMatrix(M, [cos, sin, -sin, cos, ov.x * src.width, ov.y * src.height]);
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+  ctx.setTransform(T[0], T[1], T[2], T[3], T[4], T[5]);
+  ctx.drawImage(template, -meta.anchorX * wPx, -meta.anchorY * hPx, wPx, hPx);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 
 /** Matrix from output pixels to the relight work frame: output → source (inverse crop) → the field's reference size → work. */

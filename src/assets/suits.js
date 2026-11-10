@@ -2,6 +2,7 @@
 // composited over the photo and positioned relative to the chin/neck.
 // Geometry: 1000 × 760 units; anchor = neck centre at (500, 70).
 import { getBlob } from '../storage/db.js';
+import { DIPLOMAT_GEOMETRY } from '../core/suitfit.js';
 import { decodeImage, makeCanvas } from '../platform/image.js';
 
 const W = 1000; const H = 760;
@@ -219,7 +220,8 @@ export const BUILTIN_TEMPLATES = [
     nameFa: 'کت‌وشلوار دیپلمات آتلیه‌ای (عکاسی واقعی)',
     png: 'models/templates/suit_diplomat.png',
     thumb: 'models/templates/suit_diplomat_thumb.png',
-    meta: { aspect: 768 / 1024, anchorX: 0.5, anchorY: 535 / 1024 },
+    // anchored at the collar tips (top of the collar at the sides of the neck); the neck opening, knot and all placement maths are in core/suitfit.js
+    meta: { aspect: 768 / 1024, anchorX: 0.5, anchorY: DIPLOMAT_GEOMETRY.tipsY, collar: DIPLOMAT_GEOMETRY },
   },
   { id: 'suit', nameFa: 'کت‌وشلوار رسمی با پیراهن و نکتایی (طرح برداری)', defaultColor: '#1d2638', colors: ['#1d2638', '#111214', '#3a3f47', '#2c3e2f'], svg: suitSvg },
   { id: 'office', nameFa: 'لباس اداری (پیراهن روشن و نکتایی)', defaultColor: '#eef2f7', colors: ['#eef2f7', '#dbe8f6', '#f3efe6', '#ffffff'], svg: shirtTieSvg },

@@ -15,6 +15,7 @@ import * as quick from './state/quick.js';
 import * as renderPhotoMod from './render/renderPhoto.js';
 import * as segment from './ai/segment.js';
 import * as enhance from './ai/enhance.js';
+import * as suitfit from './core/suitfit.js';
 
 function applyTheme(theme) {
   const root = document.documentElement;
@@ -69,7 +70,7 @@ async function boot() {
   registerServiceWorker(caps);
   if (/[?&]e2e=1\b/.test(location.search)) {
     // Opt-in hook for automated end-to-end tests only
-    window.__hoshmand = { getState, setState, sheet, db, media, face, quick, render: renderPhotoMod, segment, enhance, flushSave };
+    window.__hoshmand = { getState, setState, sheet, db, media, face, quick, render: renderPhotoMod, segment, enhance, suitfit, flushSave };
   }
 
   if (!settings.onboardingDone) {

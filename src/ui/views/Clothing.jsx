@@ -8,6 +8,7 @@ import { strokeHandlers, segErrorText } from './Background.jsx';
 import { segmentPhoto } from '../../ai/segment.js';
 import { hasMask, getFace, getPreview, getClothesMask, setPatch, registerUserTemplate } from '../../state/media.js';
 import { BUILTIN_TEMPLATES, templatePreviewSvg } from '../../assets/suits.js';
+import { measureNeck, fitCollar } from '../../core/suitfit.js';
 import { aiAvailability } from '../../platform/capabilities.js';
 import { checkCompanion, inpaint, buildPrompt, validateCompanionUrl } from '../../ai/companion.js';
 import { formatNumber } from '../../core/digits.js';
@@ -80,18 +81,31 @@ export function ClothingView() {
     } finally { setBusy(false); }
   };
 
-  const autoPlace = (tidOverride) => {
+  const autoPlace = async (tidOverride) => {
     const f = getFace(photo.id);
     if (!f?.metrics) { toast('برای جای‌گذاری خودکار، ابتدا در بخش «اصلاح هوشمند» چهره را تحلیل کنید. می‌توانید دستی هم تنظیم کنید.', 'warn', 8000); return; }
     const m = f.metrics;
+    const currentId = typeof tidOverride === 'string' ? tidOverride : (ov?.templateId || '');
+    const tpl = BUILTIN_TEMPLATES.find((t) => currentId.startsWith(`builtin:${t.id}`));
+    if (tpl?.meta?.collar) {
+      // photographic suit: the collar is sized to this person's own neck and centred on it (measured on the skin map);
+      // when the neck cannot be measured (covered, or no map) the proportions of the face are used
+      let neck = null;
+      try {
+        const { ensureClassMasks } = await import('../../ai/segment.js');
+        const cls = await ensureClassMasks(photo);
+        if (cls) neck = measureNeck(cls.skin, cls.w, cls.h, photo.width, photo.height, m);
+      } catch (err) { console.warn('neck measurement failed', err); }
+      const fit = fitCollar(m, photo.width, photo.height, tpl.meta.collar, tpl.meta.aspect, neck);
+      setOv({ x: fit.x, y: fit.y, width: fit.width, rotation: fit.rotation });
+      if (!neck) toast('گردن در عکس قابل اندازه‌گیری نبود (مثلاً یخن بلند)؛ لباس با تناسب صورت جای‌گذاری شد. در صورت نیاز دستی تنظیم کنید.', 'info', 8000);
+      return;
+    }
     const r = (m.rollDeg * Math.PI) / 180;
-    const currentId = tidOverride || ov?.templateId || '';
-    const isPhotoSuit = currentId.includes('suit-diplomat');
-    const mul = isPhotoSuit ? 2.5 : 3.4;
     const v = m.chinV * 1.08;
     const x = m.eyeMid.x + m.faceCenterU * Math.cos(r) - v * Math.sin(r);
     const y = m.eyeMid.y + m.faceCenterU * Math.sin(r) + v * Math.cos(r);
-    setOv({ x: x / photo.width, y: y / photo.height, width: (m.faceWidth * mul) / photo.width, rotation: m.rollDeg });
+    setOv({ x: x / photo.width, y: y / photo.height, width: (m.faceWidth * 3.4) / photo.width, rotation: m.rollDeg });
   };
 
   const chooseTemplate = (tid, color) => {
@@ -228,7 +242,7 @@ export function ClothingView() {
                   registerUserTemplate(key, { image: dec.image, meta: { aspect: dec.width / dec.height, anchorX: 0.5, anchorY: 0.09 } });
                   setOv({ enabled: true, templateId: key });
                 }}>قالب PNG خودتان</FilePick>
-                {ov.enabled ? <Button size="sm" variant="ghost" icon="crosshair" onClick={autoPlace}>جای‌گذاری خودکار</Button> : null}
+                {ov.enabled ? <Button size="sm" variant="ghost" icon="crosshair" onClick={() => autoPlace()}>جای‌گذاری خودکار</Button> : null}
                 {ov.enabled ? <Button size="sm" variant="ghost" icon="x" onClick={() => setOv({ enabled: false })}>برداشتن قالب</Button> : null}
               </div>
               {ov.enabled ? (
