@@ -306,3 +306,62 @@ export function skinPlan(profile, { faceWidthPx = 600, strength = 0.75, blemishA
     fill: rng(45 + (0.85 - profile.socketRatio) * 110, 25, 78),
   };
 }
+
+/**
+ * Light on the skin, evened out. The broad light of the face is read on the skin only (a skin-weighted average of the
+ * log brightness over about a tenth of the face width), compared with the skin's own median, and a smooth gain field
+ * is returned that brings shaded skin up and over-lit skin down. How much is decided by how uneven this face is: an
+ * evenly lit face gets no correction at all. Symmetric shadows (under the eyes, under the lip, both cheeks) are
+ * covered too, which the mirror-based relight cannot see.
+ * @returns {{gain:Float32Array|null, amount:number, uneven:number}} gain at the profile's size (1 = unchanged)
+ */
+export function evenLightField(rgba, profile, { maxAmount = 0.75 } = {}) {
+  const size = profile.size; const k = size / T; const n = size * size;
+  const lg = new Float32Array(n);
+  for (let i = 0, j = 0; j < n; i += 4, j += 1) lg[j] = Math.log(0.299 * rgba[i] + 0.587 * rgba[i + 1] + 0.114 * rgba[i + 2] + 8);
+  const near = skinAverage(lg, profile.hard, size, 28 * k); const far = skinAverage(lg, profile.hard, size, 80 * k);
+  const tmp = new Float32Array(n); let c = 0;
+  for (let j = 0; j < n; j += 1) if (profile.hard[j] && near.wb[j] > 0.3) { tmp[c] = near.avg[j]; c += 1; }
+  if (c < 200 * k * k) return { gain: null, amount: 0, uneven: 0 };
+  const target = median(tmp, c);
+  for (let j = 0; j < c; j += 1) tmp[j] = Math.abs(tmp[j] - target);
+  const uneven = 1.4826 * median(tmp, c);
+  const amount = Math.min(maxAmount, Math.max(0, (uneven - 0.035) / 0.11) * maxAmount);
+  if (amount <= 0.02) return { gain: null, amount: 0, uneven };
+  const gain = new Float32Array(n);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const j = y * size + x;
+      // where there is skin nearby its light is used; further out the wider average; outside the face nothing changes
+      const wn = Math.min(1, Math.max(0, (near.wb[j] - 0.04) / 0.3)); const wf = Math.min(1, Math.max(0, (far.wb[j] - 0.04) / 0.3));
+      const field = wn * near.avg[j] + (1 - wn) * (wf * far.avg[j] + (1 - wf) * target);
+      const d = Math.hypot((x / k - 256) / 178, (y / k - 292) / 214); const oval = d >= 1 ? 0 : d <= 0.8 ? 1 : 1 - ((d - 0.8) / 0.2) ** 2 * (3 - 2 * ((d - 0.8) / 0.2));
+      const g = Math.exp(amount * (target - field));
+      gain[j] = 1 + oval * Math.max(wn, wf * 0.6) * (Math.min(1.8, Math.max(0.72, g)) - 1);
+    }
+  }
+  return { gain: gaussBlur(gain, size, size, 4 * k), amount, uneven };
+}
+
+/** Apply a gain field given in template space to a w×h RGBA picture; A maps picture pixels to template pixels. */
+export function applyGainField(data, w, h, gain, size, A) {
+  const [a, b, c, d, e, f] = A; const det = a * d - b * c;
+  if (!(Math.abs(det) > 1e-12)) return;
+  // picture-space bounding box of the template square
+  const inv = [d / det, -b / det, -c / det, a / det, (c * f - d * e) / det, (b * e - a * f) / det];
+  let x0 = w; let y0 = h; let x1 = 0; let y1 = 0;
+  for (const [tx, ty] of [[0, 0], [size, 0], [0, size], [size, size]]) { const px = inv[0] * tx + inv[2] * ty + inv[4]; const py = inv[1] * tx + inv[3] * ty + inv[5]; x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); }
+  x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0)); x1 = Math.min(w - 1, Math.ceil(x1)); y1 = Math.min(h - 1, Math.ceil(y1));
+  for (let y = y0; y <= y1; y += 1) {
+    for (let x = x0; x <= x1; x += 1) {
+      const tx = a * x + c * y + e; const ty = b * x + d * y + f;
+      if (tx < 0 || ty < 0 || tx > size - 1 || ty > size - 1) continue;
+      const ix = Math.min(size - 2, tx | 0); const iy = Math.min(size - 2, ty | 0); const fx = tx - ix; const fy = ty - iy; const j = iy * size + ix;
+      const g = (gain[j] * (1 - fx) + gain[j + 1] * fx) * (1 - fy) + (gain[j + size] * (1 - fx) + gain[j + size + 1] * fx) * fy;
+      if (g === 1) continue;
+      const i = (y * w + x) * 4;
+      // in linear light, so colours keep their hue and saturation
+      for (let ch = 0; ch < 3; ch += 1) { const v = LIN[data[i + ch]] * g ** 2.2; data[i + ch] = v >= 1 ? 255 : toSrgb(v); }
+    }
+  }
+}

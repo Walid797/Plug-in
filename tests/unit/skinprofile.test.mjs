@@ -98,3 +98,25 @@ test('mergeFaceDetail with regeneration: the skin band comes from the model, ton
   assert.ok(regen[c + 1] - plain[c + 1] > 10, 'the blotch is lifted towards the model\'s clean skin');
   assert.ok(Math.abs(regen[e + 1] - 120) < 6, 'tone away from the blotch stays the photo\'s');
 });
+
+test('even light: an evenly lit face is left alone; a shaded half is brought up towards the lit half', async () => {
+  const { evenLightField, applyGainField } = await import('../../src/core/skinprofile.js');
+  const flat = face(LIGHT); assert.equal(evenLightField(flat, skinProfile(flat, S)).gain, null);
+  const img = face(LIGHT);
+  for (let y = 0; y < S; y += 1) for (let x = 0; x < S; x += 1) { const i = (y * S + x) * 4; const k = 1 - 0.3 / (1 + Math.exp(-(x - 256) / 30)); img[i] *= k; img[i + 1] *= k; img[i + 2] *= k; }
+  const p = skinProfile(img, S); const ev = evenLightField(img, p);
+  assert.ok(ev.gain && ev.amount > 0.3, `amount ${ev.amount}`);
+  const lit = (300 * S + 150) * 4; const shade = (300 * S + 370) * 4; const before = img[lit + 1] - img[shade + 1];
+  applyGainField(img, S, S, ev.gain, S, [1, 0, 0, 1, 0, 0]);
+  const after = img[lit + 1] - img[shade + 1];
+  assert.ok(after < before * 0.6, `difference ${before} → ${after}`);
+  assert.ok(evenLightField(img, skinProfile(img, S)).uneven < ev.uneven);
+});
+
+test('constrainCropBottom: size kept, only the lower edge is brought inside', async () => {
+  const { constrainCropBottom, cropToPixels } = await import('../../src/core/crop.js');
+  const c = constrainCropBottom({ cx: 0.5, cy: 0.6, cw: 1.2, rotation: 0 }, 400, 300, 0.75);
+  const p = cropToPixels(c, 400, 300, 0.75);
+  assert.equal(c.cw, 1.2); assert.ok(Math.abs(p.cy + p.ch / 2 - 300) < 1e-6); assert.ok(p.cy - p.ch / 2 < 0);
+  const inside = { cx: 0.5, cy: 0.4, cw: 0.3, rotation: 0 }; assert.deepEqual(constrainCropBottom(inside, 400, 300, 0.75), inside);
+});

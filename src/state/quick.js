@@ -6,7 +6,7 @@ import { getPersonMask, hasMask, getFace, maskForegroundFraction, originalAvaila
 import { renderPhoto } from '../render/renderPhoto.js';
 import { findQuickPreset, quickSheetPatch, presetCapacity, quickFields, normalizeQuickPreset, QUICK_PRESETS, presetAdjustFor, gradeStrength, detailStrength, presetFaceParams } from '../core/quickpresets.js';
 import { autoExposureDelta, exposureTowardTarget, suggestCrop, backgroundWhiteness, faceProtectZones, lipPolygons, eyePolygons, QUALITY_THRESHOLDS } from '../core/idphoto.js';
-import { isFrameInside, constrainCrop } from '../core/crop.js';
+import { isFrameInside, constrainCrop, constrainCropBottom } from '../core/crop.js';
 import { faceEllipse } from '../core/faceengine.js';
 import { makeCanvas } from '../platform/image.js';
 import { ADJUSTMENT_DEFAULTS } from '../core/adjust.js';
@@ -217,7 +217,10 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
               if (crop) {
                 const aspect = photo.edit.widthMm / photo.edit.heightMm;
                 if (!isFrameInside(crop, photo.width, photo.height, aspect)) {
-                  crop = constrainCrop(crop, photo.width, photo.height, aspect);
+                  // with the background replaced, the frame may reach past the picture's top and sides (plain background there)
+                  const plainBg = r.bg === 'ok' || r.bg === 'reused';
+                  crop = plainBg ? constrainCropBottom(crop, photo.width, photo.height, aspect) : constrainCrop(crop, photo.width, photo.height, aspect);
+                  if (plainBg) r.cropExtended = true;
                 }
                 updateEdit(id, { crop }, { history: false });
                 r.crop = 'ok';
@@ -268,6 +271,8 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
             const stats = await shoulderStatsFor(getState().photos[id]).catch(() => null);
             const q = currentQuality(getState().photos[id], stats ? { shoulderFrac: stats.frac, shoulderSides: stats } : {}) || [];
             r.issues = q.filter((x) => x.level === 'warn' || x.level === 'error');
+            // the frame was deliberately taken past the picture's edge into plain background: not a fault
+            if (r.cropExtended) r.issues = r.issues.filter((x) => x.code !== 'FRAME_OUTSIDE');
             // the quality check measures the photo before the lighting engine; when the engine evened the two sides completely
             // (its correction was not at the limit) the "one side darker" warning no longer applies
             const eg = r.engine?.evenGain;

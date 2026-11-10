@@ -102,6 +102,19 @@ export function constrainCrop(crop, srcW, srcH, aspect) {
   return pixelsToCrop(p, srcW, srcH);
 }
 
+/**
+ * For a photo whose background is replaced by a plain colour: the frame keeps its size (so the head keeps the size the
+ * rule asks for) and may reach beyond the picture at the top and the sides — there is only background there, and it is
+ * painted in the background colour. Only the lower edge has to stay inside (a body cannot be invented): the frame is
+ * moved up until it does.
+ */
+export function constrainCropBottom(crop, srcW, srcH, aspect) {
+  const p = cropToPixels(crop, srcW, srcH, aspect);
+  const { ey } = extents(p);
+  if (p.cy + ey > srcH) p.cy = srcH - ey;
+  return pixelsToCrop(p, srcW, srcH);
+}
+
 /** Pan by a delta measured in OUTPUT pixels (screen drag) for an output width. */
 export function panCrop(crop, dxOut, dyOut, srcW, srcH, outW) {
   const p = cropToPixels(crop, srcW, srcH, 1);

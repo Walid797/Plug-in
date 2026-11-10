@@ -8,7 +8,7 @@ import { getOnnxModel, disposeModel } from './runtime.js';
 import { decodeImage, makeCanvas, canvasToBlob, workingPixelLimit } from '../platform/image.js';
 import { applyRelight } from '../core/relight.js';
 import { fivePoints, similarityFit, FACE_TEMPLATE, FACE_SIZE, featherWeight, restoreShare, upscalePlan, tilePlan, maskBounds, toPlanar, fromPlanar, mergeFaceDetail } from '../core/enhance.js';
-import { skinProfile, findBlemishes, healBlemishes, skinPlan } from '../core/skinprofile.js';
+import { skinProfile, findBlemishes, healBlemishes, skinPlan, evenLightField, applyGainField } from '../core/skinprofile.js';
 import { drawThrough } from '../render/renderPhoto.js';
 import { multiplyMatrix, invertMatrix } from '../core/crop.js';
 
@@ -105,8 +105,24 @@ export async function enhancePhoto(photo, opt = {}) {
       const fc = makeCanvas(FACE_SIZE, FACE_SIZE); const fx = ctx2d(fc);
       fx.fillStyle = 'rgb(135,133,132)'; fx.fillRect(0, 0, FACE_SIZE, FACE_SIZE);
       drawThrough(fx, c, w, h, A, FACE_SIZE, FACE_SIZE);
-      const fd = fx.getImageData(0, 0, FACE_SIZE, FACE_SIZE);
-      const profile = skinProfile(fd.data, FACE_SIZE);
+      let fd = fx.getImageData(0, 0, FACE_SIZE, FACE_SIZE);
+      let profile = skinProfile(fd.data, FACE_SIZE);
+      // light on the skin evened out, by as much as this face needs; applied to the photo's own pixels at full
+      // resolution (the field is smooth), then the face is read again
+      if (profile) {
+        const ev = evenLightField(fd.data, profile);
+        report.light = { uneven: ev.uneven, amount: ev.amount };
+        if (ev.gain) {
+          const img = cx.getImageData(0, 0, w, h);
+          applyGainField(img.data, w, h, ev.gain, FACE_SIZE, A);
+          cx.putImageData(img, 0, 0);
+          fx.fillStyle = 'rgb(135,133,132)'; fx.fillRect(0, 0, FACE_SIZE, FACE_SIZE);
+          drawThrough(fx, c, w, h, A, FACE_SIZE, FACE_SIZE);
+          fd = fx.getImageData(0, 0, FACE_SIZE, FACE_SIZE);
+          profile = skinProfile(fd.data, FACE_SIZE) || profile;
+          report.light.unevenAfter = evenLightField(fd.data, profile).uneven;
+        }
+      }
       const found = profile ? findBlemishes(fd.data, profile, { moles: true }) : null;
       const plan = profile ? skinPlan(profile, { faceWidthPx: faceW0, strength: strength / 100, blemishArea: found.area }) : null;
       const healed = found?.count ? healBlemishes(fd.data, profile, found) : fd.data;
