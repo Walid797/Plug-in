@@ -107,7 +107,7 @@ export async function enhancePhoto(photo, opt = {}) {
       drawThrough(fx, c, w, h, A, FACE_SIZE, FACE_SIZE);
       const fd = fx.getImageData(0, 0, FACE_SIZE, FACE_SIZE);
       const profile = skinProfile(fd.data, FACE_SIZE);
-      const found = profile ? findBlemishes(fd.data, profile) : null;
+      const found = profile ? findBlemishes(fd.data, profile, { moles: true }) : null;
       const plan = profile ? skinPlan(profile, { faceWidthPx: faceW0, strength: strength / 100, blemishArea: found.area }) : null;
       const healed = found?.count ? healBlemishes(fd.data, profile, found) : fd.data;
       if (profile) { report.skin = publicProfile(profile); report.plan = plan; report.blemishes = { count: found.count, kept: found.kept, area: found.area }; }
@@ -122,9 +122,14 @@ export async function enhancePhoto(photo, opt = {}) {
         const model = new Uint8ClampedArray(FACE_SIZE * FACE_SIZE * 4);
         fromPlanar(o.data, FACE_SIZE, FACE_SIZE, model, -1, 1);
         // the photo keeps its light and the person's own skin tone; the skin itself and all fine detail are the model's
-        merged = mergeFaceDetail(healed, model, FACE_SIZE, plan ? { skin: profile.regenMask, regen: plan.regen, sigmaSkin: plan.sigmaSkin, chromaEven: plan.chromaEven } : {});
+        merged = mergeFaceDetail(healed, model, FACE_SIZE, plan ? { skin: profile.regenMask, regen: plan.regen, sigmaSkin: plan.sigmaSkin, chromaEven: plan.chromaEven, midKeep: plan.midKeep } : {});
+      } else if (plan && plan.regen > 0) {
+        // no restoration model: the skin is still evened out and smoothed from the photo's own pixels
+        const faceW = Math.hypot((lm[454].x - lm[234].x) * w, (lm[454].y - lm[234].y) * h);
+        share = restoreShare(faceW, plan.restoreStrength);
+        merged = mergeFaceDetail(healed, healed, FACE_SIZE, { skin: profile.regenMask, regen: plan.regen, sigmaSkin: plan.sigmaSkin, chromaEven: plan.chromaEven, midKeep: plan.midKeep, chromaDetail: 0 });
       }
-      if (useModel || found?.count) {
+      if (share > 0 || found?.count) {
         // rebuilt face at its share; healed blemishes at full weight (a large face keeps its own pixels everywhere else)
         const res = fx.createImageData(FACE_SIZE, FACE_SIZE); const rd = res.data; const hm = found?.count ? found.mask : null;
         for (let y = 0, j = 0; y < FACE_SIZE; y += 1) {
@@ -142,7 +147,7 @@ export async function enhancePhoto(photo, opt = {}) {
         cx.setTransform(inv[0], inv[1], inv[2], inv[3], inv[4], inv[5]);
         cx.drawImage(fc, 0, 0);
         cx.restore();
-        report.restored = useModel; report.healed = found?.count || 0; report.share = share; report.restoreMs = Math.round(performance.now() - t0);
+        report.restored = useModel; report.smoothed = share > 0; report.healed = found?.count || 0; report.share = share; report.restoreMs = Math.round(performance.now() - t0);
       }
     }
   }
@@ -158,7 +163,7 @@ export async function enhancePhoto(photo, opt = {}) {
   return report;
 }
 
-const publicProfile = (p) => ({ L: p.L, a: p.a, b: p.b, chroma: p.chroma, hue: p.hue, ita: p.ita, tone: p.tone, luma: p.luma, skinToSclera: p.skinToSclera, skinFraction: p.skinFraction, noise: p.noise });
+const publicProfile = (p) => ({ spanL: p.spanL, p5: p.p5, p95: p.p95, lipRedness: p.lipRedness, socketRatio: p.socketRatio, redPatches: p.redPatches, L: p.L, a: p.a, b: p.b, chroma: p.chroma, hue: p.hue, ita: p.ita, tone: p.tone, luma: p.luma, skinToSclera: p.skinToSclera, skinFraction: p.skinFraction, noise: p.noise });
 
 /**
  * Skin profile and plan of a photo without building an enhanced version (used when the enhancement is switched off):
@@ -186,7 +191,7 @@ export async function measureSkin(photo, strength = 75) {
   c.width = 0; c.height = 0;
   const profile = skinProfile(fd.data, FACE_SIZE);
   if (!profile) return null;
-  const found = findBlemishes(fd.data, profile);
+  const found = findBlemishes(fd.data, profile, { moles: true });
   const faceW = Math.hypot((lm[454].x - lm[234].x) * photo.width, (lm[454].y - lm[234].y) * photo.height);
   return { skin: publicProfile(profile), plan: skinPlan(profile, { faceWidthPx: faceW, strength: strength / 100, blemishArea: found.area }), blemishes: { count: found.count, kept: found.kept, area: found.area } };
 }

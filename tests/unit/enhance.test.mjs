@@ -42,7 +42,7 @@ test('restore share: full for a face the model can resolve, reduced for a large 
   assert.equal(restoreShare(200, 0.8), 0.8);
   assert.equal(restoreShare(TEMPLATE_FACE_WIDTH * 1.6, 0.8), 0.8);
   assert.ok(restoreShare(800, 0.8) < 0.8 && restoreShare(800, 0.8) > restoreShare(1100, 0.8));
-  assert.ok(Math.abs(restoreShare(5000, 1) - 0.3) < 1e-9, 'floor of 30 % for very large faces');
+  assert.ok(Math.abs(restoreShare(5000, 1) - 0.5) < 1e-9, 'floor of 50 % for very large faces');
   assert.equal(restoreShare(300, 0), 0); assert.equal(restoreShare(0, 1), 0);
 });
 

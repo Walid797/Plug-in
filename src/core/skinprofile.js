@@ -126,11 +126,20 @@ export function skinProfile(rgba, size = T) {
     if (a2[j] - a14[j] > 2.4) red += 1;
     cc += 1;
   }
+  // tonal range of the whole face (hair line to chin), clipped highlights on the skin, lips against the skin, eye sockets
+  let fc = 0; let clip = 0;
+  for (let y = 0; y < size; y += 2) for (let x = 0; x < size; x += 2) { if (inEllipse(x / k, y / k, 256, 292, 158, 196)) { tmp[fc] = L[y * size + x]; fc += 1; } }
+  const p5 = quantile(tmp, fc, 0.05); const p95 = quantile(tmp, fc, 0.95);
+  for (let j = 0; j < n; j += 1) if (core(j) && L[j] > 93) clip += 1;
+  const zone = (src, cx, cy, rx, ry, q) => { let m2 = 0; for (let y = Math.round((cy - ry) * k); y <= (cy + ry) * k; y += 1) for (let x = Math.round((cx - rx) * k); x <= (cx + rx) * k; x += 1) { if (x >= 0 && y >= 0 && x < size && y < size && inEllipse(x / k, y / k, cx, cy, rx, ry)) { tmp[m2] = src[y * size + x]; m2 += 1; } } return quantile(tmp, m2, q); };
+  const lipA = zone(A, 257, 376, 44, 16, 0.7);
+  const socket = (zone(Yl, 193, 264, 36, 9, 0.5) + zone(Yl, 319, 264, 36, 9, 0.5)) / 2;
   const noise = 1.4826 * median(fine, cc);
   const unevenness = 1.4826 * median(dev, cc);
   return {
     L: Lm, a: am, b: bm, chroma: C, hue, ita, tone: toneClass(ita).id,
     yLin, luma: toSrgb(yLin), scleraLin, skinToSclera: scleraLin ? yLin / scleraLin : null,
+    spanL: p95 - p5, p5, p95, clipped: clip / cc, lipRedness: lipA - am, socketRatio: socket / Math.max(1e-4, yLin),
     skinFraction: cnt / Math.max(1, cand), noise, unevenness, spots: spots / cc, redPatches: red / cc,
     size, mask, regenMask, hard,
   };
@@ -158,7 +167,7 @@ function skinAverage(src, weight, size, sigma, wBlur = null) {
  * (it is part of how the person looks) unless `moles` is true.
  * @returns {{mask:Float32Array, count:number, area:number, kept:number}} soft heal mask; area = share of the skin covered
  */
-export function findBlemishes(rgba, profile, { moles = false, sensitivity = 1 } = {}) {
+export function findBlemishes(rgba, profile, { moles = false, sensitivity = 1.15 } = {}) {
   const size = profile.size; const k = size / T; const n = size * size;
   const Y = new Float32Array(n); const A = new Float32Array(n);
   for (let i = 0, j = 0; j < n; i += 4, j += 1) { Y[j] = 0.299 * rgba[i] + 0.587 * rgba[i + 1] + 0.114 * rgba[i + 2]; A[j] = 0.5 * rgba[i] - 0.418688 * rgba[i + 1] - 0.081312 * rgba[i + 2]; }
@@ -199,7 +208,7 @@ export function findBlemishes(rgba, profile, { moles = false, sensitivity = 1 } 
     const area = a / (k * k); const cx = sx / a / k; const cy = sy / a / k;
     const compact = long / short <= 2.6 && a / (bw * bh) >= 0.35 && area <= 520;
     // a longer mark is taken only when it is reddish (a scar, a scratch): dark lines are folds, wrinkles and hair
-    const mark = long / k <= 60 && area <= 200 && sumRed / a > tRed && !foldZone(cx, cy);
+    const mark = area <= 200 && !foldZone(cx, cy) && ((long / k <= 60 && sumRed / a > tRed) || long / k <= 42);
     const strong = peak < -1.5 * tDark || peakRed > 1.5 * tRed; // a real spot stands clearly out of its surroundings
     if (area < 5 || border || !strong || !(compact || mark)) continue;
     if (!moles && peak < -0.45 && area >= 25 && compact) { kept += 1; continue; }
@@ -247,6 +256,7 @@ export function healBlemishes(rgba, profile, found) {
 }
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+const rng = (v, lo, hi) => (Number.isFinite(v) ? Math.round(Math.min(hi, Math.max(lo, v))) : Math.round((lo + hi) / 2));
 
 /**
  * The plan for one photo, derived from its skin profile. Every value is specific to this face.
@@ -275,10 +285,24 @@ export function skinPlan(profile, { faceWidthPx = 600, strength = 0.75, blemishA
     lightness, tone: profile.tone, targetLuma, referenceL: 0.66 * (targetLuma / 186),
     defect, lowRes,
     restoreStrength: clamp01(strength * (0.85 + 0.35 * need)),
-    regen: clamp01((0.45 + 0.55 * need) * Math.min(1, strength / 0.5)),
+    regen: clamp01((0.7 + 0.3 * need) * Math.min(1, strength / 0.5)),
+    // how much of the skin's own patchiness (2–12 px) is kept: less for a skin with more blemishes
+    midKeep: Math.round((0.55 - 0.25 * defect) * 100) / 100,
     sigmaSkin: Math.round(22 + 16 * need),
-    chromaEven: clamp01((0.35 + 0.55 * defect) * Math.min(1, strength / 0.5)),
+    chromaEven: clamp01((0.6 + 0.4 * defect) * Math.min(1, strength / 0.5)),
     smoothScale: 0.25 + 0.45 * defect,
     saturation: Math.round(saturation * 10) / 10, temperature: Math.round(temperature * 10) / 10,
+    // tone of this photo: a flat face gets more contrast and a harsh one less; highlights are held back by how bright
+    // the lightest skin is; blacks deepen only when the darks are washed out; noise reduction follows the measured noise
+    contrast: rng(8 + (62 - profile.spanL) * 0.35, 2, 14),
+    highlights: rng(-10 - (profile.p95 - 82) * 1.2 - profile.clipped * 200, -34, -6),
+    blacks: rng(-3 - (profile.p5 - 10) * 0.5, -14, -3),
+    denoise: rng(12 + 11 * profile.noise, 12, 60),
+    // skin engine for this skin: redness by how red it is, evenness by its red patches, lips by how pale they are
+    // against the skin, fill light by how dark the eye sockets are against the cheeks
+    redness: rng(20 + (profile.a - 9) * 3.2, 20, 75),
+    balance: rng(25 + profile.redPatches * 220, 25, 75),
+    lips: rng(70 - profile.lipRedness * 2.2, 25, 80),
+    fill: rng(45 + (0.85 - profile.socketRatio) * 110, 25, 78),
   };
 }

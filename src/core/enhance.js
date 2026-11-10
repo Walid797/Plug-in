@@ -51,14 +51,14 @@ export function featherWeight(x, y, size = FACE_SIZE, inner = 34, outer = 120) {
 /**
  * How strongly the restored face replaces the photo's own. The model resolves a face about TEMPLATE_FACE_WIDTH px wide:
  * a face with more pixels than that already carries finer detail than the model can give, so its share falls
- * (down to 30 %) as the face gets larger. strength 0..1 is the user's setting.
+ * (down to 50 %) as the face gets larger. strength 0..1 is the user's setting.
  */
 export function restoreShare(faceWidthPx, strength = 0.8) {
   const s = Math.min(1, Math.max(0, strength));
   if (!(faceWidthPx > 0)) return 0;
   const lo = TEMPLATE_FACE_WIDTH * 1.6; const hi = TEMPLATE_FACE_WIDTH * 3.8;
   const t = Math.min(1, Math.max(0, (faceWidthPx - lo) / (hi - lo)));
-  return s * (1 - 0.7 * t);
+  return s * (1 - 0.5 * t);
 }
 
 /**
@@ -131,6 +131,7 @@ export function fromPlanar(planar, w, h, rgba, lo = 0, hi = 1) {
  *  - on the skin (`skin` weight map, with `regen` 0..1) the model's skin is taken over up to a much coarser scale
  *    (`sigmaSkin` px): pores, patches, marks and uneven areas are the model's new skin, and only the broad light
  *    and the person's own skin tone stay from the photo;
+ *    `midKeep` < 1 additionally turns down the patchy band of that new skin (smooth, even skin with its pores kept);
  *  - colour: the photo's own, with a share of the model's colour detail; on the skin (`chromaEven` 0..1) the photo's
  *    colour is first evened out over `sigmaChroma` px (red and dark patches go) and the model's colour variation is laid on it.
  * @param {Uint8ClampedArray} base RGBA of the aligned face square taken from the photo
@@ -138,7 +139,7 @@ export function fromPlanar(planar, w, h, rgba, lo = 0, hi = 1) {
  * @param {{sigma?:number, chromaDetail?:number, skin?:Float32Array|null, regen?:number, sigmaSkin?:number, chromaEven?:number, sigmaChroma?:number}} [opt]
  * @returns {Uint8ClampedArray} RGBA (alpha 255)
  */
-export function mergeFaceDetail(base, restored, size = FACE_SIZE, { sigma = 14, chromaDetail = 0.5, skin = null, regen = 0, sigmaSkin = 34, chromaEven = 0, sigmaChroma = 16 } = {}) {
+export function mergeFaceDetail(base, restored, size = FACE_SIZE, { sigma = 14, chromaDetail = 0.5, skin = null, regen = 0, sigmaSkin = 34, chromaEven = 0, sigmaChroma = 16, midKeep = 1 } = {}) {
   const n = size * size;
   const planes = (d) => {
     const Y = new Float32Array(n); const Cb = new Float32Array(n); const Cr = new Float32Array(n);
@@ -153,6 +154,9 @@ export function mergeFaceDetail(base, restored, size = FACE_SIZE, { sigma = 14, 
   const useSkin = !!skin && skin.length === n && (regen > 0 || chromaEven > 0);
   const lpB2 = useSkin && regen > 0 ? gaussBlur(b.Y, size, size, sigmaSkin) : null;
   const lpR2 = lpB2 ? gaussBlur(r.Y, size, size, sigmaSkin) : null;
+  // smooth, clean skin: the patchy band (2.5–12 px) of the new skin is turned down to `midKeep`; pores finer than that
+  // and the shaping of the face coarser than that stay
+  const smooth = lpB2 && midKeep < 1; const lpRf = smooth ? gaussBlur(r.Y, size, size, 2.5) : null; const lpRm = smooth ? gaussBlur(r.Y, size, size, 12) : null;
   // skin-only averages: a blur of (value × skin) over a blur of skin, so lips, brows and beard do not bleed into the skin colour
   const skinBlur = useSkin && chromaEven > 0 ? gaussBlur(skin, size, size, sigmaChroma) : null;
   const skinAvg = (src) => {
@@ -180,7 +184,7 @@ export function mergeFaceDetail(base, restored, size = FACE_SIZE, { sigma = 14, 
   const out = new Uint8ClampedArray(n * 4);
   for (let i = 0, j = 0; j < n; i += 4, j += 1) {
     let Y = r.Y[j] - lpR[j] + lpB[j];
-    if (lpB2) { const w = skin[j] * regen; if (w > 0) Y += w * (r.Y[j] - lpR2[j] + lpB2[j] - Y); }
+    if (lpB2) { const w = skin[j] * regen; if (w > 0) { const ys = smooth ? lpB2[j] + (lpRm[j] - lpR2[j]) + midKeep * (lpRf[j] - lpRm[j]) + (r.Y[j] - lpRf[j]) : r.Y[j] - lpR2[j] + lpB2[j]; Y += w * (ys - Y); } }
     out[i] = Y + 1.402 * Cr[j]; out[i + 1] = Y - 0.344136 * Cb[j] - 0.714136 * Cr[j]; out[i + 2] = Y + 1.772 * Cb[j]; out[i + 3] = 255;
   }
   return out;

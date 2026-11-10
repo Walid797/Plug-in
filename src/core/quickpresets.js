@@ -155,6 +155,8 @@ export function presetAdjustFor(p, meanL, sharpness = null, plan = null) {
   if (plan) {
     a.saturation = Math.round((a.saturation + (plan.saturation || 0)) * 10) / 10;
     a.temperature = Math.round((a.temperature + (plan.temperature || 0)) * 10) / 10;
+    // tone values measured on this photo replace the table's (which stay the fallback when nothing could be measured)
+    for (const k of ['contrast', 'highlights', 'blacks', 'denoise']) if (Number.isFinite(plan[k])) a[k] = plan[k];
   }
   for (const k of BRIGHTENING_KEYS) a[k] = Math.round(a[k] * s * 10) / 10;
   const d = detailStrength(sharpness);
@@ -163,10 +165,12 @@ export function presetAdjustFor(p, meanL, sharpness = null, plan = null) {
 }
 
 /** Face & skin + lighting parameters a preset writes to the photo edit (ellipse added by the analysis). */
-export function presetFaceParams(p) {
+export function presetFaceParams(p, plan = null) {
+  // with a plan (adaptive template) the values measured on this person's skin are used; the template's are the fallback
+  const v = (k, d) => (plan && p.gradeAdaptive && Number.isFinite(plan[k]) ? plan[k] : d);
   return {
-    skin: { enabled: p.skinOn, redness: p.skinRedness, balance: p.skinBalance, spots: p.skinSpots, smooth: p.skinSmooth, lips: p.skinLips },
-    light: { enabled: p.lightOn, fill: p.lightFill, even: p.lightEven, protect: p.lightProtect },
+    skin: { enabled: p.skinOn, redness: v('redness', p.skinRedness), balance: v('balance', p.skinBalance), spots: p.skinSpots, smooth: p.skinSmooth, lips: p.skinLips > 0 ? v('lips', p.skinLips) : 0 },
+    light: { enabled: p.lightOn, fill: v('fill', p.lightFill), even: p.lightEven, protect: p.lightProtect },
   };
 }
 

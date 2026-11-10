@@ -201,7 +201,7 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
             try { const { measureSkin } = await import('../ai/enhance.js'); skinInfo = await measureSkin(getState().photos[id], preset.aiStrength); } catch (err) { console.error(err); }
           }
           const plan = skinInfo?.plan || null;
-          if (skinInfo?.plan) r.skin = { tone: skinInfo.skin.tone, ita: skinInfo.skin.ita, lightness: plan.lightness, targetLuma: plan.targetLuma, blemishes: skinInfo.blemishes?.count || 0, molesKept: skinInfo.blemishes?.kept || 0, regen: plan.regen, saturation: plan.saturation, temperature: plan.temperature };
+          if (skinInfo?.plan) r.skin = { tone: skinInfo.skin.tone, ita: skinInfo.skin.ita, lightness: plan.lightness, targetLuma: plan.targetLuma, contrast: plan.contrast, highlights: plan.highlights, blacks: plan.blacks, denoise: plan.denoise, redness: plan.redness, balance: plan.balance, lips: plan.lips, fill: plan.fill, blemishes: skinInfo.blemishes?.count || 0, molesKept: skinInfo.blemishes?.kept || 0, regen: plan.regen, saturation: plan.saturation, temperature: plan.temperature };
           if (preset.grade) {
             // measured on the neutral photo: strength 1 for a dark face, 0 for one as bright as the reference
             const strength = f.faceCount ? gradeStrength(f.stats?.meanL, plan?.referenceL) : 1;
@@ -241,7 +241,7 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
             }
             // arm the face & skin / lighting engines on this face
             if (preset.skinOn || preset.lightOn) {
-              const fp = presetFaceParams(preset);
+              const fp = presetFaceParams(preset, plan);
               // a face rebuilt by the restoration model is already clean: the full skin smoothing on top would make it look like plastic
               if (r.enhance?.restored) fp.skin = { ...fp.skin, smooth: Math.round(fp.skin.smooth * (plan?.smoothScale ?? 0.4)) };
               // blemishes of the face were already covered on the aligned face (measured against this person's own skin);
