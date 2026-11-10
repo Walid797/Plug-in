@@ -108,7 +108,7 @@ try {
   assert(st.marks.borders === true && st.marks.borderWidth === 0.5 && st.marks.borderColor === '#404040', `border applied from the template ${JSON.stringify(st.marks)}`);
   assert(st.refine.feather === 3 && st.shadow.enabled === true, `own edge settings applied (${JSON.stringify(st.refine)} ${JSON.stringify(st.shadow)})`);
   assert(JSON.stringify(st.items) === '[4]' && st.mode === 'exact' && st.placed === 4 && st.cap === 8, `sheet ${JSON.stringify(st)}`);
-  assert(st.paper === '4x6in' && st.margins === 5 && st.boost === 'medium', 'paper/margins/boost from the preset');
+  assert(st.paper === '4x6in' && st.margins === 5 && st.boost === 'high', 'paper/margins/boost from the preset');
   await ready.getByRole('button', { name: 'اول پیش‌نمایش را ببینم' }).click();
   await page.waitForTimeout(500);
   const frames = await page.evaluate(() => [...document.querySelectorAll('.sheets .marks-over rect')].map((r) => [r.getAttribute('stroke'), r.getAttribute('stroke-width')]));

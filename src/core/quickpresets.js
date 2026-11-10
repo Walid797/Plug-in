@@ -58,7 +58,7 @@ export const QUICK_DEFAULTS = Object.freeze({
   // background edge clean-up (same meaning as the Background section; feather in mask pixels)
   edgeAware: true, edgeShift: 0, edgeSoftness: 40, edgeFeather: 1, decontaminate: true,
   shadow: false, shadowOpacity: 25, shadowBlur: 1.5, shadowX: 0, shadowY: 0.8,
-  printBoost: 'medium', dpi: 300, cropMarks: true, cutLines: true, borderless: false, hardMargin: 3,
+  printBoost: 'high', dpi: 300, cropMarks: true, cutLines: true, borderless: false, hardMargin: 3,
   // frame drawn inside each photo (photo size unchanged): on by default in every template, width in mm
   border: true, borderWidth: 0.1, borderColor: '#000000',
   // cut lines / crop marks sit this far outside each photo, in the white (on all four sides and between photos alike: at most half the gap)
@@ -100,6 +100,8 @@ export function upgradeSavedQuickFields(p) {
   if (o.gSharpness === 14) o.gSharpness = 22;
   if (o.lightFill === 35) o.lightFill = 45;
   if (o.skinBalance === 30) o.skinBalance = 40;
+  // prints came out dark at the earlier default: saved templates that still carry it move to the new one
+  if (o.printBoost === 'medium') o.printBoost = 'high';
   return o;
 }
 

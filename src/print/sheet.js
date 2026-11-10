@@ -190,7 +190,7 @@ export function applyPrintBoost(canvas, level) {
   return true;
 }
 
-export const PRINT_BOOST_FA = Object.freeze({ off: 'خاموش', low: 'کم', medium: 'متوسط', high: 'زیاد' });
+export const PRINT_BOOST_FA = Object.freeze({ off: 'خاموش', low: 'کم', medium: 'متوسط', high: 'زیاد', max: 'خیلی زیاد' });
 
 export async function renderSheetAssets(state, layout, task) {
   const sh = state.project.sheet;

@@ -281,8 +281,10 @@ export const PRINT_BOOST_LEVELS = Object.freeze({
   low: Object.freeze({ gamma: 0.93, bump: 0.15 }),
   medium: Object.freeze({ gamma: 0.87, bump: 0.28 }),
   high: Object.freeze({ gamma: 0.8, bump: 0.4 }),
+  // for printers that still print dark at "high" (mid-grey about +0.9 stop)
+  max: Object.freeze({ gamma: 0.72, bump: 0.5 }),
 });
-export const PRINT_BOOST_IDS = Object.freeze(['off', 'low', 'medium', 'high']);
+export const PRINT_BOOST_IDS = Object.freeze(['off', 'low', 'medium', 'high', 'max']);
 
 export function isPrintBoost(level) {
   return Object.prototype.hasOwnProperty.call(PRINT_BOOST_LEVELS, level) && level !== 'off';

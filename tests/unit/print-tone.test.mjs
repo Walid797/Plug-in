@@ -14,7 +14,7 @@ test('print brightening keeps pure white and black, is monotonic and ordered by 
   assert.equal(printBoostLut('nonsense'), null);
   assert.equal(isPrintBoost('off'), false);
   let prevMid = 128;
-  for (const lv of ['low', 'medium', 'high']) {
+  for (const lv of ['low', 'medium', 'high', 'max']) {
     const L = printBoostLut(lv);
     assert.equal(L[255], 255, `${lv}: white stays white (no ink on the background)`);
     assert.equal(L[0], 0, `${lv}: black stays black`);
@@ -74,7 +74,7 @@ test('quick presets: real 4R paper, capacities from the layout engine, studio se
       assert.ok(pl.photo.x >= hm && pl.photo.y >= hm);
       assert.ok(pl.photo.x + pl.photo.w <= l.sheet.widthMm - hm + 1e-9 && pl.photo.y + pl.photo.h <= l.sheet.heightMm - hm + 1e-9);
     }
-    assert.equal(p.printBoost, 'medium'); assert.equal(p.fillOrder, 'ltr'); assert.equal(p.margin, 5); assert.equal(p.orientation, 'portrait'); assert.equal(p.bgColor, '#ffffff');
+    assert.equal(p.printBoost, 'high'); assert.equal(p.fillOrder, 'ltr'); assert.equal(p.margin, 5); assert.equal(p.orientation, 'portrait'); assert.equal(p.bgColor, '#ffffff');
     assert.ok(p.builtin && p.whiteBg && p.autoCrop && p.autoLight);
   }
   assert.equal(findPaper('4x6in').widthMm, 101.6);
@@ -121,7 +121,7 @@ test('preset editor values are validated: clamped numbers, known enums, safe col
   assert.equal(p.nameFa, 'آزمایش');
   assert.equal(p.widthMm, 300); assert.equal(p.heightMm, 5);
   assert.equal(p.margin, 0); assert.equal(p.gap, 50); assert.equal(p.copies, 3);
-  assert.equal(p.dpi, 300); assert.equal(p.printBoost, 'medium'); assert.equal(p.fillOrder, 'ltr');
+  assert.equal(p.dpi, 300); assert.equal(p.printBoost, 'high'); assert.equal(p.fillOrder, 'ltr');
   assert.equal(p.orientation, 'portrait'); assert.equal(p.perPerson, 'sheet'); assert.equal(p.bgColor, '#ffffff');
   assert.equal(p.hardMargin, 20); assert.equal(p.paperWidthMm, 10); assert.equal(p.paperHeightMm, 2000);
   assert.equal(p.whiteBg, QUICK_DEFAULTS.whiteBg, 'non-boolean ignored'); assert.equal(p.autoCrop, false);

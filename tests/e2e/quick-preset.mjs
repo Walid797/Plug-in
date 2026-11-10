@@ -33,7 +33,7 @@ try {
   assert(readyText.includes('پس‌زمینه سفید شد'), 'white background really applied');
   assert(readyText.includes('کادر و اندازهٔ سر تنظیم شد'), 'face-based crop applied');
   assert(readyText.includes('۴ عکس') && readyText.includes('۱ برگهٔ'), `4 photos on 1 sheet (${readyText.slice(0, 200)})`);
-  assert(readyText.includes('روشن‌سازی چاپ: متوسط'), 'print brightening shown');
+  assert(readyText.includes('روشن‌سازی چاپ: زیاد'), 'print brightening shown');
   assert(readyText.includes('تنظیم رنگ قالب اعمال شد'), 'colour grading engine ran');
   assert(/قرمزی بیش‌ازحد پوست کم شد|رنگ پوست طبیعی بود/.test(readyText), `skin engine reported (${readyText.slice(0, 600)})`);
   assert(/نور صورت/.test(readyText), 'lighting engine reported');
@@ -67,7 +67,7 @@ try {
   assert(st.face.ellipse.cx > 0.2 && st.face.ellipse.cx < 0.8 && st.face.ellipse.rx > 0.05, 'face ellipse sane');
   assert(st.sheet.marks.borders === true && st.sheet.marks.borderWidth === 0.1, `border on in the built-in template (${JSON.stringify(st.sheet.marks)})`);
   assert(st.refine.feather === 1 && st.refine.edgeAware === true && st.refine.shift === 0 && Math.abs(st.refine.softness - 0.4) < 1e-9, `edge feather 1 px by default (${JSON.stringify(st.refine)})`);
-  assert(st.sheet.paperId === '4x6in' && st.sheet.printBoost === 'medium' && st.sheet.mode === 'exact' && st.sheet.fill === 'ltr', `sheet ${JSON.stringify(st.sheet)}`);
+  assert(st.sheet.paperId === '4x6in' && st.sheet.printBoost === 'high' && st.sheet.mode === 'exact' && st.sheet.fill === 'ltr', `sheet ${JSON.stringify(st.sheet)}`);
   assert(JSON.stringify(st.sheet.items) === '[4]', '4 photos for the person');
   assert(st.layout.ok && st.layout.cap === 8 && st.layout.placed === 4 && st.layout.orient === 'portrait' && st.layout.w === 101.6 && st.layout.h === 152.4, `layout ${JSON.stringify(st.layout)}`);
 
@@ -131,8 +131,8 @@ try {
     imgs: document.querySelectorAll('#print-root .print-photo').length,
     labels: [...document.querySelectorAll('#print-root .print-label')].map((e) => e.textContent),
   }));
-  assert(test.imgs === 4, `4 test photos (${test.imgs})`);
-  assert(['خاموش', 'کم', 'متوسط', 'زیاد'].every((w) => test.labels.some((t) => t.endsWith(w))), `labels ${test.labels}`);
+  assert(test.imgs === 5, `5 test photos (${test.imgs})`);
+  assert(['خاموش', 'کم', 'متوسط', 'زیاد', 'خیلی زیاد'].every((w) => test.labels.some((t) => t.endsWith(w))), `labels ${test.labels}`);
   await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
   // the real sheet is unchanged by the test
   const after = await page.evaluate(() => window.__hoshmand.getState().project.sheet.items.map((i) => i.copies));
