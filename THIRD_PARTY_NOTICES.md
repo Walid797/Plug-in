@@ -34,3 +34,9 @@ Test fixtures (not part of the application):
 مدل‌ها طبق کارت‌های رسمی آن‌ها برای «شناسایی هویت» یا «نظارت» در نظر گرفته نشده‌اند؛ این برنامه هم چنین استفاده‌ای ندارد.
 
 </div>
+
+## libheif-js (HEIC/HEIF decoding)
+
+- Package: `libheif-js` 1.23.5 — libheif and libde265 compiled to WebAssembly
+- Licence: LGPL-3.0 (full text in `vendor/libheif/LICENSE.txt`)
+- Used unmodified, as a separate file (`vendor/libheif/libheif-bundle.mjs`) that the app loads only when a HEIC/HEIF photo is imported; it can be replaced by another build of the same library.

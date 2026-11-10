@@ -7,7 +7,7 @@
 
 import { cropMatrix, invertMatrix, applyMatrix, multiplyMatrix, defaultCrop } from '../core/crop.js';
 import { applyAdjustments, isNeutral, snapNearWhite, reconstructEdgeDetails } from '../core/adjust.js';
-import { decontaminate, recolorRegion, boxFilter } from '../core/mask.js';
+import { decontaminate, suppressSpill, recolorRegion, boxFilter } from '../core/mask.js';
 import { applyFaceEngine, ellipseToOutput, healDiscs, skinProbability } from '../core/faceengine.js';
 import { applyRelight } from '../core/relight.js';
 import { makeCanvas } from '../platform/image.js';
@@ -199,7 +199,12 @@ export function renderPhoto(edit, assets, outW, outH, opts = {}) {
     let alpha = null;
     if (bgOn) {
       alpha = maskInOutput(assets.mask, src.width, src.height, M, outW, outH);
-      if (edit.bg.decontaminate !== false) decontaminate(data, alpha, outW, outH, Math.max(2, Math.round(frameWidthPx / 120)));
+      if (edit.bg.decontaminate !== false) {
+        // first the rim just inside the cut-out (old background showing on hair and skin), then the half-transparent edge itself
+        const spill = suppressSpill(data, alpha, outW, outH, Math.max(3, Math.round(frameWidthPx / 70)));
+        if (opts.faceReport) opts.faceReport.spill = spill;
+        decontaminate(data, alpha, outW, outH, Math.max(2, Math.round(frameWidthPx / 120)));
+      }
       for (let i = 0; i < alpha.length; i += 1) data[i * 4 + 3] = Math.round((data[i * 4 + 3] / 255) * alpha[i] * 255);
     }
     // Clothing template: the person's own clothes must not show around or inside it. Below the chin everything is

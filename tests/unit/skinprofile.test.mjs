@@ -136,3 +136,25 @@ test('skin colour: natural skin untouched; red, yellow and grey skin brought int
     assert.ok(Math.abs(r.after.L - r.before.L) < 3, `${name}: brightness kept`);
   }
 });
+
+test('spill suppression: a rim tinted by the old background is brought back to the person\'s colour; the inside and a neutral edge stay', async () => {
+  const { suppressSpill } = await import('../../src/core/mask.js');
+  const w = 120; const h = 60; const make = (bg, rim) => {
+    const d = new Uint8ClampedArray(w * h * 4); const a = new Float32Array(w * h);
+    for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) {
+      const i = y * w + x; const inside = x >= 50; a[i] = inside ? 1 : 0;
+      const t = inside ? Math.max(0, 1 - (x - 50) / 6) * rim : 1; // tint fading over 6 px inside the edge
+      const p = [60, 40, 30];
+      for (let c = 0; c < 3; c += 1) d[i * 4 + c] = inside ? p[c] + t * (bg[c] - p[c]) : bg[c];
+      d[i * 4 + 3] = 255;
+    }
+    return { d, a };
+  };
+  const { d, a } = make([240, 220, 60], 0.6);
+  const before = d[(30 * w + 51) * 4]; const share = suppressSpill(d, a, w, h, 4);
+  const after = d[(30 * w + 51) * 4];
+  assert.ok(share > 0 && before - after > 0.5 * (before - 60), `rim ${before} → ${after}`);
+  assert.equal(d[(30 * w + 100) * 4], 60, 'deep inside untouched'); assert.equal(d[(30 * w + 10) * 4], 240, 'background untouched');
+  const same = make([62, 42, 32], 0.6); const copy = Uint8ClampedArray.from(same.d); suppressSpill(same.d, same.a, w, h, 4);
+  assert.deepEqual(same.d, copy, 'background like the person: nothing to remove');
+});

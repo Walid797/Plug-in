@@ -66,7 +66,7 @@ export function restoreShare(faceWidthPx, strength = 0.8) {
  * none when the source is already large. The result never exceeds `maxSide` on its longer side.
  * @returns {{scale:number, outW:number, outH:number, reason:string}}
  */
-export function upscalePlan(w, h, faceWidthPx, { maxSide = 2600, smallSide = 900, smallFace = 300 } = {}) {
+export function upscalePlan(w, h, faceWidthPx, { maxSide = 2600, smallSide = 700, smallFace = 200 } = {}) {
   const long = Math.max(w, h);
   const small = long <= smallSide || (faceWidthPx > 0 && faceWidthPx < smallFace && long <= smallSide * 1.5);
   if (!small) return { scale: 1, outW: w, outH: h, reason: 'large' };
@@ -170,7 +170,9 @@ export function mergeFaceDetail(base, restored, size = FACE_SIZE, { sigma = 14, 
     const smoothBase = gaussBlur(cb, size, size, 1.5); // the photo's colour, without its JPEG colour blocks
     const lp = gaussBlur(cr, size, size, 5);
     const out = new Float32Array(n);
-    for (let j = 0; j < n; j += 1) out[j] = smoothBase[j] + chromaDetail * (cr[j] - lp[j]);
+    // the eyes keep exactly the photo's colour: the model's own idea of an iris colour must never show
+    const k = size / 512; const eye = (x, y, cx) => ((x / k - cx) / 46) ** 2 + ((y / k - 240) / 25) ** 2 < 1;
+    for (let j = 0; j < n; j += 1) { const x = j % size; const y = (j - x) / size; out[j] = smoothBase[j] + (eye(x, y, 193) || eye(x, y, 319) ? 0 : chromaDetail) * (cr[j] - lp[j]); }
     if (skinBlur) {
       const evenB = skinAvg(cb); const evenR = skinAvg(cr);
       for (let j = 0; j < n; j += 1) {

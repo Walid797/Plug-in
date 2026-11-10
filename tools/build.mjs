@@ -96,6 +96,9 @@ async function copyVendor() {
     await copy(path.join(ort, f), v('ort', f));
   }
   await copy(path.join(root, 'tools', 'licenses', 'onnxruntime-MIT.txt'), v('ort', 'LICENSE.txt'));
+  // HEIC/HEIF decoder (iPhone photos), loaded only when such a file is imported; LGPL-3.0, kept as its own replaceable file
+  await copy(nm('libheif-js', 'libheif-wasm', 'libheif-bundle.mjs'), v('libheif', 'libheif-bundle.mjs'));
+  await copy(nm('libheif-js', 'libheif-wasm', 'LICENSE'), v('libheif', 'LICENSE.txt'));
   await copy(path.join(root, 'tools', 'licenses', 'Apache-2.0.txt'), v('mediapipe', 'LICENSE.txt'));
   await copy(path.join(root, 'tools', 'licenses', 'Apache-2.0.txt'), path.join(root, 'models', 'mediapipe', 'LICENSE.txt'));
   await copy(nm('lucide-static', 'LICENSE'), v('icons', 'LICENSE'));

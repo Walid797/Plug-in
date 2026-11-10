@@ -171,9 +171,17 @@ export async function importFiles(fileList, { replaceId = null } = {}) {
   const added = [];
   const errors = [];
   const preset = findPhoto(s.settings.defaultPhotoId) || findPhoto('3x4');
-  for (const file of files) {
+  for (let file of files) {
     try {
-      const v = await validateImageFile(file, s.caps);
+      let v = await validateImageFile(file, s.caps);
+      // iPhone HEIC/HEIF: converted on this device to a JPEG of the same pixels, then imported like any other photo
+      if (!v.ok && v.code === 'HEIC') {
+        try {
+          const { heicToJpeg } = await import('../platform/heic.js');
+          file = await heicToJpeg(file);
+          v = await validateImageFile(file, s.caps);
+        } catch (e) { console.error(e); }
+      }
       if (!v.ok) { errors.push(importErrorText(v.code, v.extra)); continue; }
       const blob = file.slice(0, file.size, v.mime);
       let dec;

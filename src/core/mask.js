@@ -154,6 +154,57 @@ export function decontaminate(rgba, alpha, w, h, r = 4) {
   return rgba;
 }
 
+/**
+ * Spill suppression: the rim of the person, just inside the cut-out, often still carries the old background — a light
+ * line around dark hair, a coloured glow on a cheek or an ear lit by a coloured wall. For every pixel of that rim the
+ * colour of the person further inside (I) and the colour of the old background just outside (B) are estimated; the
+ * part of the pixel's (smoothed) colour that points from I towards B is taken out. Fine texture stays, because only
+ * the smooth difference is moved. Where the background looks like the person, or there is no "inside" (thin parts),
+ * nothing changes. Must run while the old background is still in the picture.
+ * @returns {number} share of the person's pixels that were corrected by more than a just-visible amount
+ */
+export function suppressSpill(rgba, alpha, w, h, r = 4, strength = 1) {
+  const n = w * h; const R = Math.max(2, Math.round(r));
+  const ab = boxFilter(alpha, w, h, R);
+  const wi = new Float32Array(n); const we = new Float32Array(n);
+  for (let i = 0; i < n; i += 1) { wi[i] = ab[i] > 0.97 ? alpha[i] : 0; const e = 1 - alpha[i]; we[i] = e * e; }
+  const wiB = boxFilter(wi, w, h, 2 * R); const weB = boxFilter(we, w, h, 2 * R);
+  const ch = new Float32Array(n); const tmp = new Float32Array(n);
+  const I = []; const B = []; const P = [];
+  for (let c = 0; c < 3; c += 1) {
+    for (let i = 0; i < n; i += 1) { ch[i] = rgba[i * 4 + c]; tmp[i] = ch[i] * wi[i]; }
+    I.push(boxFilter(tmp, w, h, 2 * R));
+    for (let i = 0; i < n; i += 1) tmp[i] = ch[i] * we[i];
+    B.push(boxFilter(tmp, w, h, 2 * R));
+    P.push(boxFilter(ch, w, h, Math.max(1, R >> 1)));
+  }
+  let changed = 0; let person = 0;
+  for (let i = 0; i < n; i += 1) {
+    const a = alpha[i];
+    if (a > 0.5) person += 1;
+    if (a < 0.3 || ab[i] >= 0.985 || wiB[i] < 0.02 || weB[i] < 0.004) continue;
+    let t = (ab[i] - 0.8) / 0.185; t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const band = a * (1 - t * t * (3 - 2 * t));
+    if (band <= 0.01) continue;
+    const i0 = I[0][i] / wiB[i]; const i1 = I[1][i] / wiB[i]; const i2 = I[2][i] / wiB[i];
+    const d0 = B[0][i] / weB[i] - i0; const d1 = B[1][i] / weB[i] - i1; const d2 = B[2][i] / weB[i] - i2;
+    const len2 = d0 * d0 + d1 * d1 + d2 * d2;
+    if (len2 < 400) continue; // the background is close to the person's own colour here: nothing to tell apart
+    const p0 = P[0][i] - i0; const p1 = P[1][i] - i1; const p2 = P[2][i] - i2;
+    let s = ((p0 * d0 + p1 * d1 + p2 * d2) / len2) * 1.25; s = s < 0 ? 0 : s > 1 ? 1 : s;
+    const k = band * s * strength;
+    if (k <= 0.01) continue;
+    // only the component along (B − I) is removed
+    // never more than this very pixel carries of it (a pixel cleaner than its surroundings must not tip over into
+    // the opposite colour)
+    const own = ((rgba[i * 4] - i0) * d0 + (rgba[i * 4 + 1] - i1) * d1 + (rgba[i * 4 + 2] - i2) * d2) / len2;
+    const proj = Math.max(0, Math.min(1, own, (p0 * d0 + p1 * d1 + p2 * d2) / len2));
+    rgba[i * 4] -= k * proj * d0; rgba[i * 4 + 1] -= k * proj * d1; rgba[i * 4 + 2] -= k * proj * d2;
+    if (k * Math.abs(proj) * Math.sqrt(len2) > 6) changed += 1;
+  }
+  return changed / Math.max(1, person);
+}
+
 /** Luminance-preserving recolour of a region (clothing colour change). */
 export function recolorRegion(rgba, alpha, w, h, rgb, strength = 1) {
   const lin = (v) => { const s = v / 255; return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; };

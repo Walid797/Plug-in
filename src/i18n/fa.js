@@ -89,7 +89,7 @@ export const LEVEL_FA = { ok: 'مناسب', warn: 'هشدار', error: 'مشکل
 export function importErrorText(code, extra = {}) {
   switch (code) {
     case 'UNSUPPORTED': return `قالب «${extra.name || ''}» پشتیبانی نمی‌شود. فقط JPG، PNG و WebP.`;
-    case 'HEIC': return `«${extra.name || ''}» با قالب HEIC/HEIF است. در تنظیمات دوربین آیفون «Most Compatible» را انتخاب کنید یا عکس را به JPG تبدیل کنید.`;
+    case 'HEIC': return `«${extra.name || ''}» با قالب HEIC/HEIF است و تبدیل خودکار آن موفق نشد. در تنظیمات دوربین آیفون «Most Compatible» را انتخاب کنید یا عکس را به JPG تبدیل کنید.`;
     case 'TOO_LARGE_FILE': return `«${extra.name || ''}» بیش از ${fn(extra.limitMb)} مگابایت است.`;
     case 'TOO_MANY_PIXELS': return `ابعاد «${extra.name || ''}» بیش از حد بزرگ است (${fn(extra.mp, { maxFraction: 0 })} مگاپیکسل).`;
     case 'TOO_SMALL': return `«${extra.name || ''}» بسیار کوچک است (${fn(extra.w)}×${fn(extra.h)} پیکسل).`;
