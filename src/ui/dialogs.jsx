@@ -110,6 +110,17 @@ function engineStatus(r, preset) {
       if (preset.lightOn) out.push(e.lift > 0.5 || e.protectedFrac > 0.02 ? { kind: 'ok', icon: 'check', text: `نور صورت یکنواخت‌تر شد${e.protectedFrac > 0.02 ? ' (نور سوخته مهار شد)' : ''}` } : { kind: 'ok', icon: 'check', text: 'نور صورت از قبل یکنواخت بود' });
     }
   }
+  if (preset?.aiEnhance && r.faces) {
+    const en = r.enhance;
+    if (r.enhanceError) out.push({ kind: 'warn', icon: 'triangle-alert', text: `بهبود کیفیت با هوش مصنوعی انجام نشد (${r.enhanceError})؛ عکس با همان کیفیت اصلی آماده شد` });
+    else if (en && !en.skipped) {
+      const parts = [];
+      if (en.scale > 1) parts.push(`عکس کوچک (${formatNumber(en.srcW)}×${formatNumber(en.srcH)}) به ${formatNumber(en.outW)}×${formatNumber(en.outH)} بزرگ شد`);
+      if (en.restored) parts.push(`جزئیات چهره بازسازی شد (سهم ${formatNumber(Math.round(en.share * 100))}٪)`);
+      if (parts.length) out.push({ kind: 'ok', icon: 'check', text: `بهبود کیفیت با هوش مصنوعی آفلاین: ${parts.join('؛ ')}` });
+      else out.push({ kind: 'ok', icon: 'check', text: 'عکس از قبل بزرگ بود؛ بزرگ‌نمایی لازم نشد' });
+    }
+  }
   if (preset?.grade) {
     const gs = r.gradeStrength ?? 1;
     const ds = r.detailStrength ?? 1;

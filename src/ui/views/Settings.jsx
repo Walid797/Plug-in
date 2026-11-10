@@ -41,6 +41,7 @@ function Models() {
       if (id === 'face-landmarker') await getFaceLandmarker();
       else if (id === 'selfie-multiclass') await getSegmenter();
       else if (id === 'modnet') await getModnet();
+      else await getOnnxModel(id);
       toast('مدل با موفقیت بارگذاری شد.', 'success');
     } catch (e) {
       console.error(e);
@@ -66,7 +67,7 @@ function Models() {
                 <dt>اندازه</dt><dd>{m.bytes ? formatBytes(m.bytes) : 'متغیر'}</dd>
                 <dt>نسخه</dt><dd>{m.version}</dd>
                 <dt>مجوز</dt><dd>{m.license} — <span class="faint">{m.licenseNoteFa}</span></dd>
-                <dt>چکسام SHA-256</dt><dd class="ltr tiny">{m.sha256 || 'ثبت نشده (فایل را خودتان تهیه می‌کنید)'}</dd>
+                <dt>چکسام SHA-256</dt><dd class="ltr tiny">{(Array.isArray(m.sha256) ? m.sha256.join(' یا ') : m.sha256) || 'ثبت نشده (فایل را خودتان تهیه می‌کنید)'}</dd>
                 <dt>نیازمندی</dt><dd>{m.requirementsFa}</dd>
                 <dt>منبع رسمی</dt><dd class="ltr tiny">{m.source}</dd>
                 {st?.backend ? <><dt>اجرا با</dt><dd>{st.backend}</dd></> : null}

@@ -182,13 +182,13 @@ export async function duplicateProject(id) {
 async function blobInUse(key, exceptPhotoId) {
   if (!key) return false;
   const all = await getAll('photos').catch(() => []);
-  return all.some((p) => p.id !== exceptPhotoId && (p.origKey === key || p.maskKey === key || p.clothesKey === key || p.relight?.key === key));
+  return all.some((p) => p.id !== exceptPhotoId && (p.origKey === key || p.maskKey === key || p.clothesKey === key || p.relight?.key === key || p.enhanced?.key === key));
 }
 
 export async function deletePhotoRecord(photo, deleteOriginal) {
   await del('photos', photo.id).catch(() => {});
   delete lastSaved.photos[photo.id];
-  for (const key of [deleteOriginal ? photo.origKey : null, photo.maskKey, photo.clothesKey, photo.relight?.key, photo.edit?.bg?.imageKey, photo.edit?.clothes?.patch?.key]) {
+  for (const key of [deleteOriginal ? photo.origKey : null, photo.maskKey, photo.clothesKey, photo.relight?.key, photo.enhanced?.key, photo.edit?.bg?.imageKey, photo.edit?.clothes?.patch?.key]) {
     if (key && !(await blobInUse(key, photo.id))) await deleteBlob(key).catch(() => {});
   }
 }

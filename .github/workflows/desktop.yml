@@ -19,6 +19,12 @@ jobs:
         run: |
           npm ci
           node tools/build.mjs
+      # The face-restoration model is too large for the repository. It is downloaded here, checked against the SHA-256 in the
+      # app's registry and packed into the installer, so the installed app is complete offline. If the download fails the
+      # installer is still built; the model can then be installed from a file in the app's settings.
+      - name: Fetch the optional face-restoration model (verified)
+        continue-on-error: true
+        run: node tools/fetch-optional-models.mjs
       - name: Set the installer version from the tag
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash

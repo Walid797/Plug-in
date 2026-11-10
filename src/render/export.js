@@ -17,7 +17,8 @@ export function outputInfo(photo, dpi, workingDims = null) {
   const e = photo.edit;
   const outW = mmToPx(e.widthMm, dpi);
   const outH = mmToPx(e.heightMm, dpi);
-  const srcW = workingDims?.width || photo.width;
+  // an enhanced (upscaled) version is what gets printed, so its pixels count
+  const srcW = workingDims?.width || (photo.edit.enhance?.enabled && photo.enhanced?.width) || photo.width;
   const crop = e.crop || defaultCrop(photo.width, photo.height, e.widthMm / e.heightMm);
   const ratio = sourcePixelsPerOutputPixel(crop, srcW, outW);
   return { outW, outH, ratio, effectiveDpi: dpi * ratio, upscaled: ratio < 1 };

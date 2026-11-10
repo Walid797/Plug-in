@@ -189,7 +189,7 @@ export function renderPhoto(edit, assets, outW, outH, opts = {}) {
         irisL: toIris(face.eyes.irisL),
       } : null;
       // with the relight applied the older left/right flattening has nothing left to do (and must not act twice)
-      const light = relit?.applied ? { ...face.light, even: false } : face.light;
+      const light = relit?.applied || assets.relightBaked ? { ...face.light, even: false } : face.light;
       const rep = applyFaceEngine(data, outW, outH, ellipseToOutput(face.ellipse, src.width, src.height, M), { ...face, light, protect, lips, eyes });
       if (opts.faceReport) Object.assign(opts.faceReport, rep);
     }

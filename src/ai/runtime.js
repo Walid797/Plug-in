@@ -240,6 +240,19 @@ export function getModnet() {
   });
 }
 
+/**
+ * A plain ONNX model of the registry (upscaler, face restoration) on the WASM backend: the same result on every
+ * computer, no graphics card needed. The model bytes are released once the session exists.
+ */
+export function getOnnxModel(id) {
+  return getInstance(id, async () => {
+    const ort = await withTimeout(ortRuntime(), 'runtime');
+    const bytes = await withTimeout(loadModelBytes(id), 'model', 180_000);
+    const session = await withTimeout(ort.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' }), 'create', 240_000);
+    return { instance: { ort, session }, backend: `WASM (${ort.env.wasm.numThreads} رشته)` };
+  });
+}
+
 export function disposeModel(id) {
   const r = instances.get(id);
   if (!r) return;

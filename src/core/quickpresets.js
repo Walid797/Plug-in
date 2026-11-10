@@ -50,6 +50,9 @@ export const QUICK_DEFAULTS = Object.freeze({
   skinLips: 60,
   // lighting engine: fill light for shadows (eyes, nose, chin, forehead), L/R balance, burnt-highlight protection
   lightOn: true, lightFill: 45, lightEven: true, lightProtect: true,
+  // AI enhancement (only when its offline models are installed): a small source is upscaled ×4, and the face is rebuilt
+  // with clean detail at this strength (0 = off). The original file is kept; the enhanced version is what gets rendered.
+  aiEnhance: true, aiStrength: 75,
   // crop engine: widen the frame (within the head-size rule) when the shoulders are cut off
   cropShoulders: true,
   // background edge clean-up (same meaning as the Background section; feather in mask pixels)
@@ -221,6 +224,8 @@ export function normalizeQuickPreset(raw = {}) {
   p.lightFill = Math.round(num(raw.lightFill, 0, 100, D.lightFill));
   p.lightEven = bool(raw.lightEven, D.lightEven);
   p.lightProtect = bool(raw.lightProtect, D.lightProtect);
+  p.aiEnhance = bool(raw.aiEnhance, D.aiEnhance);
+  p.aiStrength = Math.round(num(raw.aiStrength, 0, 100, D.aiStrength));
   p.cropShoulders = bool(raw.cropShoulders, D.cropShoulders);
   p.edgeAware = bool(raw.edgeAware, D.edgeAware);
   p.edgeShift = Math.round(num(raw.edgeShift, -100, 100, D.edgeShift));

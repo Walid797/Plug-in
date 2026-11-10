@@ -1,6 +1,6 @@
 // Model availability, installation (from a local file) and loading of bytes.
 // Models are only ever read from this app's own origin or from browser storage.
-import { MODELS, findModel } from './registry.js';
+import { MODELS, findModel, hashAccepted } from './registry.js';
 import { getState, setState, toast } from '../state/store.js';
 import { putBlob, getBlob, deleteBlob, kvGet, kvSet } from '../storage/db.js';
 
@@ -61,7 +61,7 @@ export async function loadModelBytes(id) {
   }
   if (m.sha256 && !verified.get(id)) {
     const h = await sha256Hex(bytes);
-    if (h && h !== m.sha256) throw Object.assign(new Error('HASH_MISMATCH'), { code: 'HASH_MISMATCH' });
+    if (h && !hashAccepted(m, h)) throw Object.assign(new Error('HASH_MISMATCH'), { code: 'HASH_MISMATCH' });
     verified.set(id, true);
   }
   return bytes;
@@ -74,7 +74,7 @@ export async function installModelFromFile(id, file) {
   if (file.size < 64 || file.size > 600 * 1024 * 1024) { toast('اندازهٔ فایل مدل غیرعادی است.', 'error'); return false; }
   const bytes = new Uint8Array(await file.arrayBuffer());
   const hash = await sha256Hex(bytes);
-  if (m.sha256 && hash !== m.sha256) {
+  if (m.sha256 && !hashAccepted(m, hash)) {
     toast('چکسام فایل با مدل ثبت‌شده مطابقت ندارد؛ نصب انجام نشد. فایل درست را از منبع رسمی تهیه کنید.', 'error', 10000);
     return false;
   }

@@ -1044,7 +1044,9 @@ export function enhanceEyes(data, w, h, eyes, strength = 0.75) {
           data[idx + 2] = clamp(Math.round(b2), 0, 255);
         } else if (dIris > irR * 1.05 && L > 35) {
           // Sclera: clean eye whites by gently calming yellow/red cast and lifting lightness
-          const scleraFactor = smooth(35, 60, L) * smooth(irR * 1.05, irR * 1.35, dIris) * wgt * strength;
+          // only pixels that are already near-white count as eye white: a coloured pixel here is iris (the iris circle from the
+          // landmarks is approximate) or the lid, and removing its colour would turn a blue or brown eye grey
+          const scleraFactor = smooth(35, 60, L) * smooth(irR * 1.05, irR * 1.35, dIris) * wgt * strength * (1 - smooth(9, 18, Math.hypot(a, b)));
           if (scleraFactor > 0.01) {
             const cleanA = a * (1 - 0.45 * scleraFactor);
             const cleanB = b * (1 - 0.45 * scleraFactor);
@@ -1060,7 +1062,8 @@ export function enhanceEyes(data, w, h, eyes, strength = 0.75) {
     }
 
     // Studio Catchlight: subtle pinpoint reflection in upper pupil
-    if (irR >= 3.5 && maxIrisL < 215) {
+    // (off unless asked for: a reflection that is not in the photo is invented content, and the eyes must stay the person's own)
+    if (eyes.catchlight === true && irR >= 3.5 && maxIrisL < 215) {
       const clX = irX - irR * 0.22;
       const clY = irY - irR * 0.28;
       const clRad = Math.max(1.0, irR * 0.15);

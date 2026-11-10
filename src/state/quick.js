@@ -2,7 +2,7 @@
 // validated) → face-based crop → conservative light fix → print sheet. Every
 // step reports what really happened; nothing is marked done unless it worked.
 import { getState, updateEdit, updateSheet, updateSettings, recordHistory, startTask, uid, setSection, openDialog, toast, logEvent } from './store.js';
-import { getPersonMask, hasMask, getFace, maskForegroundFraction, originalAvailable, getPreview, gatherAssets } from './media.js';
+import { getPersonMask, hasMask, getFace, maskForegroundFraction, originalAvailable, getPreview, gatherAssets, invalidatePreview } from './media.js';
 import { renderPhoto } from '../render/renderPhoto.js';
 import { findQuickPreset, quickSheetPatch, presetCapacity, quickFields, normalizeQuickPreset, QUICK_PRESETS, presetAdjustFor, gradeStrength, detailStrength, presetFaceParams } from '../core/quickpresets.js';
 import { autoExposureDelta, exposureTowardTarget, suggestCrop, backgroundWhiteness, faceProtectZones, lipPolygons, eyePolygons, QUALITY_THRESHOLDS } from '../core/idphoto.js';
@@ -150,6 +150,8 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
       // (adaptive strength); until then the photo's own adjustments are cleared
       if (preset.grade) updateEdit(id, (ed) => ({ ...ed, adjust: { ...ADJUSTMENT_DEFAULTS } }), { history: false });
       updateEdit(id, (ed) => ({ ...ed, face: { ...presetFaceParams(preset), skin: { ...presetFaceParams(preset).skin, enabled: false }, light: { ...presetFaceParams(preset).light, enabled: false }, ellipse: null, relight: null, fixes: ed.face?.fixes } }), { history: false });
+      // the photo is analysed from its original file; an enhanced version from an earlier run is switched off until it is rebuilt
+      if (getState().photos[id].edit.enhance?.enabled) { updateEdit(id, (ed) => ({ ...ed, enhance: { ...ed.enhance, enabled: false } }), { history: false }); invalidatePreview(id); }
 
       step(0, 'تغییر پس‌زمینه');
       if (preset.whiteBg && aiState.segOk) {
@@ -174,6 +176,24 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
                 f = await analyzeFace(getState().photos[id]); // statistics of the relit face
               }
             } catch (err) { console.error(err); r.relightError = err?.code || 'FAILED'; }
+          }
+          // AI enhancement (when its models are installed): upscaling of a small source and face restoration, on the relit
+          // photo. From here on the photo is rendered from the enhanced version, so the analysis is repeated on it.
+          if (f.faceCount && preset.aiEnhance) {
+            try {
+              const { enhanceAvailability, enhancePhoto } = await import('../ai/enhance.js');
+              const av = enhanceAvailability();
+              if (av.upscale || av.restore) {
+                r.enhance = await enhancePhoto(getState().photos[id], {
+                  strength: preset.aiStrength, restore: preset.aiStrength > 0, signal: task.signal,
+                  onProgress: (p, label) => task.update((i + (2 + p) / 4) / ids.length, `${formatNumber(i + 1)} از ${formatNumber(ids.length)} — ${label}`),
+                });
+                f = await analyzeFace(getState().photos[id]);
+              } else r.enhance = { skipped: 'MODEL_MISSING' };
+            } catch (err) {
+              if (err?.code === 'CANCELLED') { cancelled = true; r.cancelled = true; break; }
+              console.error(err); r.enhanceError = err?.code || 'FAILED';
+            }
           }
           if (preset.grade) {
             // measured on the neutral photo: strength 1 for a dark face, 0 for one as bright as the reference
@@ -215,6 +235,8 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
             // arm the face & skin / lighting engines on this face
             if (preset.skinOn || preset.lightOn) {
               const fp = presetFaceParams(preset);
+              // a face rebuilt by the restoration model is already clean: the full skin smoothing on top would make it look like plastic
+              if (r.enhance?.restored) fp.skin = { ...fp.skin, smooth: Math.round(fp.skin.smooth * 0.4) };
               updateEdit(id, (ed) => ({ ...ed, face: { ...fp, fixes: ed.face?.fixes, relight: ed.face?.relight, ellipse: faceEllipse(getFace(id).metrics, photo.width, photo.height), protect: faceProtectZones(getFace(id).landmarks, photo.width, photo.height), lips: lipPolygons(getFace(id).landmarks), eyes: eyePolygons(getFace(id).landmarks) } }), { history: false });
               r.engine = await engineReport(id).catch(() => null);
               // the brightening is steered by the whole-face mean, which a beard, glasses or dark hair pull down: so a face with

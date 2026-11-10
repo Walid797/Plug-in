@@ -137,7 +137,8 @@ async function main() {
   await buildJs(version);
   const models = {};
   for (const f of await listFiles(path.join(root, 'models')).catch(() => [])) {
-    if (/\.(task|tflite|onnx)$/.test(f)) models[f] = await sha256File(path.join(root, f));
+    // models that ship with the app; a large optional model someone installed into the folder (hundreds of MB) is not part of the build
+    if (/\.(task|tflite|onnx)$/.test(f) && (await fs.stat(path.join(root, f))).size < 64 * 1024 * 1024) models[f] = await sha256File(path.join(root, f));
   }
   await fs.writeFile(path.join(root, 'app', 'build-info.json'), `${JSON.stringify({ version, builtAt: new Date().toISOString(), models }, null, 2)}\n`);
   await writeServiceWorker(version);

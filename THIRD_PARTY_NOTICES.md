@@ -17,6 +17,9 @@
 | ONNX Runtime Web (Microsoft Corporation) | 1.31.1 | MIT | `vendor/ort/` | `vendor/ort/LICENSE.txt` |
 | Lucide icons | 1.70.0 | ISC | icon paths compiled into `app/app.js` | `vendor/icons/LICENSE` |
 | esbuild (build only, not shipped) | 0.28.2 | MIT | dev dependency | — |
+| Real-ESRGAN `realesr-general-x4v3` (Xintao Wang), converted to ONNX from the official weights | v0.2.5.0 weights | BSD-3-Clause | `models/onnx/realesr-general-x4v3.onnx` | `models/onnx/LICENSE-Real-ESRGAN.txt` |
+| GFPGAN v1.4 (Tencent ARC), ONNX — **optional, not in the repository**; fetched and verified by `tools/fetch-optional-models.mjs` or installed by the user | v1.3.0 weights | Apache-2.0 with third-party notices (see the file) | `models/onnx/gfpgan-v1.4.onnx` when installed | `models/onnx/LICENSE-GFPGAN.txt` |
+| MediaPipe canonical face model topology (triangles and mirror map of the 468-point mesh) | from `face_landmarker.task` | Apache-2.0 | `src/core/facemesh.js` | `models/mediapipe/LICENSE.txt` |
 
 Test fixtures (not part of the application):
 

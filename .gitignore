@@ -4,4 +4,6 @@ node_modules/
 test-results/
 tests/e2e/out/
 public/
+# optional models that are installed separately (too large for the repository); the small upscaler is part of it
 models/onnx/*.onnx
+!models/onnx/realesr-general-x4v3.onnx

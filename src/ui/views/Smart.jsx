@@ -26,6 +26,57 @@ function aiErrorText(e) {
   return aiFailureText(e, 'تحلیل چهره');
 }
 
+/** AI enhancement of the selected photo: upscaling of a small source and face restoration, with the offline models. */
+function EnhanceGroup({ photo, hasFace }) {
+  const up = useStore((s) => s.models.realesr);
+  const fr = useStore((s) => s.models.gfpgan);
+  const [strength, setStrength] = useState(photo.enhanced?.strength ?? 75);
+  const ok = (m) => ['available', 'ready'].includes(m?.status);
+  const enh = photo.enhanced;
+  const on = !!(photo.edit.enhance?.enabled && enh);
+  const run = async () => {
+    const task = startTask('بهبود کیفیت با هوش مصنوعی…', { cancellable: true });
+    try {
+      const { enhancePhoto } = await import('../../ai/enhance.js');
+      if (!getFace(photo.id)?.landmarks) await analyzeFace(getState().photos[photo.id]);
+      recordHistory({ type: 'edit', photoId: photo.id });
+      const rep = await enhancePhoto(getState().photos[photo.id], { strength, restore: strength > 0, signal: task.signal, onProgress: (p, label) => task.update(p, label) });
+      await analyzeFace(getState().photos[photo.id]).catch(() => null);
+      const parts = [];
+      if (rep.scale > 1) parts.push(`${formatNumber(rep.srcW)}×${formatNumber(rep.srcH)} به ${formatNumber(rep.outW)}×${formatNumber(rep.outH)} بزرگ شد`);
+      if (rep.restored) parts.push('جزئیات چهره بازسازی شد');
+      toast(parts.length ? `بهبود انجام شد: ${parts.join('؛ ')}.` : 'عکس از قبل بزرگ بود و مدل بازسازی چهره نصب نیست؛ تغییری لازم نشد.', 'success', 8000);
+    } catch (err) {
+      if (err?.code !== 'CANCELLED') toast(err?.code === 'NO_FACE' ? 'برای بهبود، اول باید چهره در عکس پیدا شود.' : aiErrorText(err), 'error', 9000);
+    } finally { task.done(); }
+  };
+  const toggle = async (v) => { const { setEnhanceEnabled } = await import('../../ai/enhance.js'); setEnhanceEnabled(photo.id, v); };
+  const remove = async () => { const { clearEnhanced } = await import('../../ai/enhance.js'); await clearEnhanced(photo.id); };
+  return (
+    <Group title="بهبود کیفیت با هوش مصنوعی (آفلاین)">
+      <p class="hint">عکس کوچک یا کم‌کیفیت ۴ برابر بزرگ می‌شود و جزئیات چهره (چشم، مژه، پوست) بازسازی می‌شود. مدل فقط «جزئیات» می‌دهد؛ رنگ پوست، رنگ چشم، نور و شکل چهره از خود عکس می‌ماند. عکس اصلی دست نمی‌خورد.</p>
+      <div class="btn-row">
+        <Badge kind={ok(up) ? 'ok' : 'warn'}>بزرگ‌نمایی: {ok(up) ? 'آماده' : 'در دسترس نیست'}</Badge>
+        <Badge kind={ok(fr) ? 'ok' : 'warn'}>بازسازی چهره: {ok(fr) ? 'آماده' : 'نصب نشده'}</Badge>
+      </div>
+      {!ok(fr) ? <p class="hint">مدل بازسازی چهره (GFPGAN، ۳۴۰ مگابایت) جداگانه نصب می‌شود: «تنظیمات و مدل‌های آفلاین» ← «نصب از فایل». بدون آن فقط بزرگ‌نمایی انجام می‌شود.</p> : null}
+      <Slider label="شدت بازسازی چهره (کمتر = نزدیک‌تر به عکس اصلی)" min={0} max={100} value={strength} defaultValue={75} format={(v) => `${formatNumber(v)}٪`} onInput={setStrength} onCommit={setStrength} disabled={!ok(fr)} />
+      <div class="btn-row">
+        <Button variant="primary" icon="sparkles" disabled={!hasFace || (!ok(up) && !ok(fr))} onClick={run}>{enh ? 'بهبود دوباره' : 'بهبود کیفیت این عکس'}</Button>
+        {enh ? <Button variant="ghost" icon="trash-2" onClick={remove}>حذف نسخهٔ بهبودیافته</Button> : null}
+      </div>
+      {!hasFace ? <p class="hint">اول «تحلیل چهره» را اجرا کنید.</p> : null}
+      {enh ? (
+        <>
+          <Switch label={`استفاده از نسخهٔ بهبودیافته (${formatNumber(enh.width)}×${formatNumber(enh.height)})`} checked={on} onChange={toggle} />
+          {enh.relit && photo.edit.face?.relight?.enabled && (photo.edit.face.relight.strength ?? 100) !== enh.relitStrength
+            ? <Notice kind="warn">شدت «برداشتن سایهٔ یک‌طرفه» بعد از بهبود عوض شده است؛ برای اثر کردن آن، «بهبود دوباره» را بزنید.</Notice> : null}
+        </>
+      ) : null}
+    </Group>
+  );
+}
+
 export function SmartView() {
   const photo = useStore((s) => (s.selectedPhotoId ? s.photos[s.selectedPhotoId] : null));
   const caps = useStore((s) => s.caps);
@@ -241,6 +292,7 @@ export function SmartView() {
                 </>
               )}
             </Group>
+            <EnhanceGroup photo={photo} hasFace={!!face?.faceCount} />
             <Group title="قلم پاک‌کردن لکهٔ دستی (ترمیم واقعی)">
               <p class="hint">اگر لکه، داغ یا نقطه‌ای باقی ماند: «فعال‌کردن قلم» را بزنید و روی همان نقطه بکشید یا ضربه بزنید. برنامه آن ناحیه را با بافت واقعی پوست کنار همان نقطه (از خود همین عکس) جایگزین می‌کند؛ چیزی ساخته نمی‌شود. پس از هر ضربه، نتیجه فوراً در بوم دیده می‌شود و با «واگرد» برمی‌گردد.</p>
               <div class="btn-row">

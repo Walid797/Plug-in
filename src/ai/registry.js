@@ -55,6 +55,47 @@ export const MODELS = Object.freeze([
     requirementsFa: 'فایل حدود ۷ تا ۲۵ مگابایت؛ ۴۰۰ مگابایت حافظه یا بیشتر. با WebGPU سریع (کمتر از یک ثانیه)، با WASM چند ثانیه.',
     io: { input: '[1,3,H,W] float32 در بازهٔ −۱ تا ۱', output: '[1,1,H,W] آلفای ۰ تا ۱' },
   },
+  {
+    id: 'realesr',
+    task: 'upscale',
+    nameFa: 'بزرگ‌نمایی عکس کم‌کیفیت — Real-ESRGAN (general-x4v3)',
+    purposeFa: 'وقتی عکس اصلی کوچک است (مثلاً از موبایل قدیمی یا انترنت)، آن را ۴ برابر با جزئیات پاک بزرگ می‌کند تا چاپ نرم و شطرنجی نشود.',
+    runtime: 'onnx',
+    path: 'models/onnx/realesr-general-x4v3.onnx',
+    bytes: 4866396,
+    sha256: '929c8bf6ae20abe55f6cc4790bf730e1ad3d2aadd7cc29d9ca421840fc1b0c9f',
+    version: 'realesr-general-x4v3 (ONNX opset 17، تبدیل از وزن رسمی)',
+    license: 'BSD-3-Clause',
+    licenseNoteFa: 'مخزن رسمی Real-ESRGAN (xinntao) کد و وزن‌ها را با BSD 3-Clause منتشر کرده است. فایل ONNX از وزن رسمی realesr-general-x4v3.pth (SHA-256 8dc7edb9…6292) ساخته شده و خروجی آن با مدل اصلی تا ۴ در میلیون یکی است.',
+    source: 'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-x4v3.pth',
+    modelCard: 'https://github.com/xinntao/Real-ESRGAN#license-and-acknowledgement',
+    bundled: true,
+    requirementsFa: 'حدود ۳۰۰ مگابایت حافظه. روی پردازندهٔ دو هسته‌ای هر تکهٔ ۲۵۶×۲۵۶ حدود ۳ ثانیه؛ یک عکس ۴۰۰×۵۰۰ حدود ۱۰ تا ۲۰ ثانیه.',
+    io: { input: '[1,3,H,W] float32 در بازهٔ ۰ تا ۱', output: '[1,3,4H,4W]' },
+  },
+  {
+    id: 'gfpgan',
+    task: 'face-restore',
+    nameFa: 'بازسازی جزئیات چهره — GFPGAN v1.4 (اختیاری)',
+    purposeFa: 'چهرهٔ کم‌کیفیت، نرم یا نویزدار را با جزئیات پاک (چشم، مژه، پوست) بازسازی می‌کند. شدت آن قابل تنظیم است تا چهره همان چهره بماند. باید جداگانه نصب شود (فایل بزرگ است).',
+    runtime: 'onnx',
+    path: 'models/onnx/gfpgan-v1.4.onnx',
+    bytes: 340345497,
+    // two files are accepted: this app's own conversion of the official weights (deterministic) and the widely used
+    // public conversion, whose output was compared with the official weights (same picture up to the model's noise input)
+    sha256: ['6e33a677dda8fb57072332a6394a0000cbcc734ed7f1934161d12e8df5be40e2', 'accc4757b26bdb89b32b4d3500d4f79c9dff97c1dd7c7104bf9dcb95e3311385'],
+    version: 'GFPGANv1.4 (ONNX، ۵۱۲×۵۱۲)',
+    license: 'Apache-2.0',
+    licenseNoteFa: 'مخزن رسمی GFPGAN (Tencent ARC) با Apache 2.0 منتشر شده است؛ در فایل مجوز آن به اجزای جانبی (کد StyleGAN2 با مجوز MIT، و مجوز NVIDIA برای نسخهٔ اصلی) هم اشاره شده است. وزن‌ها روی مجموعهٔ FFHQ آموزش دیده‌اند. برای استفادهٔ تجاری حساس، متن مجوز را خودتان بخوانید.',
+    source: 'https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.4.pth',
+    modelCard: 'https://github.com/TencentARC/GFPGAN#scroll-license-and-acknowledgement',
+    bundled: false,
+    requirementsFa: 'فایل ۳۴۰ مگابایت؛ حدود ۱ گیگابایت حافظهٔ آزاد. روی پردازندهٔ دو هسته‌ای حدود ۸ تا ۱۵ ثانیه برای هر چهره (اندازه‌گیری‌شده با ۲ رشته: ۸ ثانیه).',
+    io: { input: '[1,3,512,512] float32 در بازهٔ −۱ تا ۱ (چهرهٔ ترازشده)', output: '[1,3,512,512]' },
+  },
 ]);
+
+/** Does a file hash match the model's registered hash (or one of them)? */
+export const hashAccepted = (m, hash) => !m?.sha256 || (Array.isArray(m.sha256) ? m.sha256.includes(hash) : m.sha256 === hash);
 
 export const findModel = (id) => MODELS.find((m) => m.id === id) || null;

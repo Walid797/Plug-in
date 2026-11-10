@@ -1,6 +1,6 @@
 // Face analysis with the local Face Landmarker. Landmarks stay in memory only.
 import { getFaceLandmarker, runWithFallback } from './runtime.js';
-import { getPreview, getPersonMask, setFace, getFace, relightInMemory } from '../state/media.js';
+import { getPreview, getPersonMask, setFace, getFace, relightInMemory, relightBaked } from '../state/media.js';
 import { faceMetrics, crownFromMask, faceRegionStats, assessQuality, evaluateCrop, suggestCrop, genericProfile, shoulderCoverage, shoulderSides } from '../core/idphoto.js';
 import { findProfile } from '../core/presets.js';
 import { applyAdjustments } from '../core/adjust.js';
@@ -87,7 +87,7 @@ function regionStats(pv, m, photo) {
   cx.drawImage(pv.image, x, y, w, h, 0, 0, S, S);
   const img = cx.getImageData(0, 0, S, S);
   // the statistics describe the face as it will be rendered: relit first (when the photo has a field), then graded
-  const rl = photo.edit.face?.relight?.enabled ? relightInMemory(photo) : null;
+  const rl = photo.edit.face?.relight?.enabled && !relightBaked(photo) ? relightInMemory(photo) : null;
   if (rl) {
     const toWork = multiplyMatrix(rl.W, [(w / S) * (rl.refW / pv.width), 0, 0, (h / S) * (rl.refH / pv.height), x * (rl.refW / pv.width), y * (rl.refH / pv.height)]);
     applyRelight(img.data, S, S, rl.packed, toWork, { strength: (photo.edit.face.relight.strength ?? 100) / 100 });

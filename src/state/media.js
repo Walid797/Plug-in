@@ -51,7 +51,24 @@ async function makeThumb(drawable, w, h) {
 }
 
 /** Get the original blob (session memory first, then local storage). */
-export async function getOriginal(photo) {
+/** True when the photo is rendered from its AI-enhanced version (upscaled, face restored) instead of the original file. */
+export const usesEnhanced = (p) => !!(p?.edit?.enhance?.enabled && p.enhanced?.key);
+/** True when the relight is already part of the picture the photo is rendered from (baked into the enhanced version). */
+export const relightBaked = (p) => usesEnhanced(p) && !!p.enhanced.relit;
+const sourceKey = (p) => (usesEnhanced(p) ? `${p.enhanced.key}@${p.enhanced.at}` : p.origKey);
+const sourceDims = (p) => (usesEnhanced(p) ? { displayWidth: p.enhanced.width, displayHeight: p.enhanced.height } : { displayWidth: p.width, displayHeight: p.height });
+
+/**
+ * The picture a photo is rendered from: the enhanced version when it is switched on (and still stored), otherwise
+ * the original file. `raw` always gives the original file.
+ */
+export async function getOriginal(photo, { raw = false } = {}) {
+  if (!raw && usesEnhanced(photo)) {
+    const k = photo.enhanced.key;
+    if (originals.has(k)) return originals.get(k);
+    const e = await getBlob(k).catch(() => null);
+    if (e) { originals.set(k, e); return e; }
+  }
   if (!photo?.origKey) return null;
   if (originals.has(photo.origKey)) return originals.get(photo.origKey);
   if (!photo.hasOriginal) return null;
@@ -62,15 +79,16 @@ export async function getOriginal(photo) {
 
 /** Preview drawable (≤ previewMax px) for editing and AI. */
 export async function getPreview(photo) {
+  const key = sourceKey(photo);
   const hit = previews.get(photo.id);
-  if (hit) return hit;
+  if (hit && (hit.srcKey === undefined || hit.srcKey === key)) return hit;
   const blob = await getOriginal(photo);
   if (!blob) return null;
   const caps = getState().caps;
-  const dec = await decodeImage(blob, { maxPixels: workingPixelLimit(caps), expected: { displayWidth: photo.width, displayHeight: photo.height } });
+  const dec = await decodeImage(blob, { maxPixels: workingPixelLimit(caps), expected: sourceDims(photo) });
   const small = downscale(dec.image, dec.width, dec.height, LIMITS.previewMax);
   if (dec.image.close) dec.image.close();
-  const entry = { image: small, width: small.width, height: small.height };
+  const entry = { image: small, width: small.width, height: small.height, srcKey: key };
   previews.set(photo.id, entry);
   return entry;
 }
@@ -80,8 +98,34 @@ export async function getWorking(photo) {
   const blob = await getOriginal(photo);
   if (!blob) return null;
   const caps = getState().caps;
-  return decodeImage(blob, { maxPixels: workingPixelLimit(caps), expected: { displayWidth: photo.width, displayHeight: photo.height } });
+  return decodeImage(blob, { maxPixels: workingPixelLimit(caps), expected: sourceDims(photo) });
 }
+
+/**
+ * Store the AI-enhanced version of a photo (a picture with the same framing as the original, usually larger).
+ * meta: { width, height, relit, relitStrength, strength, scale, restored }
+ */
+export async function setEnhanced(photoId, blob, meta) {
+  const key = `enh:${photoId}`;
+  originals.set(key, blob);
+  try { await putBlob(key, blob); } catch (e) { toast(storageErrorText(e), 'error'); }
+  updatePhoto(photoId, (p) => ({ ...p, enhanced: { key, ...meta, at: Date.now() } }));
+  previews.delete(photoId);
+  bumpRev(photoId);
+}
+
+export async function clearEnhanced(photoId) {
+  const p = getState().photos[photoId];
+  if (!p?.enhanced) return;
+  const key = p.enhanced.key;
+  updatePhoto(photoId, (ph) => ({ ...ph, enhanced: null, edit: { ...ph.edit, enhance: { ...(ph.edit.enhance || {}), enabled: false } } }));
+  previews.delete(photoId);
+  if (!Object.values(getState().photos).some((q) => q.enhanced?.key === key)) { originals.delete(key); await deleteBlob(key).catch(() => {}); }
+  bumpRev(photoId);
+}
+
+/** Drop the cached preview of a photo (after its source picture changed). */
+export function invalidatePreview(photoId) { previews.delete(photoId); bumpRev(photoId); }
 
 async function ensureThumb(photo, drawable) {
   if (thumbs.has(photo.id)) return;
@@ -155,14 +199,15 @@ export async function importFiles(fileList, { replaceId = null } = {}) {
         releasePhotoMedia(replaceId);
         updatePhoto(replaceId, (p) => ({
           ...p, name: importedBaseName(file.name), fileName: file.name, mime: v.mime, size: file.size, width, height,
-          origKey, hasOriginal: stored, thumb, maskKey: null, clothesKey: null, relight: null,
-          edit: { ...p.edit, crop: p.edit.crop, bg: { ...p.edit.bg, enabled: false, strokes: [] }, clothes: { ...p.edit.clothes, patch: null }, face: p.edit.face ? { ...p.edit.face, relight: null } : p.edit.face },
+          origKey, hasOriginal: stored, thumb, maskKey: null, clothesKey: null, relight: null, enhanced: null,
+          edit: { ...p.edit, crop: p.edit.crop, bg: { ...p.edit.bg, enabled: false, strokes: [] }, clothes: { ...p.edit.clothes, patch: null }, face: p.edit.face ? { ...p.edit.face, relight: null } : p.edit.face, enhance: { ...(p.edit.enhance || {}), enabled: false } },
         }));
         previews.set(replaceId, { image: small, width: small.width, height: small.height });
         thumbs.set(replaceId, URL.createObjectURL(thumb));
         bumpRev(replaceId);
         if (old.origKey && !isOrigShared(old.origKey, replaceId)) deleteBlob(old.origKey).catch(() => {});
         if (old.relight?.key && !Object.values(getState().photos).some((q) => q.id !== replaceId && q.relight?.key === old.relight.key)) deleteBlob(old.relight.key).catch(() => {});
+        if (old.enhanced?.key && !Object.values(getState().photos).some((q) => q.id !== replaceId && q.enhanced?.key === old.enhanced.key)) { originals.delete(old.enhanced.key); deleteBlob(old.enhanced.key).catch(() => {}); }
         added.push(replaceId);
         logEvent('replace', file.name);
         break;
@@ -506,7 +551,8 @@ export async function gatherAssets(photo, src) {
     e.bg.enabled && e.bg.mode === 'image' ? getBgImage(e.bg.imageKey) : null,
     e.clothes.overlay.enabled ? getTemplateAsset(e.clothes.overlay.templateId) : null,
     e.clothes.patch ? getPatch(e.clothes.patch) : null,
-    e.face?.relight?.enabled ? getRelight(photo) : null,
+    e.face?.relight?.enabled && !relightBaked(photo) ? getRelight(photo) : null,
   ]);
-  return { src, mask, clothesMask, bgImage, template: tpl?.image || null, templateMeta: tpl?.meta || null, patch, relight };
+  // relightBaked: the relight is already in the source picture (enhanced version), so nothing may even the two sides again
+  return { src, mask, clothesMask, bgImage, template: tpl?.image || null, templateMeta: tpl?.meta || null, patch, relight, relightBaked: !!e.face?.relight?.enabled && relightBaked(photo) };
 }
