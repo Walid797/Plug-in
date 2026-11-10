@@ -100,7 +100,10 @@ try {
     return { color: ph.edit.bg.color, enabled: ph.edit.bg.enabled, adjust: ph.edit.adjust, face: ph.edit.face, refine: ph.edit.bg.refine, shadow: ph.edit.bg.shadow, marks: s.project.sheet.marks, exposure: ph.edit.adjust.exposure, items: s.project.sheet.items.map((i) => i.copies), mode: s.project.sheet.mode, paper: s.project.sheet.paperId, margins: s.project.sheet.margins.top, placed: l.totals.placed, cap: l.capacity, boost: s.project.sheet.printBoost };
   });
   assert(st.enabled && st.color === '#cfe3f5', `bg ${st.color}`);
-  assert(st.adjust.brightness === 0 && st.adjust.whites === 0 && st.adjust.exposure === 0, `grading off → neutral adjustments (${JSON.stringify(st.adjust)})`);
+  // grading off: none of the grading table's values is applied. The only thing that may act is the skin-brightness trim:
+  // the relight engine lifts the shadowed side of the face, and a face that ends brighter than the reference is trimmed back a little.
+  assert(st.adjust.brightness === 0 && st.adjust.whites === 0 && st.adjust.contrast === 0 && st.adjust.clarity === 0 && st.adjust.lift === 0 && st.adjust.exposure <= 0 && st.adjust.exposure >= -20, `grading off → neutral adjustments (${JSON.stringify(st.adjust)})`);
+  assert(st.face.relight?.enabled === true, `relight armed by «متعادل‌کردن نور چپ و راست» (${JSON.stringify(st.face.relight)})`);
   assert(st.face.skin.enabled === false && st.face.light.enabled === true, `skin engine off, lighting on (${JSON.stringify(st.face)})`);
   assert(st.marks.borders === true && st.marks.borderWidth === 0.5 && st.marks.borderColor === '#404040', `border applied from the template ${JSON.stringify(st.marks)}`);
   assert(st.refine.feather === 3 && st.shadow.enabled === true, `own edge settings applied (${JSON.stringify(st.refine)} ${JSON.stringify(st.shadow)})`);

@@ -12,6 +12,7 @@ import { alphaCanvasFromBytes, applyStrokes, cloneCanvas } from '../render/rende
 import { plausibleMask } from '../core/mask.js';
 import { runTask } from '../platform/worker.js';
 import { getTemplate } from '../assets/suits.js';
+import { RELIGHT } from '../core/relight.js';
 
 const originals = new Map(); // origKey -> Blob (session)
 const previews = new DrawableCache(6); // photoId -> {image,width,height}
@@ -22,6 +23,8 @@ const faces = new Map(); // photoId -> analysis result (memory only, never persi
 const bgImages = new Map(); // key -> {image,width,height}
 const patches = new Map(); // key -> drawable
 const templates = new Map(); // templateId -> {image, meta}
+const classMasks = new Map(); // photoId -> { w, h, person, clothes, hair, skin } small Uint8 class maps (memory only)
+const relights = new Map(); // photoId -> { key, packed: Uint8Array } relight field of the photo's face
 
 export const getFace = (id) => faces.get(id) || null;
 export const setFace = (id, v) => { if (v) faces.set(id, v); else faces.delete(id); bumpRev(id); };
@@ -33,13 +36,13 @@ export function releasePhotoMedia(id) {
   previews.delete(id);
   const t = thumbs.get(id);
   if (t) { URL.revokeObjectURL(t); thumbs.delete(id); }
-  masks.delete(id); clothesMasks.delete(id); faces.delete(id);
+  masks.delete(id); clothesMasks.delete(id); faces.delete(id); classMasks.delete(id); relights.delete(id);
 }
 
 export function releaseAllMedia() {
   previews.clear();
   for (const u of thumbs.values()) URL.revokeObjectURL(u);
-  thumbs.clear(); masks.clear(); clothesMasks.clear(); faces.clear(); originals.clear(); bgImages.clear(); patches.clear();
+  thumbs.clear(); masks.clear(); clothesMasks.clear(); faces.clear(); originals.clear(); bgImages.clear(); patches.clear(); classMasks.clear(); relights.clear();
 }
 
 async function makeThumb(drawable, w, h) {
@@ -152,13 +155,14 @@ export async function importFiles(fileList, { replaceId = null } = {}) {
         releasePhotoMedia(replaceId);
         updatePhoto(replaceId, (p) => ({
           ...p, name: importedBaseName(file.name), fileName: file.name, mime: v.mime, size: file.size, width, height,
-          origKey, hasOriginal: stored, thumb, maskKey: null, clothesKey: null,
-          edit: { ...p.edit, crop: p.edit.crop, bg: { ...p.edit.bg, enabled: false, strokes: [] }, clothes: { ...p.edit.clothes, patch: null } },
+          origKey, hasOriginal: stored, thumb, maskKey: null, clothesKey: null, relight: null,
+          edit: { ...p.edit, crop: p.edit.crop, bg: { ...p.edit.bg, enabled: false, strokes: [] }, clothes: { ...p.edit.clothes, patch: null }, face: p.edit.face ? { ...p.edit.face, relight: null } : p.edit.face },
         }));
         previews.set(replaceId, { image: small, width: small.width, height: small.height });
         thumbs.set(replaceId, URL.createObjectURL(thumb));
         bumpRev(replaceId);
         if (old.origKey && !isOrigShared(old.origKey, replaceId)) deleteBlob(old.origKey).catch(() => {});
+        if (old.relight?.key && !Object.values(getState().photos).some((q) => q.id !== replaceId && q.relight?.key === old.relight.key)) deleteBlob(old.relight.key).catch(() => {});
         added.push(replaceId);
         logEvent('replace', file.name);
         break;
@@ -199,7 +203,10 @@ export function duplicatePhoto(id) {
   const p = s.photos[id];
   if (!p) return null;
   const nid = uid('ph');
+  // the relight field is stored per photo id: the copy shares it (same original, same face) until one of them is recomputed
   const copy = { ...structuredClone({ ...p, thumb: null }), id: nid, thumb: p.thumb, name: `${p.name}-کاپی`, addedAt: Date.now() };
+  const rl = relights.get(id);
+  if (rl) relights.set(nid, rl);
   const idx = s.project.photoIds.indexOf(id);
   const ids = [...s.project.photoIds];
   ids.splice(idx + 1, 0, nid);
@@ -390,6 +397,53 @@ export async function clearMask(photoId, kind = 'person') {
   bumpRev(photoId);
 }
 
+/* ------------------------------------------------------------- relight */
+
+export const getClassMasks = (id) => classMasks.get(id) || null;
+export const setClassMasks = (id, v) => { if (v) classMasks.set(id, v); else classMasks.delete(id); };
+
+/**
+ * Store the relight field of a photo: the packed bytes go to local storage (so it survives a restart without the
+ * face landmarks, which are never stored), the small description goes on the photo record.
+ * meta: { W:number[6] reference px → work frame, refW, refH, report }
+ */
+export async function setRelight(photoId, packed, meta) {
+  const key = `relight:${photoId}`;
+  relights.set(photoId, { key, packed });
+  try { await putBlob(key, new Blob([packed], { type: 'application/octet-stream' })); } catch (e) { toast(storageErrorText(e), 'error'); }
+  updatePhoto(photoId, (p) => ({ ...p, relight: { key, ...meta, at: Date.now() } }));
+  bumpRev(photoId);
+}
+
+export async function clearRelight(photoId) {
+  relights.delete(photoId);
+  const p = getState().photos[photoId];
+  if (p?.relight?.key) await deleteBlob(p.relight.key).catch(() => {});
+  if (p?.relight) { updatePhoto(photoId, (ph) => ({ ...ph, relight: null })); bumpRev(photoId); }
+}
+
+/** The relight field already in memory (for synchronous measurements), or null. */
+export function relightInMemory(photo) {
+  const r = photo?.relight; const m = r ? relights.get(photo.id) : null;
+  return r && m && m.key === r.key ? { packed: m.packed, W: r.W, refW: r.refW, refH: r.refH } : null;
+}
+
+/** Relight field of a photo as a render asset: { packed, W, refW, refH }, or null when the photo has none. */
+export async function getRelight(photo) {
+  const r = photo?.relight;
+  if (!r?.key) return null;
+  let m = relights.get(photo.id);
+  if (!m || m.key !== r.key) {
+    const blob = await getBlob(r.key).catch(() => null);
+    if (!blob) return null;
+    const packed = new Uint8Array(await blob.arrayBuffer());
+    if (packed.length !== RELIGHT.PW * RELIGHT.PH * 4) return null;
+    m = { key: r.key, packed };
+    relights.set(photo.id, m);
+  }
+  return { packed: m.packed, W: r.W, refW: r.refW, refH: r.refH };
+}
+
 /* ------------------------------------------------------------- other assets */
 
 export async function setBackgroundImage(photoId, file) {
@@ -446,12 +500,13 @@ export function registerUserTemplate(id, entry) { templates.set(id, entry); }
 /** Everything renderPhoto needs, for a given source drawable. */
 export async function gatherAssets(photo, src) {
   const e = photo.edit;
-  const [mask, clothesMask, bgImage, tpl, patch] = await Promise.all([
+  const [mask, clothesMask, bgImage, tpl, patch, relight] = await Promise.all([
     e.bg.enabled ? getPersonMask(photo) : null,
     (e.clothes.recolor.enabled || e.clothes.overlay?.enabled) ? getClothesMask(photo) : null,
     e.bg.enabled && e.bg.mode === 'image' ? getBgImage(e.bg.imageKey) : null,
     e.clothes.overlay.enabled ? getTemplateAsset(e.clothes.overlay.templateId) : null,
     e.clothes.patch ? getPatch(e.clothes.patch) : null,
+    e.face?.relight?.enabled ? getRelight(photo) : null,
   ]);
-  return { src, mask, clothesMask, bgImage, template: tpl?.image || null, templateMeta: tpl?.meta || null, patch };
+  return { src, mask, clothesMask, bgImage, template: tpl?.image || null, templateMeta: tpl?.meta || null, patch, relight };
 }

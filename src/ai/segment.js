@@ -1,9 +1,9 @@
 // Person / clothing segmentation with local models.
 import { getSegmenter, getModnet, runWithFallback } from './runtime.js';
-import { getPreview, setRawMask } from '../state/media.js';
+import { getPreview, setRawMask, setClassMasks, getClassMasks } from '../state/media.js';
 import { getState } from '../state/store.js';
 import { makeCanvas } from '../platform/image.js';
-import { maskStats, plausibleMask } from '../core/mask.js';
+import { maskStats, plausibleMask, resizeMask } from '../core/mask.js';
 
 function toBytes(f32) {
   const out = new Uint8ClampedArray(f32.length);
@@ -28,7 +28,13 @@ async function multiclassOnce(seg, pv) {
     const clothes = masks[4].getAsFloat32Array();
     const person = new Float32Array(bg.length);
     for (let i = 0; i < bg.length; i += 1) person[i] = 1 - bg[i];
-    return { person: toBytes(person), clothes: toBytes(clothes), w, h };
+    // small copies of the classes the relight engine needs (hair, skin of face and body): the model works at 256 px anyway
+    const k = Math.min(1, 256 / Math.max(w, h)); const cw = Math.max(1, Math.round(w * k)); const ch = Math.max(1, Math.round(h * k));
+    const small = (p) => toBytes(resizeMask(p, w, h, cw, ch));
+    const skin = new Float32Array(bg.length); const body = masks[2].getAsFloat32Array(); const faceSkin = masks[3].getAsFloat32Array();
+    for (let i = 0; i < bg.length; i += 1) skin[i] = body[i] + faceSkin[i];
+    const classes = { w: cw, h: ch, person: small(person), clothes: small(clothes), hair: small(masks[1].getAsFloat32Array()), skin: small(skin) };
+    return { person: toBytes(person), clothes: toBytes(clothes), w, h, classes };
   } finally {
     res.close?.();
   }
@@ -82,12 +88,13 @@ export async function segmentPhoto(photo, { modelId = chooseSegModel(), withClot
     const r = await runModnet(pv);
     person = r.person; w = r.w; h = r.h;
     if (withClothes) {
-      try { const mc = await runMulticlass(pv); clothes = { bytes: mc.clothes, w: mc.w, h: mc.h }; } catch { clothes = null; }
+      try { const mc = await runMulticlass(pv); clothes = { bytes: mc.clothes, w: mc.w, h: mc.h }; setClassMasks(photo.id, mc.classes); } catch { clothes = null; }
     }
   } else {
     const r = await runMulticlass(pv);
     person = r.person; w = r.w; h = r.h;
     clothes = { bytes: r.clothes, w: r.w, h: r.h };
+    setClassMasks(photo.id, r.classes);
   }
   if (!plausibleMask(person)) {
     // Never report success for an empty or all-foreground mask.
@@ -96,4 +103,15 @@ export async function segmentPhoto(photo, { modelId = chooseSegModel(), withClot
   await setRawMask(photo.id, 'person', person, w, h);
   if (clothes) await setRawMask(photo.id, 'clothes', clothes.bytes, clothes.w, clothes.h);
   return { modelId, hasClothes: !!clothes, stats: maskStats(person) };
+}
+
+/** Hair / skin / clothes / person classes for the relight engine (memory only). Runs the multiclass model when they are not there yet. */
+export async function ensureClassMasks(photo) {
+  const hit = getClassMasks(photo.id);
+  if (hit) return hit;
+  const pv = await getPreview(photo);
+  if (!pv) return null;
+  const r = await runMulticlass(pv);
+  setClassMasks(photo.id, r.classes);
+  return r.classes;
 }

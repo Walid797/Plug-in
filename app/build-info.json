@@ -1,9 +1,11 @@
 {
   "version": "1.0.0",
-  "builtAt": "2026-11-09T15:42:37.940Z",
+  "builtAt": "2026-11-10T03:53:28.999Z",
   "models": {
     "models/mediapipe/face_landmarker.task": "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff",
     "models/mediapipe/selfie_multiclass_256x256.tflite": "c6748b1253a99067ef71f7e26ca71096cd449baefa8f101900ea23016507e0e0",
+    "models/onnx/gfpgan-v1.4.onnx": "6e33a677dda8fb57072332a6394a0000cbcc734ed7f1934161d12e8df5be40e2",
+    "models/onnx/realesr-general-x4v3.onnx": "929c8bf6ae20abe55f6cc4790bf730e1ad3d2aadd7cc29d9ca421840fc1b0c9f",
     "models/onnx-cpu/face_detector.onnx": "56e25b8b125cb97a2ff8e52f8fdd5de8b374a452e33857197523406f60f48930",
     "models/onnx-cpu/face_landmarks_detector.onnx": "45416dffb4d6b5629ce11e0f3ff6c64ec27cad1cf86f120cce1ba63dc6e0052e",
     "models/onnx-cpu/selfie_multiclass_256x256.onnx": "8dab3c2447c0eb4b72c396d6d67e6ca83c87c1089a7d829b89412c72ce93f0b3"

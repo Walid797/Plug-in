@@ -2,6 +2,7 @@
 import { refineMask, resizeMask, maskToBytes, lumaFromRGBA } from '../core/mask.js';
 import { buildZip } from '../core/binary.js';
 import { buildPdf } from '../core/pdf.js';
+import { computeRelight, packRelight } from '../core/relight.js';
 
 /**
  * Refine a model mask to edges of the guide image.
@@ -29,4 +30,15 @@ export function pdfOp(payload) {
   return { pdf: buildPdf(payload.doc) };
 }
 
-export { refineMaskOp as refineMask, zipOp as zip, pdfOp as pdf };
+/**
+ * Relight field of a face (see core/relight.js). payload: the work-frame pixels, class masks and mesh.
+ * returns { packed: Uint8Array, report }
+ */
+export function relightFieldOp(payload, progress) {
+  progress(0.05);
+  const field = computeRelight(payload, payload.opt || {});
+  progress(0.95);
+  return { packed: packRelight(field), report: field.report };
+}
+
+export { refineMaskOp as refineMask, zipOp as zip, pdfOp as pdf, relightFieldOp as relightField };

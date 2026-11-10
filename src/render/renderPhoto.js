@@ -1,14 +1,15 @@
 // Single rendering pipeline used for the editor preview, print preview and the
 // final export — so what you see is what is printed.
 //
-// Order: source → (AI clothing patch) → clothing recolour → tone/colour
-// adjustments (+sharpen) → background replacement (mask, edge clean-up, shadow)
+// Order: source → (AI clothing patch) → clothing recolour → relight (one-sided
+// shadow of the face) → tone/colour adjustments (+sharpen) → background replacement (mask, edge clean-up, shadow)
 // → clothing template overlay.
 
 import { cropMatrix, invertMatrix, applyMatrix, multiplyMatrix, defaultCrop } from '../core/crop.js';
 import { applyAdjustments, isNeutral, snapNearWhite, reconstructEdgeDetails } from '../core/adjust.js';
 import { decontaminate, recolorRegion, boxFilter } from '../core/mask.js';
 import { applyFaceEngine, ellipseToOutput, healDiscs, skinProbability } from '../core/faceengine.js';
+import { applyRelight } from '../core/relight.js';
 import { makeCanvas } from '../platform/image.js';
 
 export const FULL_FRAME = Object.freeze({ cx: 0.5, cy: 0.5, cw: 1, rotation: 0 });
@@ -138,15 +139,23 @@ export function renderPhoto(edit, assets, outW, outH, opts = {}) {
   const faceOn = !before && !!(face?.ellipse && (face.skin?.enabled || face.light?.enabled));
   const fixesOn = !before && !!face?.fixes?.length;
   const overlayOn = !before && !!clothes.overlay?.enabled;
+  const relightOn = !before && !!(face?.relight?.enabled && assets.relight);
   const frameWidthPx = opts.frameWidthPx || outW;
   const pxPerMm = opts.pxPerMm || outW / (edit.widthMm || 30);
 
-  if (recolorOn || bgOn || adjustOn || faceOn || fixesOn || snapWhite || overlayOn) {
+  if (recolorOn || bgOn || adjustOn || faceOn || fixesOn || snapWhite || overlayOn || relightOn) {
     const img = fctx.getImageData(0, 0, outW, outH);
     const data = img.data;
     if (recolorOn) {
       const a = maskInOutput(assets.clothesMask, src.width, src.height, M, outW, outH);
       recolorRegion(data, a, outW, outH, hexToRgb(clothes.recolor.color), (clothes.recolor.strength ?? 100) / 100);
+    }
+    // relight: the shadow of one-sided light is removed first, on the photo's own values, so every later step
+    // (grading, skin, lips) sees an evenly lit face
+    let relit = null;
+    if (relightOn) {
+      relit = applyRelight(data, outW, outH, assets.relight.packed, relightMatrix(assets.relight, src, M), { strength: (face.relight.strength ?? 100) / 100 });
+      if (opts.faceReport) opts.faceReport.relight = relit;
     }
     // skin probability from this face's own skin colour, measured before any tone change
     let skinP = null;
@@ -179,7 +188,9 @@ export function renderPhoto(edit, assets, outW, outH, opts = {}) {
         irisR: toIris(face.eyes.irisR),
         irisL: toIris(face.eyes.irisL),
       } : null;
-      const rep = applyFaceEngine(data, outW, outH, ellipseToOutput(face.ellipse, src.width, src.height, M), { ...face, protect, lips, eyes });
+      // with the relight applied the older left/right flattening has nothing left to do (and must not act twice)
+      const light = relit?.applied ? { ...face.light, even: false } : face.light;
+      const rep = applyFaceEngine(data, outW, outH, ellipseToOutput(face.ellipse, src.width, src.height, M), { ...face, light, protect, lips, eyes });
       if (opts.faceReport) Object.assign(opts.faceReport, rep);
     }
     // manual repair brush: real skin texture cloned over the marks the user painted (after all tone work)
@@ -282,6 +293,12 @@ export function renderPhoto(edit, assets, outW, outH, opts = {}) {
     octx.setTransform(1, 0, 0, 1, 0, 0);
   }
   return out;
+}
+
+/** Matrix from output pixels to the relight work frame: output → source (inverse crop) → the field's reference size → work. */
+export function relightMatrix(relight, src, M) {
+  const S = [relight.refW / src.width, 0, 0, relight.refH / src.height, 0, 0];
+  return multiplyMatrix(relight.W, multiplyMatrix(S, invertMatrix(M)));
 }
 
 function drawShadow(ctx, alpha, w, h, sh, pxPerMm) {

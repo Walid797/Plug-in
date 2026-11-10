@@ -188,7 +188,8 @@ export function createCpuFaceLandmarker(ort, detSession, lmkSession, { numFaces 
         const lm = [];
         for (let i = 0; i < 478; i += 1) {
           const u = pts.data[i * 3]; const v = pts.data[i * 3 + 1];
-          lm.push({ x: (m.a * u + m.b * v + m.c0) / w, y: (m.d * u + m.e * v + m.f0) / h, z: pts.data[i * 3 + 2] / L });
+          // depth in the same scale as x (crop pixels × crop-to-image scale ÷ image width), as MediaPipe reports it
+          lm.push({ x: (m.a * u + m.b * v + m.c0) / w, y: (m.d * u + m.e * v + m.f0) / h, z: (pts.data[i * 3 + 2] * Math.hypot(m.a, m.d)) / w });
         }
         faceLandmarks.push(lm);
       }

@@ -127,6 +127,22 @@ export function SmartView() {
     if (!ellipse) return;
     const protect = f?.protect?.length ? f.protect : faceProtectZones(getFace(photo.id)?.landmarks, photo.width, photo.height);
     updateEdit(photo.id, (ed) => ({ ...ed, face: { ...faceCfg, ...(ed.face || {}), ...patch, ellipse, protect, lips: lipPolygons(getFace(photo.id)?.landmarks), eyes: eyePolygons(getFace(photo.id)?.landmarks) } }), { history });
+    if (patch.light) syncRelight();
+  };
+  // «متعادل‌کردن نور چپ و راست» uses the relight engine (shadow of one-sided light, measured on the face mesh). Its field is
+  // computed once per photo; without face landmarks in memory the older flattening inside the face engine is used instead.
+  const syncRelight = async () => {
+    const ph = getState().photos[photo.id]; const fc = ph?.edit.face;
+    if (!ph) return;
+    const want = !!(fc?.light?.enabled && fc.light.even);
+    const setRl = (enabled) => updateEdit(photo.id, (ed) => ({ ...ed, face: { ...ed.face, relight: { strength: 100, ...(ed.face?.relight || {}), enabled } } }), { history: false });
+    if (!want) { if (fc?.relight?.enabled) setRl(false); return; }
+    if (fc.relight?.enabled && ph.relight) return;
+    try {
+      const { ensureRelight } = await import('../../ai/relight.js');
+      const ok = ph.relight || await ensureRelight(ph);
+      if (ok) setRl(true);
+    } catch (err) { console.warn('relight failed', err); }
   };
 
   const engineSlider = (grp, key) => ({
@@ -213,6 +229,11 @@ export function SmartView() {
                     <>
                       <Slider label="روشن‌کردن سایه‌ها" min={0} max={100} value={faceCfg.light.fill} defaultValue={35} format={(v) => formatNumber(v)} {...engineSlider('light', 'fill')} />
                       <Switch label="متعادل‌کردن نور چپ و راست" checked={faceCfg.light.even} onChange={(v) => setFaceEngine({ light: { ...faceCfg.light, even: v } })} />
+                      {faceCfg.light.even && e.face?.relight?.enabled ? (
+                        <Slider label="برداشتن سایهٔ یک‌طرفهٔ صورت (شکل چهره تغییر نمی‌کند)" min={0} max={100} value={e.face.relight.strength ?? 100} defaultValue={100} format={(v) => `${formatNumber(v)}٪`}
+                          onInput={(v) => updateEdit(photo.id, (ed) => ({ ...ed, face: { ...ed.face, relight: { ...ed.face.relight, strength: v } } }), { history: false })}
+                          onCommit={(v, start) => { updateEdit(photo.id, (ed) => ({ ...ed, face: { ...ed.face, relight: { ...ed.face.relight, strength: start } } }), { history: false }); updateEdit(photo.id, (ed) => ({ ...ed, face: { ...ed.face, relight: { ...ed.face.relight, strength: v } } }), { history: true }); }} />
+                      ) : null}
                       <Switch label="جلوگیری از نور سوخته" checked={faceCfg.light.protect} onChange={(v) => setFaceEngine({ light: { ...faceCfg.light, protect: v } })} />
                     </>
                   ) : null}

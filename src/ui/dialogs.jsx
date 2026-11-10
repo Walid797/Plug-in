@@ -96,7 +96,12 @@ function engineStatus(r, preset) {
       if (preset.skinOn && preset.skinLips > 0 && e.lips) out.push({ kind: 'ok', icon: 'check', text: 'رنگ لب طبیعی شد (بافت و شکل لب دست‌نخورده)' });
       if (preset.skinOn && preset.skinSpots > 0) out.push(e.spotsFrac > 0.0005 || e.blemishes > 0 ? { kind: 'ok', icon: 'check', text: `جوش، خال و لکه‌ها خودکار پاک شد${e.blemishes ? ` (${formatNumber(e.blemishes)} نقطه با بافت واقعی پوست ترمیم شد)` : ''}؛ ریش، ابرو، چشم، لب و بافت پوست حفظ شد` } : { kind: 'ok', icon: 'check', text: 'لکهٔ واضحی برای پاک‌کردن پیدا نشد' });
       if (preset.skinOn) out.push(e.redShift > 0.3 ? { kind: 'ok', icon: 'check', text: 'قرمزی بیش‌ازحد پوست کم شد' } : { kind: 'ok', icon: 'check', text: 'رنگ پوست طبیعی بود؛ تغییر نکرد' });
-      if (preset.lightOn && preset.lightEven && r.sidesEvened) {
+      if (preset.lightOn && preset.lightEven && r.relit) {
+        const pct = Math.round((r.relit.sideRatio - 1) * 100);
+        out.push(pct >= 12
+          ? { kind: 'ok', icon: 'check', text: `سایهٔ یک‌طرفهٔ صورت برداشته شد (یک طرف حدود ${formatNumber(pct)}٪ تیره‌تر بود؛ شکل و جزئیات چهره دست‌نخورده)` }
+          : { kind: 'ok', icon: 'check', text: 'نور دو طرف صورت از قبل نزدیک به هم بود؛ فقط کمی یکدست شد' });
+      } else if (preset.lightOn && preset.lightEven && r.sidesEvened) {
         const l = Math.round((r.sidesEvened.left - 1) * 100); const rt = Math.round((r.sidesEvened.right - 1) * 100);
         out.push(r.sidesEvened.clipped
           ? { kind: 'warn', icon: 'triangle-alert', text: 'سایهٔ یک طرف صورت خیلی تند بود؛ تا حد مجاز یکنواخت شد ولی ممکن است هنوز کمی فرق باشد' }

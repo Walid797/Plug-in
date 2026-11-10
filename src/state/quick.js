@@ -149,7 +149,7 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
       // the colour-grading values are applied after the face brightness is measured on the neutral photo
       // (adaptive strength); until then the photo's own adjustments are cleared
       if (preset.grade) updateEdit(id, (ed) => ({ ...ed, adjust: { ...ADJUSTMENT_DEFAULTS } }), { history: false });
-      updateEdit(id, (ed) => ({ ...ed, face: { ...presetFaceParams(preset), skin: { ...presetFaceParams(preset).skin, enabled: false }, light: { ...presetFaceParams(preset).light, enabled: false }, ellipse: null, fixes: ed.face?.fixes } }), { history: false });
+      updateEdit(id, (ed) => ({ ...ed, face: { ...presetFaceParams(preset), skin: { ...presetFaceParams(preset).skin, enabled: false }, light: { ...presetFaceParams(preset).light, enabled: false }, ellipse: null, relight: null, fixes: ed.face?.fixes } }), { history: false });
 
       step(0, 'تغییر پس‌زمینه');
       if (preset.whiteBg && aiState.segOk) {
@@ -160,8 +160,21 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
       step(2, 'تحلیل چهره و کادر');
       if (aiState.faceOk && (preset.autoCrop || preset.autoLight || preset.skinOn || preset.lightOn)) {
         try {
-          const f = await analyzeFace(getState().photos[id]);
+          let f = await analyzeFace(getState().photos[id]);
           r.faces = f.faceCount;
+          // lighting engine, first step: the shadow of one-sided light is measured on the face mesh and removed, before
+          // anything else looks at the face. Brightness, grading and the checklist below then see the evenly lit face.
+          if (f.faceCount && preset.lightOn && preset.lightEven) {
+            try {
+              const { ensureRelight } = await import('../ai/relight.js');
+              const rr = await ensureRelight(getState().photos[id]);
+              if (rr) {
+                updateEdit(id, (ed) => ({ ...ed, face: { ...ed.face, relight: { enabled: true, strength: 100 } } }), { history: false });
+                r.relight = rr;
+                f = await analyzeFace(getState().photos[id]); // statistics of the relit face
+              }
+            } catch (err) { console.error(err); r.relightError = err?.code || 'FAILED'; }
+          }
           if (preset.grade) {
             // measured on the neutral photo: strength 1 for a dark face, 0 for one as bright as the reference
             const strength = f.faceCount ? gradeStrength(f.stats?.meanL) : 1;
@@ -202,7 +215,7 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
             // arm the face & skin / lighting engines on this face
             if (preset.skinOn || preset.lightOn) {
               const fp = presetFaceParams(preset);
-              updateEdit(id, (ed) => ({ ...ed, face: { ...fp, fixes: ed.face?.fixes, ellipse: faceEllipse(getFace(id).metrics, photo.width, photo.height), protect: faceProtectZones(getFace(id).landmarks, photo.width, photo.height), lips: lipPolygons(getFace(id).landmarks), eyes: eyePolygons(getFace(id).landmarks) } }), { history: false });
+              updateEdit(id, (ed) => ({ ...ed, face: { ...fp, fixes: ed.face?.fixes, relight: ed.face?.relight, ellipse: faceEllipse(getFace(id).metrics, photo.width, photo.height), protect: faceProtectZones(getFace(id).landmarks, photo.width, photo.height), lips: lipPolygons(getFace(id).landmarks), eyes: eyePolygons(getFace(id).landmarks) } }), { history: false });
               r.engine = await engineReport(id).catch(() => null);
               // the brightening is steered by the whole-face mean, which a beard, glasses or dark hair pull down: so a face with
               // dark parts can end up too bright. The skin itself is measured after the engines and trimmed back to the reference level.
@@ -230,6 +243,8 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
               r.sidesEvened = { left: eg[0], right: eg[1], clipped };
               if (!clipped) r.issues = r.issues.filter((x) => x.code !== 'LIGHT_BALANCE');
             }
+            // the relight engine reports what it found (difference between the two sides before) and did (largest lift)
+            if (r.relight && r.engine?.relight?.applied) r.relit = { sideRatio: Math.exp(r.relight.sideDiff || 0), maxGain: r.engine.relight.maxGain };
             // how much the head was straightened (the frame is turned by the measured tilt of the eye line)
             const rot = getState().photos[id].edit.crop?.rotation;
             if (preset.autoCrop && Number.isFinite(rot)) r.straightened = rot;
