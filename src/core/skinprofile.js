@@ -279,7 +279,7 @@ export function skinPlan(profile, { faceWidthPx = 600, strength = 0.75, blemishA
   const lowRes = clamp01((520 - faceWidthPx) / 300);
   const need = Math.max(defect, lowRes);
   // colour: only what is outside the natural range of skin is corrected
-  const saturation = profile.chroma < 17 ? Math.min(12, (17 - profile.chroma) * 2) : profile.chroma > 32 ? -Math.min(12, (profile.chroma - 32) * 1.5) : 0;
+  const saturation = profile.chroma < 17 ? Math.min(12, (17 - profile.chroma) * 2) : profile.chroma > 36 ? -Math.min(6, profile.chroma - 36) : 0; // warm, sun-tanned skin is natural: only a clearly over-saturated photo is toned down
   const temperature = profile.hue < 38 ? Math.min(6, (38 - profile.hue) * 0.6) : profile.hue > 66 ? -Math.min(6, (profile.hue - 66) * 0.6) : 0;
   return {
     lightness, tone: profile.tone, targetLuma, referenceL: 0.66 * (targetLuma / 186),
@@ -294,13 +294,13 @@ export function skinPlan(profile, { faceWidthPx = 600, strength = 0.75, blemishA
     saturation: Math.round(saturation * 10) / 10, temperature: Math.round(temperature * 10) / 10,
     // tone of this photo: a flat face gets more contrast and a harsh one less; highlights are held back by how bright
     // the lightest skin is; blacks deepen only when the darks are washed out; noise reduction follows the measured noise
-    contrast: rng(8 + (62 - profile.spanL) * 0.35, 2, 14),
+    contrast: rng(8 + (62 - profile.spanL) * 0.35, 2, 11),
     highlights: rng(-10 - (profile.p95 - 82) * 1.2 - profile.clipped * 200, -34, -6),
     blacks: rng(-3 - (profile.p5 - 10) * 0.5, -14, -3),
     denoise: rng(12 + 11 * profile.noise, 12, 60),
     // skin engine for this skin: redness by how red it is, evenness by its red patches, lips by how pale they are
     // against the skin, fill light by how dark the eye sockets are against the cheeks
-    redness: rng(20 + (profile.a - 9) * 3.2, 20, 75),
+    redness: rng(20 + (profile.a - 9) * 2.2, 20, 55),
     balance: rng(25 + profile.redPatches * 220, 25, 75),
     lips: rng(70 - profile.lipRedness * 2.2, 25, 80),
     fill: rng(45 + (0.85 - profile.socketRatio) * 110, 25, 78),
@@ -362,6 +362,53 @@ export function applyGainField(data, w, h, gain, size, A) {
       const i = (y * w + x) * 4;
       // in linear light, so colours keep their hue and saturation
       for (let ch = 0; ch < 3; ch += 1) { const v = LIN[data[i + ch]] * g ** 2.2; data[i + ch] = v >= 1 ? 255 : toSrgb(v); }
+    }
+  }
+}
+
+/** CIE L*a*b* (D65) → linear RGB (may leave 0..1). */
+export function labToLinear(L, a, b) {
+  const fy = (L + 16) / 116; const fx = fy + a / 500; const fz = fy - b / 200;
+  const inv = (t) => (t > 0.206893 ? t * t * t : (t - 16 / 116) / 7.787);
+  const X = 0.95047 * inv(fx); const Y = inv(fy); const Z = 1.08883 * inv(fz);
+  return [3.2404542 * X - 1.5371385 * Y - 0.4985314 * Z, -0.969266 * X + 1.8760108 * Y + 0.041556 * Z, 0.0556434 * X - 0.2040259 * Y + 1.0572252 * Z];
+}
+
+/** The range natural skin colour lies in (hue angle and colourfulness in L*a*b*), measured on well-balanced portraits. */
+export const NATURAL_SKIN = Object.freeze({ hueMin: 50, hueMax: 60, chromaMin: 18, chromaMax: 31 });
+
+/**
+ * Colour correction for this person's skin. A skin that came out too red (hue below the natural range), too yellow
+ * or over-coloured (colourfulness above it), or grey (below it) is brought to the nearest natural colour — a skin
+ * already inside the range is not touched. Brightness is not changed here.
+ * @returns {{needed:boolean, a:number, b:number, gains:number[], dHue:number, dChroma:number}} gains per linear RGB channel for skin pixels
+ */
+export function skinColorCorrection(profile, { strength = 0.9 } = {}) {
+  const N = NATURAL_SKIN;
+  const hue = Math.min(N.hueMax, Math.max(N.hueMin, profile.hue)); const chroma = Math.min(N.chromaMax, Math.max(N.chromaMin, profile.chroma));
+  const h = (profile.hue + strength * (hue - profile.hue)) * (Math.PI / 180); const c = profile.chroma + strength * (chroma - profile.chroma);
+  const a = c * Math.cos(h); const b = c * Math.sin(h);
+  const from = labToLinear(profile.L, profile.a, profile.b); const to = labToLinear(profile.L, a, b);
+  const gains = from.map((v, i) => Math.min(2.2, Math.max(0.5, Math.max(1e-4, to[i]) / Math.max(1e-4, v))));
+  const dHue = hue - profile.hue; const dChroma = chroma - profile.chroma;
+  return { needed: Math.abs(dHue) > 0.5 || Math.abs(dChroma) > 0.5, a, b, gains, dHue, dChroma };
+}
+
+/**
+ * Apply per-channel gains to the skin of a w×h RGBA picture. `skin` is a small class map (bytes, mw×mh) covering the
+ * whole picture: face, neck and any other bare skin get the same correction, so they keep matching each other.
+ */
+export function applySkinColor(data, w, h, skin, mw, mh, gains) {
+  const sx = mw / w; const sy = mh / h;
+  for (let y = 0; y < h; y += 1) {
+    const ty = Math.min(mh - 1.001, Math.max(0, (y + 0.5) * sy - 0.5)); const iy = ty | 0; const fy = ty - iy; const r0 = iy * mw; const r1 = Math.min(mh - 1, iy + 1) * mw;
+    for (let x = 0; x < w; x += 1) {
+      const tx = Math.min(mw - 1.001, Math.max(0, (x + 0.5) * sx - 0.5)); const ix = tx | 0; const fx = tx - ix; const ix1 = Math.min(mw - 1, ix + 1);
+      let m = ((skin[r0 + ix] * (1 - fx) + skin[r0 + ix1] * fx) * (1 - fy) + (skin[r1 + ix] * (1 - fx) + skin[r1 + ix1] * fx) * fy) / 255;
+      if (m < 0.04) continue;
+      m = m >= 0.6 ? 1 : (m - 0.04) / 0.56;
+      const i = (y * w + x) * 4;
+      for (let ch = 0; ch < 3; ch += 1) { const v = LIN[data[i + ch]] * (1 + m * (gains[ch] - 1)); data[i + ch] = v >= 1 ? 255 : toSrgb(v); }
     }
   }
 }

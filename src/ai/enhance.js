@@ -8,7 +8,7 @@ import { getOnnxModel, disposeModel } from './runtime.js';
 import { decodeImage, makeCanvas, canvasToBlob, workingPixelLimit } from '../platform/image.js';
 import { applyRelight } from '../core/relight.js';
 import { fivePoints, similarityFit, FACE_TEMPLATE, FACE_SIZE, featherWeight, restoreShare, upscalePlan, tilePlan, maskBounds, toPlanar, fromPlanar, mergeFaceDetail } from '../core/enhance.js';
-import { skinProfile, findBlemishes, healBlemishes, skinPlan, evenLightField, applyGainField } from '../core/skinprofile.js';
+import { skinProfile, findBlemishes, healBlemishes, skinPlan, evenLightField, applyGainField, skinColorCorrection, applySkinColor } from '../core/skinprofile.js';
 import { drawThrough } from '../render/renderPhoto.js';
 import { multiplyMatrix, invertMatrix } from '../core/crop.js';
 
@@ -64,7 +64,13 @@ export async function enhancePhoto(photo, opt = {}) {
     bx.imageSmoothingEnabled = true; bx.imageSmoothingQuality = 'high';
     bx.drawImage(c, 0, 0, w * 4, h * 4);
     const cls = getClassMasks(photo.id);
-    const tiles = tilePlan(w, h, cls ? maskBounds(cls.person, cls.w, cls.h, w, h) : null);
+    // only what a portrait frame around this face can show goes through the model (the rest is resampled smoothly):
+    // on a wide photo this saves most of the time
+    const fcx = ((lm[454].x + lm[234].x) / 2) * w; const fcy = ((lm[454].y + lm[234].y) / 2) * h;
+    const frame = { x0: fcx - 1.9 * faceW0, x1: fcx + 1.9 * faceW0, y0: fcy - 1.9 * faceW0, y1: fcy + 2.6 * faceW0 };
+    const pb = cls ? maskBounds(cls.person, cls.w, cls.h, w, h) : null;
+    const region = { x0: Math.max(0, frame.x0, pb ? pb.x0 : 0), y0: Math.max(0, frame.y0, pb ? pb.y0 : 0), x1: Math.min(w, frame.x1, pb ? pb.x1 : w), y1: Math.min(h, frame.y1, pb ? pb.y1 : h) };
+    const tiles = tilePlan(w, h, region.x1 > region.x0 && region.y1 > region.y0 ? region : pb);
     for (let i = 0; i < tiles.length; i += 1) {
       aborted(signal);
       const t = tiles[i];
@@ -112,15 +118,22 @@ export async function enhancePhoto(photo, opt = {}) {
       if (profile) {
         const ev = evenLightField(fd.data, profile);
         report.light = { uneven: ev.uneven, amount: ev.amount };
-        if (ev.gain) {
+        // colour of this person's skin: brought into the natural range when it came out red, yellow or grey — on all
+        // the skin of the picture (face, ears, neck), so they keep matching
+        const cc = skinColorCorrection(profile); const clsMap = getClassMasks(photo.id);
+        const doColor = cc.needed && !!clsMap?.skin;
+        report.color = { hue: profile.hue, chroma: profile.chroma, dHue: cc.dHue, dChroma: cc.dChroma, applied: doColor };
+        if (ev.gain || doColor) {
           const img = cx.getImageData(0, 0, w, h);
-          applyGainField(img.data, w, h, ev.gain, FACE_SIZE, A);
+          if (ev.gain) applyGainField(img.data, w, h, ev.gain, FACE_SIZE, A);
+          if (doColor) applySkinColor(img.data, w, h, clsMap.skin, clsMap.w, clsMap.h, cc.gains);
           cx.putImageData(img, 0, 0);
           fx.fillStyle = 'rgb(135,133,132)'; fx.fillRect(0, 0, FACE_SIZE, FACE_SIZE);
           drawThrough(fx, c, w, h, A, FACE_SIZE, FACE_SIZE);
           fd = fx.getImageData(0, 0, FACE_SIZE, FACE_SIZE);
           profile = skinProfile(fd.data, FACE_SIZE) || profile;
-          report.light.unevenAfter = evenLightField(fd.data, profile).uneven;
+          if (ev.gain) report.light.unevenAfter = evenLightField(fd.data, profile).uneven;
+          if (doColor) { report.color.hueAfter = profile.hue; report.color.chromaAfter = profile.chroma; }
         }
       }
       const found = profile ? findBlemishes(fd.data, profile, { moles: true }) : null;

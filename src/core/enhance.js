@@ -66,7 +66,7 @@ export function restoreShare(faceWidthPx, strength = 0.8) {
  * none when the source is already large. The result never exceeds `maxSide` on its longer side.
  * @returns {{scale:number, outW:number, outH:number, reason:string}}
  */
-export function upscalePlan(w, h, faceWidthPx, { maxSide = 2600, smallSide = 1100, smallFace = 420 } = {}) {
+export function upscalePlan(w, h, faceWidthPx, { maxSide = 2600, smallSide = 900, smallFace = 300 } = {}) {
   const long = Math.max(w, h);
   const small = long <= smallSide || (faceWidthPx > 0 && faceWidthPx < smallFace && long <= smallSide * 1.5);
   if (!small) return { scale: 1, outW: w, outH: h, reason: 'large' };

@@ -50,7 +50,8 @@ test('upscale plan: ×4 for small sources, capped by the longest side, none for 
   assert.deepEqual(upscalePlan(400, 500, 190), { scale: 4, outW: 1600, outH: 2000, reason: 'small' });
   const p = upscalePlan(700, 466, 157); assert.equal(p.outW, 2600); assert.ok(Math.abs(p.scale - 2600 / 700) < 1e-9); assert.equal(p.outH, Math.round(466 * p.scale));
   assert.equal(upscalePlan(4000, 3000, 1130).scale, 1);
-  assert.equal(upscalePlan(1500, 1500, 300).scale > 1, true, 'a mid-size picture with a small face is still upscaled');
+  assert.equal(upscalePlan(1300, 1300, 260).scale > 1, true, 'a mid-size picture with a small face is still upscaled');
+  assert.equal(upscalePlan(1300, 1300, 330).scale, 1, 'enough pixels on the face already');
   assert.equal(upscalePlan(1500, 1500, 600).scale, 1);
   assert.equal(upscalePlan(2000, 1500, 300).scale, 1, 'too large to gain from it');
 });

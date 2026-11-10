@@ -59,7 +59,7 @@ test('plan: more blemishes and fewer pixels mean more of the skin is rebuilt', (
 test('plan: colour correction only outside the natural range', () => {
   const p = skinProfile(face(LIGHT), S);
   assert.equal(skinPlan({ ...p, chroma: 24, hue: 50 }).saturation, 0);
-  assert.ok(skinPlan({ ...p, chroma: 12 }).saturation > 0); assert.ok(skinPlan({ ...p, chroma: 40 }).saturation < 0);
+  assert.ok(skinPlan({ ...p, chroma: 12 }).saturation > 0); assert.ok(skinPlan({ ...p, chroma: 42 }).saturation < 0); assert.equal(skinPlan({ ...p, chroma: 34 }).saturation, 0);
   assert.ok(skinPlan({ ...p, hue: 30 }).temperature > 0); assert.ok(skinPlan({ ...p, hue: 75 }).temperature < 0);
 });
 
@@ -119,4 +119,20 @@ test('constrainCropBottom: size kept, only the lower edge is brought inside', as
   const p = cropToPixels(c, 400, 300, 0.75);
   assert.equal(c.cw, 1.2); assert.ok(Math.abs(p.cy + p.ch / 2 - 300) < 1e-6); assert.ok(p.cy - p.ch / 2 < 0);
   const inside = { cx: 0.5, cy: 0.4, cw: 0.3, rotation: 0 }; assert.deepEqual(constrainCropBottom(inside, 400, 300, 0.75), inside);
+});
+
+test('skin colour: natural skin untouched; red, yellow and grey skin brought into the natural range', async () => {
+  const { skinColorCorrection, applySkinColor, NATURAL_SKIN: N } = await import('../../src/core/skinprofile.js');
+  const fix = (rgb) => {
+    const img = face(rgb); const p = skinProfile(img, S); const cc = skinColorCorrection(p);
+    if (cc.needed) applySkinColor(img, S, S, new Uint8Array(4).fill(255), 2, 2, cc.gains);
+    return { before: p, cc, after: skinProfile(img, S) };
+  };
+  const natural = fix([214, 160, 126]); assert.equal(natural.cc.needed, false, `hue ${natural.before.hue} chroma ${natural.before.chroma}`);
+  for (const [name, rgb] of [['red', [235, 150, 135]], ['yellow', [215, 160, 85]], ['grey', [170, 158, 150]]]) {
+    const r = fix(rgb); assert.ok(r.cc.needed, name);
+    assert.ok(r.after.hue > N.hueMin - 3 && r.after.hue < N.hueMax + 3, `${name}: hue ${r.before.hue.toFixed(1)} → ${r.after.hue.toFixed(1)}`);
+    assert.ok(r.after.chroma > N.chromaMin - 3 && r.after.chroma < N.chromaMax + 3, `${name}: chroma ${r.before.chroma.toFixed(1)} → ${r.after.chroma.toFixed(1)}`);
+    assert.ok(Math.abs(r.after.L - r.before.L) < 3, `${name}: brightness kept`);
+  }
 });

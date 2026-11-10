@@ -206,6 +206,8 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
             // measured on the neutral photo: strength 1 for a dark face, 0 for one as bright as the reference
             const strength = f.faceCount ? gradeStrength(f.stats?.meanL, plan?.referenceL) : 1;
             const grade = presetAdjustFor(preset, f.faceCount ? f.stats?.meanL : null, f.faceCount ? f.stats?.sharpness : null, f.faceCount ? plan : null);
+            // a face rebuilt by the restoration model is already crisp: the full clarity on top gives a hard, over-processed look
+            if (grade && r.enhance?.restored && preset.gradeAdaptive) grade.clarity = Math.round(grade.clarity * 0.55 * 10) / 10;
             updateEdit(id, (ed) => ({ ...ed, adjust: grade }), { history: false });
             r.gradeStrength = preset.gradeAdaptive ? strength : 1;
             r.detailStrength = preset.gradeAdaptive && f.faceCount ? detailStrength(f.stats?.sharpness) : 1;

@@ -2,7 +2,7 @@
  * Only same-origin requests are handled; nothing is ever sent to the network
  * by this worker except fetching the app's own files from the local server.
  */
-const VERSION = "1.0.0-768d7ebbfb";
+const VERSION = "1.0.0-fc37200440";
 const SHELL = ["index.html","manifest.webmanifest","app/app.js","app/app.css","app/build-info.json","icons/icon-192.png","icons/icon-512.png","icons/icon-maskable-512.png","icons/icon.svg","models/templates/suit_diplomat.png","models/templates/suit_diplomat_thumb.png"];
 const SHELL_CACHE = `hoshmand-shell-${VERSION}`;
 const RUNTIME_CACHE = 'hoshmand-runtime-v1';
