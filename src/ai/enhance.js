@@ -8,7 +8,7 @@ import { getOnnxModel, disposeModel } from './runtime.js';
 import { decodeImage, makeCanvas, canvasToBlob, workingPixelLimit } from '../platform/image.js';
 import { applyRelight } from '../core/relight.js';
 import { fivePoints, similarityFit, FACE_TEMPLATE, FACE_SIZE, featherWeight, restoreShare, upscalePlan, tilePlan, maskBounds, toPlanar, fromPlanar, mergeFaceDetail } from '../core/enhance.js';
-import { skinProfile, findBlemishes, healBlemishes, skinPlan, evenLightField, applyGainField, skinColorCorrection, applySkinColor } from '../core/skinprofile.js';
+import { skinProfile, findBlemishes, healBlemishes, skinPlan, evenLightField, applyGainField, skinColorCorrection, applySkinColor, regionProfile } from '../core/skinprofile.js';
 import { drawThrough } from '../render/renderPhoto.js';
 import { multiplyMatrix, invertMatrix } from '../core/crop.js';
 
@@ -139,7 +139,7 @@ export async function enhancePhoto(photo, opt = {}) {
       const found = profile ? findBlemishes(fd.data, profile, { moles: true }) : null;
       const plan = profile ? skinPlan(profile, { faceWidthPx: faceW0, strength: strength / 100, blemishArea: found.area }) : null;
       const healed = found?.count ? healBlemishes(fd.data, profile, found) : fd.data;
-      if (profile) { report.skin = publicProfile(profile); report.plan = plan; report.blemishes = { count: found.count, kept: found.kept, area: found.area }; }
+      if (profile) { report.skinNow = { L: profile.L, a: profile.a, b: profile.b }; report.skin = publicProfile(profile); report.plan = plan; report.blemishes = { count: found.count, kept: found.kept, area: found.area }; }
       let merged = healed; let share = 0;
       if (useModel) {
         onProgress(0.72, 'بازسازی پوست و جزئیات چهره');
@@ -179,6 +179,40 @@ export async function enhancePhoto(photo, opt = {}) {
         report.restored = useModel; report.smoothed = share > 0; report.healed = found?.count || 0; report.share = share; report.restoreMs = Math.round(performance.now() - t0);
       }
     }
+  }
+  // 4. the neck: the same blemish search and healing as on the face, on a square below the chin at the same scale,
+  // limited to what the segmentation calls skin and what has this person's skin colour (collar, beard and hair stay out)
+  if (restore && report.skin) {
+    try {
+      const cls = getClassMasks(photo.id);
+      const faceW = Math.hypot((lm[454].x - lm[234].x) * w, (lm[454].y - lm[234].y) * h);
+      const side = (FACE_SIZE / 290) * faceW; const s = FACE_SIZE / side;
+      const x0 = lm[152].x * w - side / 2; const y0 = lm[152].y * h - 0.06 * faceW;
+      if (cls?.skin && y0 < h - 0.25 * faceW) {
+        const N = [s, 0, 0, s, -x0 * s, -y0 * s];
+        const nc = makeCanvas(FACE_SIZE, FACE_SIZE); const nx = ctx2d(nc);
+        nx.fillStyle = 'rgb(135,133,132)'; nx.fillRect(0, 0, FACE_SIZE, FACE_SIZE);
+        drawThrough(nx, c, w, h, N, FACE_SIZE, FACE_SIZE);
+        const nd = nx.getImageData(0, 0, FACE_SIZE, FACE_SIZE);
+        const cand = new Float32Array(FACE_SIZE * FACE_SIZE);
+        for (let y = 0; y < FACE_SIZE; y += 1) {
+          const py = (y0 + (y + 0.5) / s) / h; if (py < 0 || py >= 1) continue; const my = Math.min(cls.h - 1, Math.floor(py * cls.h));
+          for (let x = 0; x < FACE_SIZE; x += 1) { const px = (x0 + (x + 0.5) / s) / w; if (px >= 0 && px < 1) cand[y * FACE_SIZE + x] = cls.skin[my * cls.w + Math.min(cls.w - 1, Math.floor(px * cls.w))] / 255; }
+        }
+        // the skin colour as it is now (after the colour correction): read from the face again
+        const rp = regionProfile(nd.data, FACE_SIZE, cand, report.skinNow || report.skin);
+        const nf = rp ? findBlemishes(nd.data, rp, { moles: true }) : null;
+        report.neck = { covered: rp ? rp.coverage : 0, healed: nf ? nf.count : 0 };
+        if (nf?.count) {
+          const healed = healBlemishes(nd.data, rp, nf);
+          const res = nx.createImageData(FACE_SIZE, FACE_SIZE);
+          for (let j = 0; j < FACE_SIZE * FACE_SIZE; j += 1) { const i = j * 4; res.data[i] = healed[i]; res.data[i + 1] = healed[i + 1]; res.data[i + 2] = healed[i + 2]; res.data[i + 3] = Math.round(255 * nf.mask[j]); }
+          nx.clearRect(0, 0, FACE_SIZE, FACE_SIZE); nx.putImageData(res, 0, 0);
+          cx.save(); cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = 'high';
+          cx.setTransform(1 / s, 0, 0, 1 / s, x0, y0); cx.drawImage(nc, 0, 0); cx.restore();
+        }
+      }
+    } catch (err) { console.error(err); report.neckError = String(err?.message || err); }
   }
   aborted(signal);
   onProgress(0.94, 'ذخیرهٔ نسخهٔ بهبودیافته');

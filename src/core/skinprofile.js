@@ -412,3 +412,22 @@ export function applySkinColor(data, w, h, skin, mw, mh, gains) {
     }
   }
 }
+
+/**
+ * Skin masks for a square that is not a face (the neck): the pixels offered in `candidate` (0..1, e.g. the skin class
+ * of the segmentation) that also have the colour of this person's skin (`ref`: L, a, b of the face profile). Returns
+ * what findBlemishes and healBlemishes need. The square must be at the template's scale (a face 290 px wide).
+ * @returns {{size:number, hard:Float32Array, mask:Float32Array, regenMask:Float32Array, coverage:number}|null}
+ */
+export function regionProfile(rgba, size, candidate, ref) {
+  const k = size / T; const n = size * size; const hard = new Float32Array(n); let cnt = 0;
+  for (let i = 0, j = 0; j < n; i += 4, j += 1) {
+    if (candidate[j] < 0.5) continue;
+    const lab = rgbToLab(rgba[i], rgba[i + 1], rgba[i + 2]);
+    if (Math.abs(lab[1] - ref.a) < 10 && Math.abs(lab[2] - ref.b) < 12 && Math.abs(lab[0] - ref.L) < 36) { hard[j] = 1; cnt += 1; }
+  }
+  if (cnt < 1500 * k * k) return null;
+  const wide = gaussBlur(hard, size, size, 7 * k); const closed = new Float32Array(n);
+  for (let j = 0; j < n; j += 1) if (wide[j] > 0.42 && candidate[j] >= 0.5) closed[j] = 1;
+  return { size, hard, mask: gaussBlur(hard, size, size, 3 * k), regenMask: gaussBlur(closed, size, size, 5 * k), coverage: cnt / n };
+}

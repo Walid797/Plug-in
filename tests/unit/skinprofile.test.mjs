@@ -158,3 +158,21 @@ test('spill suppression: a rim tinted by the old background is brought back to t
   const same = make([62, 42, 32], 0.6); const copy = Uint8ClampedArray.from(same.d); suppressSpill(same.d, same.a, w, h, 4);
   assert.deepEqual(same.d, copy, 'background like the person: nothing to remove');
 });
+
+test('neck region: skin-coloured candidates only; a spot on it is found and healed', async () => {
+  const { regionProfile } = await import('../../src/core/skinprofile.js');
+  const d = new Uint8ClampedArray(S * S * 4); const cand = new Float32Array(S * S);
+  let seed = 3; const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff - 0.5; };
+  for (let y = 0; y < S; y += 1) for (let x = 0; x < S; x += 1) {
+    const i = (y * S + x) * 4; const neck = x > 150 && x < 360; const shirt = y > 380; cand[y * S + x] = neck ? 1 : 0; // the class map wrongly offers the shirt part too
+    const sp = Math.exp(-((x - 250) ** 2 + (y - 200) ** 2) / 32);
+    const c = shirt ? [40, 60, 120] : neck ? LIGHT.map((v, k) => v * (1 - sp * (k === 0 ? 0.05 : 0.4))) : [128, 128, 128]; const g = neck && !shirt ? rnd() * 4 : 0;
+    d[i] = c[0] + g; d[i + 1] = c[1] + g; d[i + 2] = c[2] + g; d[i + 3] = 255;
+  }
+  const ref = { L: rgbToLab(...LIGHT)[0], a: rgbToLab(...LIGHT)[1], b: rgbToLab(...LIGHT)[2] };
+  const rp = regionProfile(d, S, cand, ref); assert.ok(rp);
+  assert.equal(rp.hard[450 * S + 250], 0, 'shirt is not skin'); assert.equal(rp.hard[100 * S + 250], 1);
+  const f = findBlemishes(d, rp, { moles: true }); assert.equal(f.count, 1);
+  const out = healBlemishes(d, rp, f); assert.ok(Math.abs(out[(200 * S + 250) * 4 + 1] - LIGHT[1]) < 14);
+  assert.equal(regionProfile(d, S, new Float32Array(S * S), ref), null);
+});
