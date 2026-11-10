@@ -1,0 +1,100 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { skinProfile, findBlemishes, healBlemishes, skinPlan, rgbToLab, toneClass } from '../../src/core/skinprofile.js';
+import { mergeFaceDetail } from '../../src/core/enhance.js';
+
+const S = 512;
+/** A synthetic aligned face: skin-coloured oval with mild grain on grey, white of the eye beside a dark iris. */
+function face(skin, { sclera = [225, 225, 225], spots = [] } = {}) {
+  const d = new Uint8ClampedArray(S * S * 4);
+  let seed = 7; const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff - 0.5; };
+  for (let y = 0; y < S; y += 1) for (let x = 0; x < S; x += 1) {
+    const i = (y * S + x) * 4; const inFace = ((x - 256) / 150) ** 2 + ((y - 292) / 190) ** 2 < 1;
+    let c = inFace ? skin : [128, 128, 128];
+    for (const ex of [193, 319]) if (Math.abs(y - 240) < 10 && Math.abs(x - ex) < 32) c = Math.abs(x - ex) < 11 ? [40, 30, 25] : sclera;
+    const g = inFace ? rnd() * 4 : 0;
+    let [r, gg, b] = c;
+    for (const s of spots) { const w = Math.exp(-((x - s.x) ** 2 + (y - s.y) ** 2) / (2 * s.r * s.r)); r *= 1 - w * (1 - s.c[0]); gg *= 1 - w * (1 - s.c[1]); b *= 1 - w * (1 - s.c[2]); }
+    d[i] = r + g; d[i + 1] = gg + g; d[i + 2] = b + g; d[i + 3] = 255;
+  }
+  return d;
+}
+const LIGHT = [224, 180, 155]; const DARK = [92, 60, 44];
+
+test('rgbToLab: white, black and a skin colour', () => {
+  const w = rgbToLab(255, 255, 255); assert.ok(Math.abs(w[0] - 100) < 0.1 && Math.abs(w[1]) < 0.1 && Math.abs(w[2]) < 0.1);
+  assert.ok(rgbToLab(0, 0, 0)[0] < 0.1);
+  const s = rgbToLab(...LIGHT); assert.ok(s[1] > 5 && s[2] > 10);
+});
+
+test('toneClass covers the whole range', () => {
+  assert.equal(toneClass(60).id, 'very-light'); assert.equal(toneClass(35).id, 'intermediate'); assert.equal(toneClass(-40).id, 'dark');
+});
+
+test('profile: light and dark skin are told apart, also by the white of the eye', () => {
+  const pl = skinProfile(face(LIGHT), S); const pd = skinProfile(face(DARK), S);
+  assert.ok(pl && pd);
+  assert.ok(pl.ita > 41, `light ita ${pl.ita}`); assert.ok(pd.ita < 10, `dark ita ${pd.ita}`);
+  assert.ok(pl.skinToSclera > 0.5 && pd.skinToSclera < 0.2);
+  assert.ok(pl.skinFraction > 0.8, `skin fraction ${pl.skinFraction}`);
+});
+
+test('plan: darker skin gets a lower brightness target; an under-exposed light skin does not', () => {
+  const light = skinPlan(skinProfile(face(LIGHT), S)); const dark = skinPlan(skinProfile(face(DARK), S));
+  assert.ok(light.targetLuma >= 180); assert.ok(dark.targetLuma <= 150, `dark target ${dark.targetLuma}`);
+  assert.ok(dark.referenceL < light.referenceL);
+  // the same light skin photographed 1.6 stops too dark: the white of the eye is just as dark, so the skin still reads as light
+  const k = 0.5; const under = skinPlan(skinProfile(face(LIGHT.map((v) => v * k), { sclera: [225 * k, 225 * k, 225 * k] }), S));
+  assert.ok(under.targetLuma >= 165 && under.targetLuma > dark.targetLuma + 20, `under-exposed target ${under.targetLuma}`);
+});
+
+test('plan: more blemishes and fewer pixels mean more of the skin is rebuilt', () => {
+  const p = skinProfile(face(LIGHT), S);
+  const clean = skinPlan(p, { faceWidthPx: 900, blemishArea: 0 }); const bad = skinPlan(p, { faceWidthPx: 900, blemishArea: 0.03 }); const small = skinPlan(p, { faceWidthPx: 200 });
+  assert.ok(bad.regen > clean.regen && bad.sigmaSkin > clean.sigmaSkin && bad.smoothScale > clean.smoothScale);
+  assert.ok(small.regen > clean.regen);
+  assert.equal(skinPlan(p, { strength: 0 }).regen, 0);
+});
+
+test('plan: colour correction only outside the natural range', () => {
+  const p = skinProfile(face(LIGHT), S);
+  assert.equal(skinPlan({ ...p, chroma: 24, hue: 50 }).saturation, 0);
+  assert.ok(skinPlan({ ...p, chroma: 12 }).saturation > 0); assert.ok(skinPlan({ ...p, chroma: 40 }).saturation < 0);
+  assert.ok(skinPlan({ ...p, hue: 30 }).temperature > 0); assert.ok(skinPlan({ ...p, hue: 75 }).temperature < 0);
+});
+
+const SPOTS = [{ x: 170, y: 310, r: 4, c: [1, 0.62, 0.6] }, { x: 345, y: 320, r: 5, c: [0.8, 0.68, 0.62] }, { x: 256, y: 150, r: 3.5, c: [1, 0.6, 0.58] }, { x: 300, y: 430, r: 4, c: [0.78, 0.7, 0.66] }];
+for (const [name, skin] of [['light', LIGHT], ['dark', DARK]]) {
+  test(`blemishes on ${name} skin: found, clean skin untouched, healed`, () => {
+    const cleanImg = face(skin); const pc = skinProfile(cleanImg, S);
+    assert.equal(findBlemishes(cleanImg, pc).count, 0);
+    const img = face(skin, { spots: SPOTS }); const p = skinProfile(img, S); const f = findBlemishes(img, p);
+    assert.equal(f.count, SPOTS.length);
+    const out = healBlemishes(img, p, f);
+    for (const s of SPOTS) {
+      const i = (s.y * S + s.x) * 4;
+      assert.ok(Math.abs(out[i + 1] - skin[1]) < 0.06 * skin[1] + 3, `spot at ${s.x},${s.y}: ${out[i + 1]} vs ${skin[1]}`);
+    }
+    const far = (200 * S + 256) * 4; assert.equal(out[far], img[far]);
+  });
+}
+
+test('a single very dark, sharp spot is kept as a mole unless asked', () => {
+  const img = face(LIGHT, { spots: [{ x: 340, y: 330, r: 4.5, c: [0.3, 0.25, 0.22] }] }); const p = skinProfile(img, S);
+  const f = findBlemishes(img, p); assert.equal(f.count, 0); assert.equal(f.kept, 1);
+  assert.equal(findBlemishes(img, p, { moles: true }).count, 1);
+});
+
+test('mergeFaceDetail with regeneration: the skin band comes from the model, tone stays the photo\'s', () => {
+  const n = 64; const base = new Uint8ClampedArray(n * n * 4); const model = new Uint8ClampedArray(n * n * 4); const skin = new Float32Array(n * n).fill(1);
+  for (let y = 0; y < n; y += 1) for (let x = 0; x < n; x += 1) {
+    const i = (y * n + x) * 4; const patch = Math.abs(x - 32) < 5 && Math.abs(y - 32) < 5 ? -30 : 0; // a blotch the photo has and the model does not
+    base[i] = 150 + patch; base[i + 1] = 120 + patch; base[i + 2] = 100 + patch; base[i + 3] = 255;
+    model[i] = 200; model[i + 1] = 170; model[i + 2] = 150; model[i + 3] = 255; // brighter overall: must not carry over
+  }
+  const c = (32 * n + 32) * 4; const e = (8 * n + 8) * 4;
+  const plain = mergeFaceDetail(base, model, n, { sigma: 2 });
+  const regen = mergeFaceDetail(base, model, n, { sigma: 2, skin, regen: 1, sigmaSkin: 12 });
+  assert.ok(regen[c + 1] - plain[c + 1] > 10, 'the blotch is lifted towards the model\'s clean skin');
+  assert.ok(Math.abs(regen[e + 1] - 120) < 6, 'tone away from the blotch stays the photo\'s');
+});

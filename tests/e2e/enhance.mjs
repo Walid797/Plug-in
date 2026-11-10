@@ -32,7 +32,9 @@ try {
   const e = res.enhance;
   assert(e && e.scale === 4 && e.srcW === 512 && e.outW === 2048 && e.outH === 2048 && e.tiles >= 1, `512×512 upscaled ×4 (${JSON.stringify(e)})`);
   assert(e.restored === hasGfpgan, `face restoration ran exactly when its model is installed (${e.restored})`);
-  if (hasGfpgan) assert(e.share > 0.3 && e.share <= 0.75, `restoration share follows the template's strength (${e.share})`);
+  // the share is set per photo: the template's strength, raised for a face with few pixels or many blemishes
+  if (hasGfpgan) assert(e.share > 0.3 && e.share <= 0.95, `restoration share follows the template's strength and the photo's plan (${e.share})`);
+  assert(e.skin && e.plan && e.plan.targetLuma >= 132 && e.plan.targetLuma <= 186 && e.blemishes && Number.isFinite(e.skin.ita), `skin profile and per-photo plan reported (${JSON.stringify(e.plan)})`);
   assert(res.enhanced?.key && res.enhanced.width === 2048 && res.enhanced.height === 2048 && res.edit?.enabled === true, 'enhanced version stored and switched on');
   assert(e.relit === true && res.enhanced.relit === true && res.face.relight?.enabled === true, 'the relight is baked into the enhanced version');
   assert(res.dims[0] === 512 && res.dims[1] === 512, 'the photo record keeps the original size');

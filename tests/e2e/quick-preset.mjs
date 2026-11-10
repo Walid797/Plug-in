@@ -56,10 +56,12 @@ try {
   const A = st.adjust;
   assert(A.exposure === 7.5 || Math.abs(A.exposure - 7.5) < 40, 'exposure near +0.15 EV (auto light may add on top)');
   // adaptive grading: the subtle values are always in full, the brightening values are scaled between 0 and the table
-  assert(A.contrast === 8 && A.saturation === 3 && A.temperature === 2 && A.tint === 0 && A.highlights === -16 && A.blacks === -8 && A.denoise === 30, `subtle grading values in full ${JSON.stringify(A)}`);
+  // saturation and temperature carry the per-photo skin correction (zero inside the natural range of skin, bounded outside)
+  assert(A.contrast === 8 && Math.abs(A.saturation - 3) <= 12 && Math.abs(A.temperature - 2) <= 6 && A.tint === 0 && A.highlights === -16 && A.blacks === -8 && A.denoise === 30, `subtle grading values in full ${JSON.stringify(A)}`);
   assert(A.brightness >= 0 && A.brightness <= 8 && A.shadows >= 0 && A.shadows <= 22 && A.whites === 0, `brightening values within the table ${JSON.stringify(A)}`);
   assert(A.sharpness >= 0 && A.sharpness <= 22 && A.clarity >= 0 && A.clarity <= 55, 'detail values within the table');
-  assert(st.face.skin.spots === 90 && st.face.protect.length === 8, `spot healing armed with 8 protected zones (${JSON.stringify(st.face.skin)}, ${st.face.protect?.length})`);
+  // spots: 90 with the classical healer; 0 when the blemishes were already covered on the aligned face by the enhancement
+  assert((st.face.skin.spots === 90 || st.face.skin.spots === 0) && st.face.protect.length === 8, `spot healing armed with 8 protected zones (${JSON.stringify(st.face.skin)}, ${st.face.protect?.length})`);
   assert(st.face.ellipse && st.face.skin.enabled && st.face.light.enabled, `face engines armed on the analysed face ${JSON.stringify(st.face)}`);
   assert(st.face.ellipse.cx > 0.2 && st.face.ellipse.cx < 0.8 && st.face.ellipse.rx > 0.05, 'face ellipse sane');
   assert(st.sheet.marks.borders === true && st.sheet.marks.borderWidth === 0.1, `border on in the built-in template (${JSON.stringify(st.sheet.marks)})`);

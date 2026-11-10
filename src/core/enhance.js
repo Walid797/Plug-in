@@ -124,15 +124,21 @@ export function fromPlanar(planar, w, h, rgba, lo = 0, hi = 1) {
 }
 
 /**
- * Take only the detail of a restored face. The restoration model returns a whole new face square with its own skin
- * tone, lighting and eye colour; pasting that would change how the person looks. Here the photo keeps its own tone
- * and lighting (everything coarser than `sigma` px of luminance) and its own colour (chroma), and the model
- * contributes the luminance detail finer than that, plus a small share of its colour detail (clean edges of lips and iris).
+ * Rebuild a face from the restoration model's output without changing who it is. The model returns a whole new face
+ * square with its own skin tone, lighting and eye colour; pasting that would change how the person looks. So:
+ *  - everywhere, the photo keeps its tone and lighting (luminance coarser than `sigma` px) and the model gives the
+ *    detail finer than that;
+ *  - on the skin (`skin` weight map, with `regen` 0..1) the model's skin is taken over up to a much coarser scale
+ *    (`sigmaSkin` px): pores, patches, marks and uneven areas are the model's new skin, and only the broad light
+ *    and the person's own skin tone stay from the photo;
+ *  - colour: the photo's own, with a share of the model's colour detail; on the skin (`chromaEven` 0..1) the photo's
+ *    colour is first evened out over `sigmaChroma` px (red and dark patches go) and the model's colour variation is laid on it.
  * @param {Uint8ClampedArray} base RGBA of the aligned face square taken from the photo
  * @param {Uint8ClampedArray} restored RGBA of the model's output for it
+ * @param {{sigma?:number, chromaDetail?:number, skin?:Float32Array|null, regen?:number, sigmaSkin?:number, chromaEven?:number, sigmaChroma?:number}} [opt]
  * @returns {Uint8ClampedArray} RGBA (alpha 255)
  */
-export function mergeFaceDetail(base, restored, size = FACE_SIZE, { sigma = 14, chromaDetail = 0.5 } = {}) {
+export function mergeFaceDetail(base, restored, size = FACE_SIZE, { sigma = 14, chromaDetail = 0.5, skin = null, regen = 0, sigmaSkin = 34, chromaEven = 0, sigmaChroma = 16 } = {}) {
   const n = size * size;
   const planes = (d) => {
     const Y = new Float32Array(n); const Cb = new Float32Array(n); const Cr = new Float32Array(n);
@@ -144,17 +150,37 @@ export function mergeFaceDetail(base, restored, size = FACE_SIZE, { sigma = 14, 
   };
   const b = planes(base); const r = planes(restored);
   const lpB = gaussBlur(b.Y, size, size, sigma); const lpR = gaussBlur(r.Y, size, size, sigma);
+  const useSkin = !!skin && skin.length === n && (regen > 0 || chromaEven > 0);
+  const lpB2 = useSkin && regen > 0 ? gaussBlur(b.Y, size, size, sigmaSkin) : null;
+  const lpR2 = lpB2 ? gaussBlur(r.Y, size, size, sigmaSkin) : null;
+  // skin-only averages: a blur of (value × skin) over a blur of skin, so lips, brows and beard do not bleed into the skin colour
+  const skinBlur = useSkin && chromaEven > 0 ? gaussBlur(skin, size, size, sigmaChroma) : null;
+  const skinAvg = (src) => {
+    const t = new Float32Array(n);
+    for (let j = 0; j < n; j += 1) t[j] = src[j] * skin[j];
+    const s = gaussBlur(t, size, size, sigmaChroma);
+    for (let j = 0; j < n; j += 1) s[j] = skinBlur[j] > 0.05 ? s[j] / skinBlur[j] : src[j];
+    return s;
+  };
   const chroma = (cb, cr) => {
     const smoothBase = gaussBlur(cb, size, size, 1.5); // the photo's colour, without its JPEG colour blocks
     const lp = gaussBlur(cr, size, size, 5);
     const out = new Float32Array(n);
     for (let j = 0; j < n; j += 1) out[j] = smoothBase[j] + chromaDetail * (cr[j] - lp[j]);
+    if (skinBlur) {
+      const evenB = skinAvg(cb); const evenR = skinAvg(cr);
+      for (let j = 0; j < n; j += 1) {
+        const w = skin[j] * chromaEven * (skinBlur[j] > 0.05 ? 1 : 0);
+        if (w > 0) out[j] += w * (evenB[j] + (cr[j] - evenR[j]) - out[j]);
+      }
+    }
     return out;
   };
   const Cb = chroma(b.Cb, r.Cb); const Cr = chroma(b.Cr, r.Cr);
   const out = new Uint8ClampedArray(n * 4);
   for (let i = 0, j = 0; j < n; i += 4, j += 1) {
-    const Y = r.Y[j] - lpR[j] + lpB[j];
+    let Y = r.Y[j] - lpR[j] + lpB[j];
+    if (lpB2) { const w = skin[j] * regen; if (w > 0) Y += w * (r.Y[j] - lpR2[j] + lpB2[j] - Y); }
     out[i] = Y + 1.402 * Cr[j]; out[i + 1] = Y - 0.344136 * Cb[j] - 0.714136 * Cr[j]; out[i + 2] = Y + 1.772 * Cb[j]; out[i + 3] = 255;
   }
   return out;

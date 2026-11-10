@@ -122,9 +122,12 @@ export const GRADE_FULL_BELOW_L = 0.45;
 const BRIGHTENING_KEYS = Object.freeze(['exposure', 'brightness', 'shadows', 'whites']);
 
 /** 0..1: how much of the brightening values a face of this mean luma needs (1 when unknown). */
-export function gradeStrength(meanL) {
+export function gradeStrength(meanL, referenceL = GRADE_REFERENCE_L) {
   if (!Number.isFinite(meanL)) return 1;
-  return Math.min(1, Math.max(0, (GRADE_REFERENCE_L - meanL) / (GRADE_REFERENCE_L - GRADE_FULL_BELOW_L)));
+  // the reference follows the person's own skin: a darker skin is not pushed to the brightness of a light one
+  const ref = Number.isFinite(referenceL) ? referenceL : GRADE_REFERENCE_L;
+  const full = GRADE_FULL_BELOW_L * (ref / GRADE_REFERENCE_L);
+  return Math.min(1, Math.max(0, (ref - meanL) / (ref - full)));
 }
 
 /** Face sharpness (the app's own measure, laplacian variance of the face at 160 px) of the quality reference portrait. */
@@ -143,10 +146,16 @@ export function detailStrength(sharpness) {
  * presetAdjust with the brightening values scaled by the face brightness and the detail values scaled by
  * the face sharpness (when the template is adaptive): a photo that is already bright / crisp is not edited twice.
  */
-export function presetAdjustFor(p, meanL, sharpness = null) {
+export function presetAdjustFor(p, meanL, sharpness = null, plan = null) {
   const a = presetAdjust(p);
   if (!a || !p.gradeAdaptive) return a;
-  const s = gradeStrength(meanL);
+  const s = gradeStrength(meanL, plan?.referenceL);
+  // colour of this person's skin: only what lies outside the natural range is corrected (pale → a little more colour,
+  // over-saturated → less, a red or yellow cast → towards neutral)
+  if (plan) {
+    a.saturation = Math.round((a.saturation + (plan.saturation || 0)) * 10) / 10;
+    a.temperature = Math.round((a.temperature + (plan.temperature || 0)) * 10) / 10;
+  }
   for (const k of BRIGHTENING_KEYS) a[k] = Math.round(a[k] * s * 10) / 10;
   const d = detailStrength(sharpness);
   for (const k of DETAIL_KEYS) a[k] = Math.round(a[k] * d * 10) / 10;

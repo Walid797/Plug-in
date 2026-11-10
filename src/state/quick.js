@@ -103,7 +103,7 @@ async function fitShoulders(id, metrics) {
 
 /** What the face & skin / lighting engines really did for a photo (a small render with a report). */
 /** Skin brightness (0..255) the reference portrait ends at; a face brighter than this is trimmed back. */
-const SKIN_TARGET_Y = 186;
+const SKIN_TARGET_Y = 186; // for light skin; the plan of each photo gives its own (darker skin stays darker)
 const srgbToLinear = (v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
 
 async function engineReport(id) {
@@ -195,10 +195,17 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
               console.error(err); r.enhanceError = err?.code || 'FAILED';
             }
           }
+          // skin profile of this photo: with the enhancement it was measured there; otherwise it is measured now
+          let skinInfo = r.enhance?.plan ? r.enhance : null;
+          if (f.faceCount && !skinInfo && preset.gradeAdaptive) {
+            try { const { measureSkin } = await import('../ai/enhance.js'); skinInfo = await measureSkin(getState().photos[id], preset.aiStrength); } catch (err) { console.error(err); }
+          }
+          const plan = skinInfo?.plan || null;
+          if (skinInfo?.plan) r.skin = { tone: skinInfo.skin.tone, ita: skinInfo.skin.ita, lightness: plan.lightness, targetLuma: plan.targetLuma, blemishes: skinInfo.blemishes?.count || 0, molesKept: skinInfo.blemishes?.kept || 0, regen: plan.regen, saturation: plan.saturation, temperature: plan.temperature };
           if (preset.grade) {
             // measured on the neutral photo: strength 1 for a dark face, 0 for one as bright as the reference
-            const strength = f.faceCount ? gradeStrength(f.stats?.meanL) : 1;
-            const grade = presetAdjustFor(preset, f.faceCount ? f.stats?.meanL : null, f.faceCount ? f.stats?.sharpness : null);
+            const strength = f.faceCount ? gradeStrength(f.stats?.meanL, plan?.referenceL) : 1;
+            const grade = presetAdjustFor(preset, f.faceCount ? f.stats?.meanL : null, f.faceCount ? f.stats?.sharpness : null, f.faceCount ? plan : null);
             updateEdit(id, (ed) => ({ ...ed, adjust: grade }), { history: false });
             r.gradeStrength = preset.gradeAdaptive ? strength : 1;
             r.detailStrength = preset.gradeAdaptive && f.faceCount ? detailStrength(f.stats?.sharpness) : 1;
@@ -236,13 +243,17 @@ export async function runQuickPreset(presetId, photoIds, { openReady = true } = 
             if (preset.skinOn || preset.lightOn) {
               const fp = presetFaceParams(preset);
               // a face rebuilt by the restoration model is already clean: the full skin smoothing on top would make it look like plastic
-              if (r.enhance?.restored) fp.skin = { ...fp.skin, smooth: Math.round(fp.skin.smooth * 0.4) };
+              if (r.enhance?.restored) fp.skin = { ...fp.skin, smooth: Math.round(fp.skin.smooth * (plan?.smoothScale ?? 0.4)) };
+              // blemishes of the face were already covered on the aligned face (measured against this person's own skin);
+              // the older spot healing on top of the rebuilt skin leaves ring-shaped marks, so it stays off for this photo
+              if (r.enhance?.blemishes) fp.skin = { ...fp.skin, spots: 0 };
               updateEdit(id, (ed) => ({ ...ed, face: { ...fp, fixes: ed.face?.fixes, relight: ed.face?.relight, ellipse: faceEllipse(getFace(id).metrics, photo.width, photo.height), protect: faceProtectZones(getFace(id).landmarks, photo.width, photo.height), lips: lipPolygons(getFace(id).landmarks), eyes: eyePolygons(getFace(id).landmarks) } }), { history: false });
               r.engine = await engineReport(id).catch(() => null);
               // the brightening is steered by the whole-face mean, which a beard, glasses or dark hair pull down: so a face with
               // dark parts can end up too bright. The skin itself is measured after the engines and trimmed back to the reference level.
-              for (let k = 0; k < 2 && r.engine?.lumaAfter > SKIN_TARGET_Y; k += 1) {
-                const ev = Math.log2(srgbToLinear(SKIN_TARGET_Y / 255) / srgbToLinear(r.engine.lumaAfter / 255));
+              const skinTarget = plan?.targetLuma ?? SKIN_TARGET_Y;
+              for (let k = 0; k < 2 && r.engine?.lumaAfter > skinTarget; k += 1) {
+                const ev = Math.log2(srgbToLinear(skinTarget / 255) / srgbToLinear(r.engine.lumaAfter / 255));
                 const trim = Math.round((ev / 2) * 100); // negative slider units
                 updateEdit(id, (ed) => {
                   const lift = ed.adjust.lift || 0;
